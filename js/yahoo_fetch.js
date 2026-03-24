@@ -38,11 +38,10 @@ async function fetchYahoo(ticker) {
         }
     }
 
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=max`;
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=max`;
+    const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`;
 
     try {
-        // Spec notes include User-Agent header; noting that browsers prevent overriding 
-        // User-Agent in Fetch, we rely on browser default agent triggers.
         const resp = await fetch(url);
         if (!resp.ok) return [];
 
