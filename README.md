@@ -27,3 +27,15 @@ All processed `.csv` contract files inside `Cleaned_Database` contain strictly *
 | **`Contract ID`** | Back-tracing ticket tag (e.g. `ngv24`, `Spot_Price`) |
 
 *(All noisy nodes like Volume, %Chg, Position open interests are stripped out for analytics ready reads)*
+
+---
+
+### 📊 **Live Analytics Dashboard**
+
+A static dashboard app setup designed to stitch historical layouts with dynamic live streams overlays.
+
+*   **📈 Integrated Line layouts updates**: Absolute overlays stitching continuous cleaned databases maps together with Yahoo v8 feeds correctly.
+*   **⚡ Live Spot Streaming layouts stream**: Frames EIA stream absolute arrays framing XLS tables parsed seamlessly leveraging SheetJS binary layouts directly.
+*   **📊 Cross Spread layout controller**: Dual overlay multipliers support supporting conversion coefficients dynamically.
+
+**Tech Frame layout layout**: Vanilla JavaScript, Plotly widgets overlays setups buffers, Papa Parse structures. No node framing required nodes.*
