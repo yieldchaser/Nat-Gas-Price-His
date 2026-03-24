@@ -1,85 +1,167 @@
-document.addEventListener("DOMContentLoaded", () => {
-    
-    // 1. Navbar Navigation Toggle Setup
-    const navPills = document.querySelectorAll(".nav-pill");
-    const panels = document.querySelectorAll(".panel");
+/**
+ * Central State Object
+ */
+const State = {
+    activeTab: 'hh-chart',
+    hhYear: '2026',
+    hhMonth: 'k', // May Default
+    hhTDay: 150,
+    ttfYear: '2026',
+    ttfMonth: 'k',
+    initializedTabs: new Set()
+};
 
+document.addEventListener("DOMContentLoaded", async () => {
+    
+    // 1. Tooltips Initialize
+    if (typeof initTooltips === 'function') initTooltips();
+
+    // 2. Continuous Header update layouts
+    updateHeaderStrip();
+    setInterval(updateHeaderStrip, 5 * 60 * 1000); // 5 min continuous interval
+
+    // 3. Setup Navbar Navigation Click Handlers
+    const navPills = document.querySelectorAll(".nav-pill");
     navPills.forEach(pill => {
         pill.addEventListener("click", () => {
             const target = pill.getAttribute("data-target");
-
-            // Update Active Nav Pill
+            
             navPills.forEach(p => p.classList.remove("active"));
             pill.classList.add("active");
 
-            // Update Panel Node Visibilities
-            panels.forEach(p => {
-                if (p.id === target) {
-                    p.classList.add("active");
-                } else {
-                    p.classList.remove("active");
-                }
-            });
+            document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+            const targetPanel = document.getElementById(target);
+            if (targetPanel) targetPanel.classList.add("active");
+
+            loadTabContent(target);
         });
     });
 
-    // 2. Control Bar Structure Initializations placeholders
-    const hhControl = document.querySelector("#hh-chart .control-bar");
-    if (hhControl) {
-        hhControl.innerHTML = `
-            <select id="hh-year-select">
-                <option value="2026">2026</option>
-                <option value="2025">2025</option>
-            </select>
-            <select id="hh-month-select">
-                <option value="F">Jan (F)</option>
-                <option value="K" selected>May (K)</option>
-            </select>
-        `;
-    }
+    // 4. Register Dropdown controls Event listeners
+    setupControlListeners();
 
-    // 3. App Initialization routines for default Active trace
-    async function initDashboard() {
-        const loader = document.getElementById("global-loader");
-        if (loader) loader.classList.add("active");
+    // 5. Default Load (HH Chart)
+    loadTabContent('hh-chart');
 
-        try {
-            // Live ticker headers populated from FRONT-MONTH updates
-            const liveTickers = document.getElementById("live-ticker-strip");
-            const ngContinuous = await fetchYahoo("NG=F");
-            if (ngContinuous && ngContinuous.length > 0) {
-                const latest = ngContinuous[ngContinuous.length - 1];
-                const tickerEl = document.getElementById("ticker-ng");
-                if (tickerEl) tickerEl.innerText = `NG=F: $${latest.price.toFixed(3)}`;
-            }
-
-            // Default startup rendering: Henry Hub May 2026 Contract (ngk26)
-            const benchmark = "Henry Hub";
-            const contract = "ngk26";
-            const liveTicker = "NGK26.NYM";
-
-            const contractSeries = await getContractSeries(benchmark, contract, liveTicker);
-            const seasonalBand = await getSeasonalBand(benchmark, "k", 2026);
-
-            if (contractSeries && contractSeries.length > 0) {
-                renderHHChart("hh-chart-container", contractSeries, seasonalBand);
-
-                // Update standard metrics labels cards
-                const lastRow = contractSeries[contractSeries.length - 1];
-                document.getElementById("hh-stat-last").innerText = lastRow.price.toFixed(3);
-                document.getElementById("hh-stat-days").innerText = lastRow.tDay;
-
-                const prices = contractSeries.map(r => r.price);
-                document.getElementById("hh-stat-high").innerText = Math.max(...prices).toFixed(3);
-                document.getElementById("hh-stat-low").innerText = Math.min(...prices).toFixed(3);
-            }
-
-        } catch (err) {
-            console.error("Dashboard Init crashed:", err);
-        } finally {
-            if (loader) loader.classList.remove("active");
-        }
-    }
-
-    initDashboard();
+    // 6. Background Promises Sweeps Controllers
+    sweepFullCurve().then(() => {
+        console.log("[App] Forward Curve sweeps loaded.");
+        // can notify ui or unblock triggers if needed
+    });
+    
+    fetchEIASpot().then(() => {
+        console.log("[App] EIA spot data cached.");
+    });
 });
+
+/**
+ * Updates Live headers with continuous tickers streams
+ */
+async function updateHeaderStrip() {
+    try {
+        const ng = await fetchContinuous('NG=F');
+        const ttf = await fetchContinuous('TTF=F');
+
+        const badgeNg = document.getElementById("badge-ng");
+        if (badgeNg) {
+            const sign = ng.change >= 0 ? "▲" : "▼";
+            badgeNg.innerHTML = `[NG=F: $${ng.price.toFixed(3)} ${sign} ${ng.changePct.toFixed(2)}%]`;
+            badgeNg.style.color = ng.change >= 0 ? "var(--green)" : "var(--red)";
+        }
+
+        const badgeTtf = document.getElementById("badge-ttf");
+        if (badgeTtf) {
+            const sign = ttf.change >= 0 ? "▲" : "▼";
+            badgeTtf.innerHTML = `[TTF=F: €${ttf.price.toFixed(2)} ${sign} ${ttf.changePct.toFixed(2)}%]`;
+            badgeTtf.style.color = ttf.change >= 0 ? "var(--green)" : "var(--red)";
+        }
+    } catch (err) {
+        console.warn("[App] updateHeaderStrip failed:", err);
+    }
+}
+
+/**
+ * Lazy Loads tab panels triggers first loaded
+ */
+function loadTabContent(tabId) {
+    if (State.initializedTabs.has(tabId)) return;
+
+    switch (tabId) {
+        case 'hh-chart': initHHChart(); break;
+        case 'ttf-chart': initTTFChart(); break;
+        case 'spot-price': initSpotChart(); break;
+        case 'spread-analysis': initSpreadAnalysis(); break;
+        case 'forward-curve': initForwardCurve(); break;
+        case 'expiry-table': initExpiryTable(); break;
+        case 'daily-log': initDailyLog(); break;
+        case 'cross-spread': initCrossSpread(); break;
+    }
+
+    State.initializedTabs.add(tabId);
+}
+
+/**
+ * Wireframe input triggers binds
+ */
+function setupControlListeners() {
+    // HH Selectors
+    const hhY = document.getElementById("hh-year"); if (hhY) hhY.addEventListener("change", (e) => { State.hhYear = e.target.value; initHHChart(); });
+    const hhM = document.getElementById("hh-month"); if (hhM) hhM.addEventListener("change", (e) => { State.hhMonth = e.target.value; initHHChart(); });
+    const hhSeg = document.getElementById("hh-tday-window");
+    if (hhSeg) {
+        hhSeg.addEventListener("click", (e) => {
+            const btn = e.target.closest(".seg-btn");
+            if (btn) {
+                document.querySelectorAll("#hh-tday-window .seg-btn").forEach(b => b.classList.remove("active"));
+                btn.classList.add("active");
+                State.hhTDay = parseInt(btn.getAttribute("data-tday"));
+                initHHChart();
+            }
+        });
+    }
+}
+
+/**
+ * TAB 1 - Initialize HH Chart setup buffers
+ */
+async function initHHChart() {
+    const loader = document.getElementById("global-loader");
+    if (loader) loader.classList.add("active");
+
+    try {
+        const year = State.hhYear;
+        const month = State.hhMonth;
+        const contract = `ng${month}${year.slice(-2)}`;
+        const ticker = contractIDtoYahooTicker('NG', contract);
+
+        const series = await getContractSeries("Henry Hub", contract, ticker);
+        const band = await getSeasonalBand("Henry Hub", month, parseInt(year));
+
+        renderHHChart("hh-chart-container", series, band, State.hhTDay);
+
+        // Update Stats values
+        if (series && series.length > 0) {
+            const prices = series.map(d => d.price);
+            document.getElementById("hh-stat-high").innerText = Math.max(...prices).toFixed(3);
+            document.getElementById("hh-stat-low").innerText = Math.min(...prices).toFixed(3);
+            document.getElementById("hh-stat-last").innerText = series[series.length - 1].price.toFixed(3);
+            document.getElementById("hh-stat-days").innerText = series[series.length - 1].tDay;
+        }
+
+    } catch (err) {
+        console.warn("initHHChart failed on triggers", err);
+    } finally {
+        if (loader) loader.classList.remove("active");
+    }
+}
+
+/**
+ * Lazy loaders anchors continuous placeholders avoiding Rule 2 breakers frame flawless setups Node-by-node
+ */
+function initTTFChart() { console.log("[Lazy] initTTFChart"); }
+function initSpotChart() { console.log("[Lazy] initSpotChart"); }
+function initSpreadAnalysis() { console.log("[Lazy] initSpreadAnalysis"); }
+function initForwardCurve() { console.log("[Lazy] initForwardCurve"); }
+function initExpiryTable() { console.log("[Lazy] initExpiryTable"); }
+function initDailyLog() { console.log("[Lazy] initDailyLog"); }
+function initCrossSpread() { console.log("[Lazy] initCrossSpread"); }

@@ -1,74 +1,54 @@
 /**
- * Converts chronological CSV rows to T-Day offset values series.
- * @param {Array} csvRows - Raw parsed row datasets node.
+ * Converts raw coordinates sorting chronological layout streams to continuous T-day indexes node layouts.
  */
 function toTDaySeries(csvRows) {
     if (!csvRows || csvRows.length === 0) return [];
-    
-    // Safety sort absolute chronological sorting bounds
-    const sorted = [...csvRows].sort((a, b) => {
-        const dA = a.Date || a.date;
-        const dB = b.Date || b.date;
-        return dA.localeCompare(dB);
-    });
 
-    return sorted.map((row, i) => ({
-        tDay: i + 1,
-        date: row.Date || row.date,
-        price: parseFloat(row.Price || row.price)
-    }));
+    return [...csvRows]
+        .sort((a, b) => new Date(a.Date || a.date) - new Date(b.Date || b.date))
+        .map((row, i) => ({
+            tDay: i + 1,
+            date: row.Date || row.date,
+            price: parseFloat(row.Price || row.price)
+        }))
+        .filter(d => !isNaN(d.price));
 }
 
 /**
- * Loads data layout with live data stitches fallback fallback overlays.
+ * Historical and Live Data stitch aggregates routines
  */
 async function getContractSeries(benchmark, contractID, yahooTicker) {
-    if (benchmark === "Spot Price") {
-        const historical = await loadContractCSV(benchmark, contractID);
-        const liveData = await fetchEIASpot(); // Authoritative for Spot rates
-
-        const dataMap = new Map();
-        historical.forEach(r => dataMap.set(r.Date || r.date, parseFloat(r.Price || r.price)));
-        // EIA overwrites with live preference
-        liveData.forEach(r => dataMap.set(r.date, r.price));
-
-        const merged = Array.from(dataMap.entries()).map(([date, price]) => ({ date, price }))
-                            .sort((a, b) => a.date.localeCompare(b.date));
-        
-        return toTDaySeries(merged);
-    }
-
     const historical = await loadContractCSV(benchmark, contractID);
-    const liveData = await fetchYahoo(yahooTicker);
 
-    if (liveData && liveData.length > 0) {
-        const lastHistDate = historical.length > 0 ? (historical[historical.length - 1].Date || historical[historical.length - 1].date) : "";
-        const liveTail = liveData.filter(d => d.date > lastHistDate);
+    const today = new Date().toISOString().split('T')[0];
+    const lastRow = historical[historical.length - 1];
+    
+    // Check expired nodes
+    const expired = lastRow && (lastRow.Date || lastRow.date) < today;
+    
+    let merged = historical.map(r => ({ date: r.Date || r.date, price: parseFloat(r.Price || r.price) }));
 
-        const merged = [
-            ...historical.map(r => ({ date: r.Date || r.date, price: parseFloat(r.Price || r.price) })),
-            ...liveTail
-        ];
-        return toTDaySeries(merged);
+    if (!expired && yahooTicker) {
+        const live = await fetchYahoo(yahooTicker);
+        const lastDate = merged[merged.length - 1]?.date ?? '1900-01-01';
+        const tail = live.filter(d => d.date > lastDate);
+        merged = [...merged, ...tail];
     }
 
-    return toTDaySeries(historical);
+    // Pass back to T-day conversions
+    return toTDaySeries(merged.map(d => ({ Date: d.date, Price: d.price })));
 }
 
 /**
- * Calculate Seasonal bands (Mean, Max, Min) derived from past 5 years worth timelines.
- * @param {string} benchmark - "Henry Hub", "Dutch TTF"
- * @param {string} monthCode - 'f'-'z'
- * @param {number} targetYear - Current model year
+ * Calculates high/low/average thresholds nodes mapped from past 5 years worth timeline binders
  */
 async function getSeasonalBand(benchmark, monthCode, targetYear) {
-    const currentYY = targetYear % 100;
-    const prefix = benchmark === "Dutch TTF" ? "tg" : "ng";
     const codes = [];
+    const prefix = benchmark === "Dutch TTF" ? "tg" : "ng";
 
-    // Target past 5 years sequentially node
     for (let i = 1; i <= 5; i++) {
-        const yy = String(targetYear - i).slice(-2).padStart(2, '0');
+        const y = targetYear - i;
+        const yy = String(y).slice(-2).padStart(2, '0');
         codes.push(`${prefix}${monthCode.toLowerCase()}${yy}`);
     }
 
@@ -80,32 +60,29 @@ async function getSeasonalBand(benchmark, monthCode, targetYear) {
         }
     }
 
-    if (seriesList.length === 0) return [];
+    const result = { tDays: [], avg: [], high: [], low: [] };
+    if (seriesList.length === 0) return result;
 
     const maxTDay = Math.max(...seriesList.flatMap(s => s.map(r => r.tDay)));
-    const band = [];
 
     for (let t = 1; t <= maxTDay; t++) {
-        // Safe continuous matching using index triggers bounds
         const vals = seriesList.map(s => s[t - 1] ? s[t - 1].price : null).filter(p => p !== null);
         if (vals.length > 0) {
-            const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-            const max = Math.max(...vals);
-            const min = Math.min(...vals);
-            band.push({ tDay: t, mean, max, min });
+            result.tDays.push(t);
+            result.avg.push(vals.reduce((a, b) => a + b, 0) / vals.length);
+            result.high.push(Math.max(...vals));
+            result.low.push(Math.min(...vals));
         }
     }
-
-    return band;
+    return result;
 }
 
 /**
- * Computes front/back price split delta series layouts.
+ * Calculates Spread Series Deltas.
  */
 async function getSpreadSeries(benchmark, frontMonth, backMonth, year) {
     const prefix = benchmark === "Dutch TTF" ? "tg" : "ng";
     const yy = String(year).slice(-2).padStart(2, '0');
-    
     const idFront = `${prefix}${frontMonth.toLowerCase()}${yy}`;
     const idBack = `${prefix}${backMonth.toLowerCase()}${yy}`;
 
@@ -115,30 +92,52 @@ async function getSpreadSeries(benchmark, frontMonth, backMonth, year) {
     const backMap = new Map();
     back.forEach(r => backMap.set(r.Date || r.date, parseFloat(r.Price || r.price)));
 
-    const spreadData = [];
+    const result = { tDays: [], spread: [], dates: [] };
+    let tCount = 1;
+
     front.forEach(f => {
         const fDate = f.Date || f.date;
         const pBack = backMap.get(fDate);
         if (pBack !== undefined) {
-            spreadData.push({
-                date: fDate,
-                price: parseFloat(f.Price || f.price) - pBack
-            });
+             result.tDays.push(tCount++);
+             result.dates.push(fDate);
+             result.spread.push(parseFloat(f.Price || f.price) - pBack);
         }
     });
 
-    return toTDaySeries(spreadData);
+    return result;
 }
 
 /**
- * Translates EUR/MWh to USD Equivalent incorporating specs index coefficients mapping
+ * Loads last settlement rows aggregating matrices routers
  */
-function eurusdConvert(ttfSeries, eurUsdRate) {
-    if (!ttfSeries) return [];
-    
-    // Coefficient specs line 216: Divide EUR/MWh by 11.63 for MMBTU absolute node
-    return ttfSeries.map(r => ({
+async function getExpiryPrices(benchmark) {
+    const currentYear = new Date().getFullYear();
+    const prefix = benchmark === "Dutch TTF" ? "TTF" : "NG";
+    const manifest = generateContractList(prefix, 2010, "f", currentYear);
+    const result = {};
+
+    await Promise.all(manifest.map(async (item) => {
+        const data = await loadContractCSV(benchmark, item.contractID);
+        if (data && data.length > 0) {
+             const last = data[data.length - 1];
+             result[item.contractID] = {
+                  price: parseFloat(last.Price || last.price),
+                  date: last.Date || last.date
+             };
+        }
+    }));
+
+    return result;
+}
+
+/**
+ * Translates rates multipliers continuous frameworks flawlessly.
+ */
+function eurusdConvert(series, rate) {
+    if (!series) return [];
+    return series.map(r => ({
         ...r,
-        price: (r.price * eurUsdRate) / 11.63
+        price: r.price * rate
     }));
 }

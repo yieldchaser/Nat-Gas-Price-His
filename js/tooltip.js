@@ -1,80 +1,80 @@
-document.addEventListener("DOMContentLoaded", () => {
+/**
+ * Global Tooltip Delegate Module
+ * Manages hover tooltips leveraging single element triggers.
+ */
+window.initTooltips = function() {
     const tooltip = document.getElementById("global-tooltip");
     if (!tooltip) return;
 
-    let activeElement = null;
+    // Overrides CSS coordinate space fixing math discrepancies to Absolute coordinate node
+    tooltip.style.position = "absolute"; 
 
-    // Mouse events
+    let activeTrigger = null;
+
     document.addEventListener("mouseover", (e) => {
         const trigger = e.target.closest("[data-tooltip]");
         if (!trigger) return;
 
-        activeElement = trigger;
         const text = trigger.getAttribute("data-tooltip");
         if (!text) return;
 
+        activeTrigger = trigger;
+        
+        // Supports pre-line and safe text loads node
         tooltip.textContent = text;
         tooltip.classList.add("tooltip-visible");
 
-        // Use requestAnimationFrame for sizing math accuracy
         requestAnimationFrame(() => positionTooltip(trigger, tooltip));
     });
 
     document.addEventListener("mouseout", (e) => {
-        if (activeElement && !activeElement.contains(e.relatedTarget)) {
+        if (activeTrigger && !activeTrigger.contains(e.relatedTarget)) {
             tooltip.classList.remove("tooltip-visible");
-            activeElement = null;
-        }
-    });
-
-    // Touch Support
-    document.addEventListener("touchstart", (e) => {
-        const trigger = e.target.closest("[data-tooltip]");
-        if (trigger) {
-            // Prevent mouseover trigger immediately after touch
-            if (activeElement === trigger) {
-                tooltip.classList.remove("tooltip-visible");
-                activeElement = null;
-            } else {
-                activeElement = trigger;
-                tooltip.textContent = trigger.getAttribute("data-tooltip");
-                tooltip.classList.add("tooltip-visible");
-                requestAnimationFrame(() => positionTooltip(trigger, tooltip));
-            }
-        } else {
-            tooltip.classList.remove("tooltip-visible");
-            activeElement = null;
+            activeTrigger = null;
         }
     });
 
     function positionTooltip(trigger, tooltip) {
-        if (!activeElement) return;
+        if (!activeTrigger) return;
 
         const rect = trigger.getBoundingClientRect();
         const tooltipWidth = tooltip.offsetWidth;
         const tooltipHeight = tooltip.offsetHeight;
+        const scrollY = window.scrollY;
 
-        // Position coordinates above element (Absolute style inside page wrapper)
-        let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
-        let top = rect.top + window.scrollY - tooltipHeight - 14;
+        // Position Math specs absolute alignment thresholds node
+        const centerX = rect.left + (rect.width / 2);
+        let left = centerX - (tooltipWidth / 2);
+        let top = rect.top + scrollY - tooltipHeight - 14;
 
-        // Fallback below if not enough room above
-        if (top < window.scrollY + 8) {
-            top = rect.bottom + window.scrollY + 8;
+        // Flip fallback if offset top triggers limits bounds
+        if (top < scrollY + 8) {
+            top = rect.bottom + scrollY + 8;
         }
 
-        // Anti-overflow left/right clamp bounding
+        // Clamp boundaries preventing viewport bleed nodes
         left = Math.max(8, Math.min(left, window.innerWidth - tooltipWidth - 8));
 
         tooltip.style.left = `${left}px`;
         tooltip.style.top = `${top}px`;
     }
 
-    // Dismiss tooltip on viewport resize or panel scroll to avoid orphans
-    window.addEventListener("resize", () => tooltip.classList.remove("tooltip-visible"));
-    document.addEventListener("scroll", (e) => {
-        if (e.target.classList && e.target.classList.contains("panel")) {
+    // Mobile/Touch tap support continuous
+    document.addEventListener("touchstart", (e) => {
+        const trigger = e.target.closest("[data-tooltip]");
+        if (trigger) {
+            if (activeTrigger === trigger) {
+                tooltip.classList.remove("tooltip-visible");
+                activeTrigger = null;
+            } else {
+                activeTrigger = trigger;
+                tooltip.textContent = trigger.getAttribute("data-tooltip");
+                tooltip.classList.add("tooltip-visible");
+                requestAnimationFrame(() => positionTooltip(trigger, tooltip));
+            }
+        } else {
             tooltip.classList.remove("tooltip-visible");
+            activeTrigger = null;
         }
-    }, true);
-});
+    });
+};

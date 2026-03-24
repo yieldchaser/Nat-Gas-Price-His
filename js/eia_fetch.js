@@ -1,9 +1,8 @@
 const EIA_URL = "https://www.eia.gov/dnav/ng/hist_xls/RNGWHHDd.xls";
-const EIA_TTL = 60 * 60 * 1000; // 1 hour
+const EIA_TTL = 60 * 60 * 1000; // 1 hr
 
 /**
- * Fetches the live absolute Henry Hub Spot Price matrix from EIA XLS feed resources.
- * Handles parsing binary stream overlays using SheetJS hooks.
+ * Loads the live EIA Spot Price dataset using SheetJS parsing.
  */
 async function fetchEIASpot() {
     const key = "eia_spot";
@@ -12,9 +11,7 @@ async function fetchEIASpot() {
     if (cached) {
         try {
             const { ts, data } = JSON.parse(cached);
-            if (Date.now() - ts < EIA_TTL) {
-                return data;
-            }
+            if (Date.now() - ts < EIA_TTL) return data;
         } catch (e) {
             sessionStorage.removeItem(key);
         }
@@ -22,56 +19,46 @@ async function fetchEIASpot() {
 
     try {
         const resp = await fetch(EIA_URL);
-        if (!resp.ok) {
-            throw new Error(`EIA Fetch Error ${resp.status}: ${EIA_URL}`);
-        }
+        if (!resp.ok) throw new Error(`${resp.status}: ${EIA_URL}`);
 
-        const arrayBuffer = await resp.arrayBuffer();
-
-        // Use SheetJS to read binary nodes
-        const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+        const buffer = await resp.arrayBuffer();
+        
+        // Parse with SheetJS
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
         const worksheet = workbook.Sheets["Data 1"];
         
-        if (!worksheet) {
-            throw new Error("Sheet 'Data 1' not found in EIA XLS payload");
-        }
+        if (!worksheet) throw new Error("EIA XLS 'Data 1' sheet not found");
 
-        // Convert to absolute arrays [ [colA, colB, colC], ... ]
         const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        const parsedData = [];
+        const data = [];
 
-        // Specs: Skip first 3 rows header titles.
-        // Columns: B (index 1) = Date, C (index 2) = Price
+        // Specs: Skip first 3 header rows. Col B (Index 1) = Date, Col C (Index 2) = Price
         for (let i = 3; i < rows.length; i++) {
             const row = rows[i];
             if (!row || row.length < 3) continue;
 
-            const dateValue = row[1];
-            const priceValue = parseFloat(row[2]);
+            const dateVal = row[1];
+            const priceVal = parseFloat(row[2]);
 
-            if (dateValue && !isNaN(priceValue)) {
+            if (dateVal && !isNaN(priceVal)) {
                 let dateStr = "";
-                if (dateValue instanceof Date) {
-                    dateStr = dateValue.toISOString().split('T')[0];
+                if (dateVal instanceof Date) {
+                    dateStr = dateVal.toISOString().split('T')[0];
                 } else {
-                    dateStr = String(dateValue).split(' ')[0];
+                    dateStr = String(dateVal).split(' ')[0]; // Fallback string conversion node
                 }
-                
-                parsedData.push({
-                    date: dateStr,
-                    price: priceValue
-                });
+                data.push({ date: dateStr, price: priceVal });
             }
         }
 
-        // Assure chronological ordering
-        parsedData.sort((a, b) => a.date.localeCompare(b.date));
+        // Maintain ascending strict Chronological index
+        data.sort((a, b) => a.date.localeCompare(b.date));
 
-        sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: parsedData }));
-        return parsedData;
+        sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
+        return data;
 
     } catch (err) {
-        console.warn("fetchEIASpot failed:", err);
+        console.warn("fetchEIASpot failing with payload", err);
         return [];
     }
 }
