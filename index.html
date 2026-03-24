@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Natural Gas Futures Analytics Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- CDNs -->
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- Custom Modules -->
+    <script src="js/data_loader.js" defer></script>
+    <script src="js/yahoo_fetch.js" defer></script>
+    <script src="js/eia_fetch.js" defer></script>
+    <script src="js/data_engine.js" defer></script>
+    <script src="js/charts.js" defer></script>
+    <script src="js/tooltip.js" defer></script>
+    <script src="app.js" defer></script>
+</head>
+<body>
+
+    <header>
+        <div class="header-left">⚡ NatGas Dashboard</div>
+        <div class="header-right" id="live-ticker-strip">
+            <span class="ticker" id="ticker-ng">NG=F: --</span>
+            <span class="ticker" id="ticker-ttf">TTF=F: --</span>
+        </div>
+    </header>
+
+    <nav id="dashboard-nav">
+        <button class="nav-pill active" data-target="hh-chart">HH Chart</button>
+        <button class="nav-pill" data-target="ttf-chart">TTF Chart</button>
+        <button class="nav-pill" data-target="spot-price">Spot Price</button>
+        <button class="nav-pill" data-target="spread-analysis">Spread Analysis</button>
+        <button class="nav-pill" data-target="forward-curve">Forward Curve</button>
+        <button class="nav-pill" data-target="expiry-table">Expiry Table</button>
+        <button class="nav-pill" data-target="daily-log">Daily Log</button>
+        <button class="nav-pill" data-target="cross-spread">HH/TTF Spread</button>
+    </nav>
+
+    <main id="dashboard-content">
+        <!-- 1. HH Chart Panel -->
+        <section id="hh-chart" class="panel active">
+            <div class="control-bar">
+                <!-- Dropdowns & T-Day buttons injected here -->
+            </div>
+            <div class="stats-row">
+                <div class="stat-card" data-tooltip="High price in selected period">
+                    <span class="stat-label">HIGH</span>
+                    <span class="stat-value" id="hh-stat-high">--</span>
+                    <span class="stat-sub">$/MMBTU</span>
+                </div>
+                <div class="stat-card" data-tooltip="Low price in selected period">
+                    <span class="stat-label">LOW</span>
+                    <span class="stat-value" id="hh-stat-low">--</span>
+                    <span class="stat-sub">$/MMBTU</span>
+                </div>
+                <div class="stat-card" data-tooltip="Last settlement price">
+                    <span class="stat-label">LAST PRICE</span>
+                    <span class="stat-value" id="hh-stat-last">--</span>
+                    <span class="stat-sub">$/MMBTU</span>
+                </div>
+                <div class="stat-card" data-tooltip="Total trading day count from inception">
+                    <span class="stat-label">DAYS TRADED</span>
+                    <span class="stat-value" id="hh-stat-days">--</span>
+                    <span class="stat-sub">T-Days</span>
+                </div>
+            </div>
+            <div class="chart-wrap" id="hh-chart-container"></div>
+        </section>
+
+        <!-- 2. TTF Chart Panel -->
+        <section id="ttf-chart" class="panel">
+            <div class="control-bar"></div>
+            <div class="stats-row">
+                <div class="stat-card"><span class="stat-label">HIGH</span><span class="stat-value">--</span><span class="stat-sub">EUR/MWh</span></div>
+                <div class="stat-card"><span class="stat-label">LOW</span><span class="stat-value">--</span><span class="stat-sub">EUR/MWh</span></div>
+                <div class="stat-card"><span class="stat-label">LAST PRICE</span><span class="stat-value">--</span><span class="stat-sub">EUR/MWh</span></div>
+                <div class="stat-card"><span class="stat-label">DAYS TRADED</span><span class="stat-value">--</span><span class="stat-sub">T-Days</span></div>
+            </div>
+            <div class="chart-wrap" id="ttf-chart-container"></div>
+        </section>
+
+        <!-- 3. Spot Price Panel -->
+        <section id="spot-price" class="panel">
+            <div class="control-bar"></div>
+            <div class="stats-row">
+                <div class="stat-card"><span class="stat-label">HIGH</span><span class="stat-value">--</span><span class="stat-sub">$/MMBTU</span></div>
+                <div class="stat-card"><span class="stat-label">LOW</span><span class="stat-value">--</span><span class="stat-sub">$/MMBTU</span></div>
+                <div class="stat-card"><span class="stat-label">LAST SPOT</span><span class="stat-value">--</span><span class="stat-sub">$/MMBTU</span></div>
+                <div class="stat-card"><span class="stat-label">COUNT</span><span class="stat-value">--</span><span class="stat-sub">Bars</span></div>
+            </div>
+            <div class="chart-wrap" id="spot-chart-container"></div>
+        </section>
+
+        <!-- 4. Spread Analysis Panel -->
+        <section id="spread-analysis" class="panel">
+            <div class="control-bar"></div>
+            <div class="table-wrap" id="spread-table-container"></div>
+            <div class="chart-wrap" id="spread-chart-container"></div>
+        </section>
+
+        <!-- 5. Forward Curve Panel -->
+        <section id="forward-curve" class="panel">
+            <div class="control-bar"></div>
+            <div class="chart-wrap" id="curve-chart-container"></div>
+        </section>
+
+        <!-- 6. Expiry Price Table Panel -->
+        <section id="expiry-table" class="panel">
+            <div class="control-bar"></div>
+            <div class="table-wrap" id="expiry-table-container"></div>
+        </section>
+
+        <!-- 7. Daily Log Panel -->
+        <section id="daily-log" class="panel">
+            <div class="control-bar"></div>
+            <div class="table-wrap" id="daily-log-container"></div>
+        </section>
+
+        <!-- 8. HH/TTF Spread Panel -->
+        <section id="cross-spread" class="panel">
+            <div class="control-bar"></div>
+            <div class="chart-wrap" id="cross-spread-chart-container"></div>
+            <div class="chart-wrap" id="cross-spread-line-container"></div>
+        </section>
+    </main>
+
+    <!-- Global Layout Assets -->
+    <div id="global-tooltip"></div>
+    
+    <div id="global-loader" class="spinner-overlay">
+        <div class="spinner"></div>
+    </div>
+
+</body>
+</html>
