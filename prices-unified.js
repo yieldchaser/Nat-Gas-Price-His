@@ -899,6 +899,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
   });
 
   if (bandUpper.length) {
+    const bandMaskColor = 'rgba(16, 17, 20, 0.98)';
     const upperSeries = chart.addAreaSeries({
       topColor: seasonalPalette.fillTop,
       bottomColor: seasonalPalette.fillBottom,
@@ -911,8 +912,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     upperSeries.setData(bandUpper);
 
     const lowerSeries = chart.addAreaSeries({
-      topColor: seasonalPalette.fillTop,
-      bottomColor: seasonalPalette.fillBottom,
+      topColor: bandMaskColor,
+      bottomColor: bandMaskColor,
       lineColor: seasonalPalette.line,
       lineWidth: 1,
       priceLineVisible: false,
