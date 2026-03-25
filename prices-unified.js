@@ -899,7 +899,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
   });
 
   if (bandUpper.length) {
-    const bandMaskColor = 'rgba(16, 17, 20, 0.98)';
+    const bandMaskColor = 'rgba(16, 17, 20, 0.82)';
     const upperSeries = chart.addAreaSeries({
       topColor: seasonalPalette.fillTop,
       bottomColor: seasonalPalette.fillBottom,
