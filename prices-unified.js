@@ -165,9 +165,22 @@ function parseChartDate(value) {
 }
 
 function formatRangeEdgeLabel(value) {
+  if (typeof value === 'string') {
+    const parts = value.split('-');
+    if (parts.length === 3) {
+      const year = parts[0].slice(-2);
+      const monthIndex = Math.max(0, Math.min(11, parseInt(parts[1], 10) - 1));
+      const day = parseInt(parts[2], 10);
+      return `${MONTHS[monthIndex]} ${day} '${year}`;
+    }
+  }
+
   const date = parseChartDate(value);
   if (!date) return '--';
-  return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  const day = typeof date.getDate === 'function' ? date.getDate() : '';
+  const year = String(typeof date.getFullYear === 'function' ? date.getFullYear() : '').slice(-2);
+  return `${month} ${day} '${year}`;
 }
 
 function formatAxisDateLabel(value, tickMarkType) {
