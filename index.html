@@ -169,23 +169,47 @@ label {
 }
 .toggle-btn:hover { border-color: var(--border-bright); color: var(--text-primary); }
 .toggle-btn.active { background: rgba(0,212,255,0.1); color: var(--accent-hh); border-color: var(--accent-hh); }
+.toggle-btn.active[data-tone="ttf"] { background: rgba(255,140,0,0.1); color: var(--accent-ttf); border-color: var(--accent-ttf); }
+.toggle-btn.active[data-tone="spot"] { background: rgba(167,139,250,0.12); color: var(--accent-spot); border-color: var(--accent-spot); }
+
+.segment-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.segment-btn {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--text-secondary); background: transparent; border: 1px solid transparent;
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; transition: all 0.15s ease;
+}
+.segment-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+.segment-btn.active[data-tone="hh"] { color: var(--accent-hh); border-color: rgba(0,212,255,0.25); background: rgba(0,212,255,0.08); }
+.segment-btn.active[data-tone="ttf"] { color: var(--accent-ttf); border-color: rgba(255,140,0,0.25); background: rgba(255,140,0,0.08); }
+.segment-btn.active[data-tone="spot"] { color: var(--accent-spot); border-color: rgba(167,139,250,0.25); background: rgba(167,139,250,0.12); }
 
 /* ═══════════════════════════════════════════════════════════
    RANGE SLIDER
    ═══════════════════════════════════════════════════════════ */
 input[type="range"] {
   -webkit-appearance: none; appearance: none;
-  width: 100%; height: 4px; background: var(--border);
-  border-radius: 2px; outline: none;
+  width: 100%; height: 6px;
+  background: linear-gradient(90deg, rgba(0,212,255,0.18), rgba(0,212,255,0.5));
+  border-radius: 999px; outline: none;
 }
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 14px; height: 14px;
-  background: var(--accent-hh); border-radius: 50%; cursor: pointer;
-  border: 2px solid var(--bg-primary);
+  -webkit-appearance: none; width: 18px; height: 18px;
+  background: #f4fbff; border-radius: 6px; cursor: pointer;
+  border: 2px solid rgba(0,212,255,0.8);
+  box-shadow: 0 0 0 4px rgba(0,212,255,0.14), 0 0 18px rgba(0,212,255,0.35);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 14px; height: 14px; background: var(--accent-hh);
-  border-radius: 50%; cursor: pointer; border: 2px solid var(--bg-primary);
+  width: 18px; height: 18px; background: #f4fbff;
+  border-radius: 6px; cursor: pointer; border: 2px solid rgba(0,212,255,0.8);
+  box-shadow: 0 0 0 4px rgba(0,212,255,0.14), 0 0 18px rgba(0,212,255,0.35);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -247,6 +271,140 @@ tr:hover td { background: var(--bg-card-hover); }
 /* Hide TradingView branding */
 .chart-wrap a, .tv-lightweight-charts a, [class*="apply-common"] a { display: none !important; opacity: 0 !important; pointer-events: none !important; }
 .chart-wrap div[style*="position: absolute"][style*="bottom"] a { display: none !important; }
+.chart-footer {
+  margin-top: var(--gap);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px 14px;
+  background: linear-gradient(180deg, rgba(17,17,24,0.92), rgba(12,12,18,0.98));
+}
+.range-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.04);
+  overflow: hidden;
+}
+.range-window {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  min-width: 8%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(0,212,255,0.18), rgba(132,247,255,0.38));
+  box-shadow: inset 0 0 18px rgba(132,247,255,0.18), 0 0 20px rgba(0,212,255,0.22);
+}
+.range-window::before,
+.range-window::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 6px;
+  border: 2px solid rgba(198,250,255,0.9);
+  background: rgba(244,251,255,0.16);
+}
+.range-window::before { left: 4px; }
+.range-window::after { right: 4px; }
+.chart-readout {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,212,255,0.16);
+  background: rgba(0,212,255,0.05);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chart-tooltip {
+  position: absolute;
+  min-width: 170px;
+  max-width: 240px;
+  pointer-events: none;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(11,13,19,0.96);
+  box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+  backdrop-filter: blur(8px);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  z-index: 20;
+}
+.chart-tooltip.hidden { display: none; }
+.chart-tooltip-title {
+  color: var(--accent-hh);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 5px;
+  color: var(--text-secondary);
+}
+.chart-tooltip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.chart-tooltip-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.chart-tooltip-value {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.chart-tooltip-note {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.prices-control-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  align-items: flex-end;
+}
+.prices-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.instrument-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+.instrument-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.sidebar-stack {
+  width: 320px;
+  flex-shrink: 0;
+}
 
 /* ═══════════════════════════════════════════════════════════
    SCROLLBAR
@@ -311,9 +469,7 @@ tr:hover td { background: var(--bg-card-hover); }
 <!-- NAV BAR -->
 <nav id="nav">
   <div class="brand">NG PRICE HISTORY <span>v1.0</span></div>
-  <button class="tab-btn active" data-tab="hh">HH Contracts</button>
-  <button class="tab-btn" data-tab="ttf">TTF Contracts</button>
-  <button class="tab-btn" data-tab="spot">Spot</button>
+  <button class="tab-btn active" data-tab="prices">Prices</button>
   <button class="tab-btn" data-tab="spread">Spreads</button>
   <button class="tab-btn" data-tab="curve">Forward Curve</button>
   <button class="tab-btn" data-tab="expiry">Expiry Prices</button>
@@ -325,9 +481,7 @@ tr:hover td { background: var(--bg-card-hover); }
 
 <!-- MAIN CONTENT -->
 <div id="main-content">
-  <div id="tab-hh" class="tab-panel active"></div>
-  <div id="tab-ttf" class="tab-panel"></div>
-  <div id="tab-spot" class="tab-panel"></div>
+  <div id="tab-prices" class="tab-panel active"></div>
   <div id="tab-spread" class="tab-panel"></div>
   <div id="tab-curve" class="tab-panel"></div>
   <div id="tab-expiry" class="tab-panel"></div>
@@ -348,7 +502,7 @@ tr:hover td { background: var(--bg-card-hover); }
 <script>
 /* ─── Global State ─── */
 const STATE = {
-  activeTab: 'hh',
+  activeTab: 'prices',
   hh: {}, ttf: {}, spot: {}, expiry: {},
   liveData: {},
   charts: {},
@@ -356,6 +510,17 @@ const STATE = {
   contractCache: {},
   spreadCache: {},
   spotStats: { avg: 0, stddev: 0, count: 0 },
+  priceView: {
+    instrument: 'hh',
+    month: 'Jan',
+    year: null,
+    compare: false,
+    compareYear: null,
+    tradingDays: false,
+    tdayIndex: 13,
+    spotYear: null,
+    spotMonth: '',
+  },
   renderedTabs: {},
   spreadHeatmapHtml: '',
   spreadHeatmapPending: false,
@@ -405,9 +570,7 @@ function getSeriesStats(points, accessor = pt => pt.p) {
 
 function getTabRenderer(tab) {
   switch (tab) {
-    case 'hh': return typeof renderHHTab === 'function' ? renderHHTab : null;
-    case 'ttf': return typeof renderTTFTab === 'function' ? renderTTFTab : null;
-    case 'spot': return typeof renderSpotTab === 'function' ? renderSpotTab : null;
+    case 'prices': return typeof renderPricesTab === 'function' ? renderPricesTab : null;
     case 'spread': return typeof renderSpreadTab === 'function' ? renderSpreadTab : null;
     case 'curve': return typeof renderCurveTab === 'function' ? renderCurveTab : null;
     case 'expiry': return typeof renderExpiryTab === 'function' ? renderExpiryTab : null;
@@ -765,9 +928,10 @@ async function init() {
     hideLoading();
     // Fetch live data in background after UI is up
     loadLiveData().then(() => {
-      if (STATE.activeTab === 'hh' && STATE.renderedTabs.hh) {
-        populateHHYears();
-        updateHHChart();
+      if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
+        syncPriceViewState();
+        renderPricesControls();
+        updatePricesChart();
       } else if (STATE.activeTab === 'spread' && STATE.renderedTabs.spread) {
         populateSpreadYears();
         scheduleSpreadChartUpdate(true);
@@ -785,7 +949,6 @@ async function init() {
   }
 }
 
-init();
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -1094,7 +1257,21 @@ function baseChartOptions() {
     autoSize: true,
     layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
     grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: {
+        color: 'rgba(214,234,255,0.22)',
+        width: 1,
+        style: LightweightCharts.LineStyle.Dashed,
+        labelBackgroundColor: '#10131d',
+      },
+      horzLine: {
+        color: 'rgba(214,234,255,0.18)',
+        width: 1,
+        style: LightweightCharts.LineStyle.Dashed,
+        labelBackgroundColor: '#10131d',
+      },
+    },
     rightPriceScale: { borderColor: '#1e1e2e', scaleMargins: { top: 0.1, bottom: 0.1 } },
     timeScale: { borderColor: '#1e1e2e', timeVisible: false },
     handleScroll: true, handleScale: true,
@@ -1505,6 +1682,7 @@ function updateSpotChart() {
 <!-- ═══════════════════════════════════════════════════════════
      TAB 4: SPREAD ANALYSIS
      ═══════════════════════════════════════════════════════════ -->
+<script src="prices-unified.js"></script>
 <script>
 function renderSpreadTab() {
   const container = document.getElementById('tab-spread');
@@ -1644,6 +1822,8 @@ function updateSpreadChart() {
   }
 
   const tableRows = [];
+  let selectedSeries = null;
+  let selectedLookup = new Map();
 
   [...allYears].sort((a,b)=>b-a).forEach(yr => {
     const spreadResult = computeSpread(front, back, yr);
@@ -1657,6 +1837,10 @@ function updateSpreadChart() {
       crosshairMarkerVisible: isSelected,
     });
     series.setData(sp.map(pt => ({ time: dayToTime(pt.d), value: pt.value })));
+    if (isSelected) {
+      selectedSeries = series;
+      selectedLookup = new Map(sp.map(point => [timeKey(dayToTime(point.d)), point]));
+    }
 
     // Table stats
     const last = sp[sp.length - 1].value;
@@ -1685,6 +1869,28 @@ function updateSpreadChart() {
   }
 
   chart.timeScale().fitContent();
+  if (selectedSeries) {
+    attachChartTooltip({
+      chart,
+      container: chartContainer,
+      titleColor: '#9d4edd',
+      seriesConfigs: [{
+        series: selectedSeries,
+        label: `${year} ${front}/${back}`,
+        color: '#9d4edd',
+        getPoint: param => selectedLookup.get(timeKey(param.time)),
+        formatValue: value => value.toFixed(3),
+      }],
+      getTitle: param => {
+        const point = selectedLookup.get(timeKey(param.time));
+        return point ? formatDisplayDate(point.date) : `${front}/${back} spread`;
+      },
+      getNote: param => {
+        const point = selectedLookup.get(timeKey(param.time));
+        return point ? `T-Day ${point.d} • ${front}/${back} calendar spread` : '';
+      },
+    });
+  }
 
   // Table
   let html = `<div class="card-title">${front}/${back} Spread History</div>
@@ -1842,13 +2048,35 @@ function updateCurveChart() {
   const histSeries = chart.addHistogramSeries({
     priceLineVisible: false, lastValueVisible: false,
   });
-  histSeries.setData(contracts.map((c, i) => ({
+  const curveSeriesData = contracts.map((c, i) => ({
     time: dayToTime(i + 1),
     value: c.price,
     color: colors[c.season],
-  })));
+  }));
+  histSeries.setData(curveSeriesData);
+  const curveLookup = new Map(contracts.map((contract, index) => [timeKey(dayToTime(index + 1)), contract]));
 
   chart.timeScale().fitContent();
+  attachChartTooltip({
+    chart,
+    container: chartContainer,
+    titleColor: '#00d4ff',
+    seriesConfigs: [{
+      series: histSeries,
+      label: 'HH curve',
+      color: '#00d4ff',
+      getPoint: param => curveLookup.get(timeKey(param.time)),
+      formatValue: value => `$${value.toFixed(3)}`,
+    }],
+    getTitle: param => {
+      const point = curveLookup.get(timeKey(param.time));
+      return point ? `${point.label} • ${point.ticker}` : 'Forward curve';
+    },
+    getNote: param => {
+      const point = curveLookup.get(timeKey(param.time));
+      return point ? `${point.season} contract • ${point.month} ${point.year}` : '';
+    },
+  });
 
   // Table
   let tableHtml = '<div class="card-title">Contract Prices</div><table><thead><tr><th style="text-align:left;">Contract</th><th>Price</th><th>Season</th></tr></thead><tbody>';
@@ -2097,6 +2325,10 @@ function updateDailyTracker() {
   }
   document.getElementById('daily-calendar').innerHTML = calHtml;
 }
+</script>
+
+<script>
+init();
 </script>
 
 </body>
