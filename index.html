@@ -6,7 +6,7 @@
 <title>NG Price History</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════════════
    DESIGN SYSTEM
@@ -244,9 +244,9 @@ tr:hover td { background: var(--bg-card-hover); }
 
 /* Chart container */
 .chart-wrap { width: 100%; min-height: 400px; height: 60vh; border-radius: 6px; overflow: hidden; position: relative; }
-/* Hide TradingView attribution logo */
-.chart-wrap a[href*="tradingview"], .chart-wrap div[data-lw-attribution] { display: none !important; }
-.tv-lightweight-charts a { display: none !important; }
+/* Hide TradingView branding */
+.chart-wrap a, .tv-lightweight-charts a, [class*="apply-common"] a { display: none !important; opacity: 0 !important; pointer-events: none !important; }
+.chart-wrap div[style*="position: absolute"][style*="bottom"] a { display: none !important; }
 
 /* ═══════════════════════════════════════════════════════════
    SCROLLBAR
@@ -780,7 +780,7 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
   }
   if (!STATE.charts.hh) STATE.charts.hh = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(0,212,255,'));
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
   STATE.charts.hh.main = chart;
 
   // Time mapping: default=calendar dates, toggle active=trading day numbers
@@ -908,14 +908,14 @@ function findDateForDay(filtered, d) {
   return pt ? pt.date : null;
 }
 
-/* Chart options helper — removes watermark, consistent styling */
-function baseChartOptions(container, accentColor) {
+/* Chart options helper — consistent styling */
+function baseChartOptions(container) {
   return {
     width: container.clientWidth,
     height: container.clientHeight,
-    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, attributionLogo: false },
+    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
     grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: (accentColor || 'rgba(0,212,255,') + '0.3)', labelBackgroundColor: '#1e1e2e' }, horzLine: { color: (accentColor || 'rgba(0,212,255,') + '0.3)', labelBackgroundColor: '#1e1e2e' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#1e1e2e', scaleMargins: { top: 0.1, bottom: 0.1 } },
     timeScale: { borderColor: '#1e1e2e', timeVisible: false },
     handleScroll: true, handleScale: true,
@@ -1156,7 +1156,7 @@ function updateTTFChart() {
   if (STATE.charts.ttf && STATE.charts.ttf.main) STATE.charts.ttf.main.remove();
   if (!STATE.charts.ttf) STATE.charts.ttf = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(255,140,0,'));
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
   STATE.charts.ttf.main = chart;
 
   const series = chart.addLineSeries({ color: '#ff8c00', lineWidth: 2, priceLineVisible: true, lastValueVisible: true });
@@ -1277,7 +1277,7 @@ function updateSpotChart() {
   if (STATE.charts.spot && STATE.charts.spot.main) STATE.charts.spot.main.remove();
   if (!STATE.charts.spot) STATE.charts.spot = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(167,139,250,'));
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
   STATE.charts.spot.main = chart;
 
   // Main line
@@ -1431,7 +1431,7 @@ function updateSpreadChart() {
   if (STATE.charts.spread && STATE.charts.spread.main) STATE.charts.spread.main.remove();
   if (!STATE.charts.spread) STATE.charts.spread = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(157,78,221,'));
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
   STATE.charts.spread.main = chart;
 
   // Plot historical years as thin gray lines
@@ -1598,7 +1598,7 @@ function updateCurveChart() {
   if (STATE.charts.curve && STATE.charts.curve.main) STATE.charts.curve.main.remove();
   if (!STATE.charts.curve) STATE.charts.curve = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(0,212,255,'));
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
   STATE.charts.curve.main = chart;
 
   // Use histogram series for bar chart effect
