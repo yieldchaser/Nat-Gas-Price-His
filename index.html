@@ -353,6 +353,12 @@ const STATE = {
   liveData: {},
   charts: {},
   seasonalCache: {},
+  contractCache: {},
+  spreadCache: {},
+  spotStats: { avg: 0, stddev: 0, count: 0 },
+  renderedTabs: {},
+  spreadHeatmapHtml: '',
+  spreadHeatmapPending: false,
   loaded: false,
 };
 
@@ -360,23 +366,146 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const MONTH_CODES = {Jan:'F',Feb:'G',Mar:'H',Apr:'J',May:'K',Jun:'M',Jul:'N',Aug:'Q',Sep:'U',Oct:'V',Nov:'X',Dec:'Z'};
 const CODE_TO_MONTH = Object.fromEntries(Object.entries(MONTH_CODES).map(([m,c])=>[c,m]));
 
+function nextFrame() {
+  return new Promise(resolve => requestAnimationFrame(resolve));
+}
+
+function yieldToBrowser() {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+function invalidateDerivedCaches() {
+  STATE.contractCache = {};
+  STATE.spreadCache = {};
+  STATE.spreadHeatmapHtml = '';
+}
+
+function getSeriesStats(points, accessor = pt => pt.p) {
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  let count = 0;
+
+  points.forEach(point => {
+    const value = accessor(point);
+    if (!Number.isFinite(value)) return;
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    sum += value;
+    count++;
+  });
+
+  return {
+    min: count ? min : 0,
+    max: count ? max : 0,
+    avg: count ? sum / count : 0,
+    count,
+  };
+}
+
+function getTabRenderer(tab) {
+  switch (tab) {
+    case 'hh': return typeof renderHHTab === 'function' ? renderHHTab : null;
+    case 'ttf': return typeof renderTTFTab === 'function' ? renderTTFTab : null;
+    case 'spot': return typeof renderSpotTab === 'function' ? renderSpotTab : null;
+    case 'spread': return typeof renderSpreadTab === 'function' ? renderSpreadTab : null;
+    case 'curve': return typeof renderCurveTab === 'function' ? renderCurveTab : null;
+    case 'expiry': return typeof renderExpiryTab === 'function' ? renderExpiryTab : null;
+    case 'daily': return typeof renderDailyTab === 'function' ? renderDailyTab : null;
+    default: return null;
+  }
+}
+
+function setActiveTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `tab-${tab}`);
+  });
+  STATE.activeTab = tab;
+}
+
+async function renderTab(tab, { force = false } = {}) {
+  const renderer = getTabRenderer(tab);
+  if (!renderer) return;
+  if (!force && STATE.renderedTabs[tab]) {
+    resizeTabCharts(tab);
+    return;
+  }
+
+  await nextFrame();
+  renderer();
+  STATE.renderedTabs[tab] = true;
+  resizeTabCharts(tab);
+}
+
+function getChartDimensions(container) {
+  const rect = container.getBoundingClientRect();
+  return {
+    width: Math.max(320, Math.round(rect.width || container.clientWidth || container.offsetWidth || 0)),
+    height: Math.max(320, Math.round(rect.height || container.clientHeight || container.offsetHeight || 0)),
+  };
+}
+
+function resizeChartToContainer(chart, container) {
+  if (!chart || !container || typeof chart.resize !== 'function') return;
+  const { width, height } = getChartDimensions(container);
+  if (width > 0 && height > 0) {
+    chart.resize(width, height);
+  }
+}
+
+function registerChart(tab, key, chart, container) {
+  if (!STATE.charts[tab]) STATE.charts[tab] = {};
+  STATE.charts[tab][key] = { chart, container };
+  return chart;
+}
+
+function removeChart(tab, key = 'main') {
+  const entry = STATE.charts[tab] && STATE.charts[tab][key];
+  const chart = entry && (entry.chart || entry);
+  if (chart && typeof chart.remove === 'function') {
+    chart.remove();
+  }
+  if (STATE.charts[tab]) {
+    delete STATE.charts[tab][key];
+  }
+}
+
+function createManagedChart(tab, key, container) {
+  removeChart(tab, key);
+  const chart = LightweightCharts.createChart(container, baseChartOptions());
+  registerChart(tab, key, chart, container);
+  resizeTabCharts(tab);
+  return chart;
+}
+
+function resizeTabCharts(tab) {
+  const bucket = STATE.charts[tab];
+  if (!bucket) return;
+  requestAnimationFrame(() => {
+    Object.values(bucket).forEach(entry => {
+      if (!entry) return;
+      resizeChartToContainer(entry.chart || entry, entry.container);
+    });
+  });
+}
+
 /* ─── Tab Switching ─── */
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.addEventListener('click', async () => {
     const tab = btn.dataset.tab;
-    document.getElementById('tab-' + tab).classList.add('active');
-    STATE.activeTab = tab;
-    // Resize charts on tab switch
-    if (STATE.charts[tab]) {
-      requestAnimationFrame(() => {
-        Object.values(STATE.charts[tab]).forEach(c => { if (c.resize) c.resize(); });
-      });
+    if (STATE.activeTab === tab && STATE.renderedTabs[tab]) {
+      resizeTabCharts(tab);
+      return;
     }
+    setActiveTab(tab);
+    await renderTab(tab);
   });
 });
+
+window.addEventListener('resize', () => resizeTabCharts(STATE.activeTab));
 
 /* ─── Command Palette ─── */
 const cmdPalette = document.getElementById('cmd-palette');
@@ -410,10 +539,11 @@ async function fetchJSON(url) {
 }
 
 async function fetchYahoo(ticker) {
-  const url = `${YAHOO_BASE}${encodeURIComponent(ticker)}?interval=1d&range=max`;
+  const directUrl = `${YAHOO_BASE}${encodeURIComponent(ticker)}?interval=1d&range=max`;
+  const proxyUrl = CORS_PROXY + encodeURIComponent(directUrl);
   try {
-    let data = await fetchJSON(url);
-    if (!data) data = await fetchJSON(CORS_PROXY + encodeURIComponent(url));
+    let data = await fetchJSON(proxyUrl);
+    if (!data) data = await fetchJSON(directUrl);
     if (!data || !data.chart || !data.chart.result) return null;
     const r = data.chart.result[0];
     const ts = r.timestamp || [];
@@ -459,6 +589,33 @@ async function loadHistoricalData() {
     if (spotResults[i]) STATE.spot[m] = spotResults[i];
   });
   if (expiryData) STATE.expiry = expiryData;
+  invalidateDerivedCaches();
+}
+
+function buildSpotStatsCache() {
+  const allPrices = [];
+  MONTHS.forEach(month => {
+    const years = STATE.spot[month] && STATE.spot[month].years;
+    if (!years) return;
+    Object.values(years).forEach(series => {
+      series.forEach(point => {
+        if (Number.isFinite(point.p)) allPrices.push(point.p);
+      });
+    });
+  });
+
+  if (!allPrices.length) {
+    STATE.spotStats = { avg: 0, stddev: 0, count: 0 };
+    return;
+  }
+
+  const avg = allPrices.reduce((sum, value) => sum + value, 0) / allPrices.length;
+  const variance = allPrices.reduce((sum, value) => sum + (value - avg) ** 2, 0) / allPrices.length;
+  STATE.spotStats = {
+    avg,
+    stddev: Math.sqrt(variance),
+    count: allPrices.length,
+  };
 }
 
 function getActiveHHTickers() {
@@ -505,14 +662,16 @@ async function loadLiveData() {
   }
   // Update freshness
   document.getElementById('freshness-time').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  invalidateDerivedCaches();
 }
 
-function buildSeasonalCache() {
+async function buildSeasonalCache() {
   // Pre-compute 5Y seasonal avg/min/max for each month
   setLoadProgress(92, 'COMPUTING SEASONALS...');
   const currentYear = new Date().getFullYear();
-  MONTHS.forEach(month => {
-    if (!STATE.hh[month]) return;
+  for (let index = 0; index < MONTHS.length; index++) {
+    const month = MONTHS[index];
+    if (!STATE.hh[month]) continue;
     const contracts = STATE.hh[month].contracts;
     const cache = {}; // tradingDay -> {sum, count, min, max, values}
     // Use last 5 completed years
@@ -538,11 +697,14 @@ function buildSeasonalCache() {
       if (c.max === -Infinity) c.max = 0;
     });
     STATE.seasonalCache[month] = cache;
-  });
+    setLoadProgress(92 + Math.round(((index + 1) / MONTHS.length) * 3), `COMPUTING SEASONALS... ${month.toUpperCase()}`);
+    await yieldToBrowser();
+  }
 }
 
 /* ─── Helper: get contract data (merged historical + live) ─── */
 function getContractData(ticker) {
+  if (STATE.contractCache[ticker]) return STATE.contractCache[ticker];
   // Try historical first
   const code = ticker.charAt(2);
   const month = CODE_TO_MONTH[code];
@@ -559,19 +721,26 @@ function getContractData(ticker) {
   if (live && live.length > 0) {
     if (hist.length === 0) {
       // Only live data — add trading day numbers
-      return live.map((pt, i) => ({ d: i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
+      const liveOnly = live.map((pt, i) => ({ d: i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
+      STATE.contractCache[ticker] = liveOnly;
+      return liveOnly;
     }
     // Merge: use historical, then append live data after last historical date
-    const lastHistDate = hist[hist.length - 1].date;
-    const newLive = live.filter(pt => pt.date > lastHistDate);
-    const lastD = hist[hist.length - 1].d;
-    const merged = [...hist];
+    const lastHistPoint = hist[hist.length - 1];
+    const lastHistDate = lastHistPoint && lastHistPoint.date;
+    const newLive = lastHistDate
+      ? live.filter(pt => pt.date > lastHistDate)
+      : live.slice(hist.length);
+    const lastD = lastHistPoint && lastHistPoint.d ? lastHistPoint.d : hist.length;
+    const merged = hist.slice();
     newLive.forEach((pt, i) => {
       merged.push({ d: lastD + i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l });
     });
+    STATE.contractCache[ticker] = merged;
     return merged;
   }
 
+  STATE.contractCache[ticker] = hist;
   return hist;
 }
 
@@ -587,23 +756,27 @@ function getTTFContractData(ticker) {
 async function init() {
   try {
     await loadHistoricalData();
-    buildSeasonalCache();
+    buildSpotStatsCache();
+    await buildSeasonalCache();
     setLoadProgress(95, 'BUILDING INTERFACE...');
-    // Build tab UIs (each tab's render function will be added incrementally)
-    if (typeof renderHHTab === 'function') renderHHTab();
-    if (typeof renderTTFTab === 'function') renderTTFTab();
-    if (typeof renderSpotTab === 'function') renderSpotTab();
-    if (typeof renderSpreadTab === 'function') renderSpreadTab();
-    if (typeof renderCurveTab === 'function') renderCurveTab();
-    if (typeof renderExpiryTab === 'function') renderExpiryTab();
-    if (typeof renderDailyTab === 'function') renderDailyTab();
+    await renderTab(STATE.activeTab);
     setLoadProgress(100, 'READY');
     STATE.loaded = true;
     hideLoading();
     // Fetch live data in background after UI is up
     loadLiveData().then(() => {
-      // Re-render active tab with live data
-      if (typeof renderHHTab === 'function' && STATE.activeTab === 'hh') renderHHTab();
+      if (STATE.activeTab === 'hh' && STATE.renderedTabs.hh) {
+        populateHHYears();
+        updateHHChart();
+      } else if (STATE.activeTab === 'spread' && STATE.renderedTabs.spread) {
+        populateSpreadYears();
+        scheduleSpreadChartUpdate(true);
+        scheduleSpreadHeatmap(true);
+      } else if (STATE.activeTab === 'curve' && STATE.renderedTabs.curve) {
+        updateCurveChart();
+      } else if (STATE.activeTab === 'daily' && STATE.renderedTabs.daily) {
+        updateDailyTracker();
+      }
     });
   } catch (e) {
     console.error('Init failed:', e);
@@ -667,7 +840,10 @@ function renderHHTab() {
       </div>
     `;
     // Wire up events
-    document.getElementById('hh-month').addEventListener('change', updateHHChart);
+    document.getElementById('hh-month').addEventListener('change', () => {
+      populateHHYears();
+      updateHHChart();
+    });
     document.getElementById('hh-year').addEventListener('change', updateHHChart);
     document.getElementById('hh-tday').addEventListener('input', updateHHChart);
     document.getElementById('hh-mode-toggle').addEventListener('click', function() {
@@ -711,16 +887,23 @@ function populateHHYears() {
   });
   years.sort((a, b) => b - a);
 
-  const currentVal = yearSel.value;
+  const currentVal = yearSel.value ? parseInt(yearSel.value, 10) : null;
+  const currentCompareVal = compYearSel.value ? parseInt(compYearSel.value, 10) : null;
   yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
   compYearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
 
-  // Default to most recent year
-  if (currentVal && years.includes(parseInt(currentVal))) {
-    yearSel.value = currentVal;
+  if (!years.length) {
+    return;
   }
-  // Set compare year to prior year
-  if (years.length > 1) compYearSel.value = years[1];
+
+  const selectedYear = currentVal && years.includes(currentVal) ? currentVal : years[0];
+  yearSel.value = String(selectedYear);
+
+  const compareFallback = years.find(y => y !== selectedYear) || selectedYear;
+  const selectedCompareYear = currentCompareVal && years.includes(currentCompareVal) && currentCompareVal !== selectedYear
+    ? currentCompareVal
+    : compareFallback;
+  compYearSel.value = String(selectedCompareYear);
 }
 
 const TDAY_STEPS = [0, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 450, 500, 519];
@@ -741,10 +924,14 @@ function updateHHChart() {
   // Get data
   const data = getContractData(ticker);
   if (data.length === 0) {
+    removeChart('hh');
     document.getElementById('hh-ticker').textContent = ticker;
     document.getElementById('hh-desc').textContent = `${month} ${year}`;
     document.getElementById('hh-price').textContent = 'No data';
     document.getElementById('hh-change').textContent = '';
+    document.getElementById('hh-stats').innerHTML = '';
+    document.getElementById('hh-history-table').innerHTML = '';
+    document.getElementById('hh-seasonal-bar').textContent = '';
     return;
   }
 
@@ -774,14 +961,8 @@ function updateHHChart() {
 
 function renderHHChartWidget(filtered, fullData, month, year, calendarMode, compareOn) {
   const chartContainer = document.getElementById('hh-chart-container');
-  // Destroy previous chart
-  if (STATE.charts.hh && STATE.charts.hh.main) {
-    STATE.charts.hh.main.remove();
-  }
-  if (!STATE.charts.hh) STATE.charts.hh = {};
-
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
-  STATE.charts.hh.main = chart;
+  const chart = createManagedChart('hh', 'main', chartContainer);
+  const filteredByDay = new Map(filtered.map(point => [point.d, point]));
 
   // Time mapping: default=calendar dates, toggle active=trading day numbers
   function getTime(pt) {
@@ -799,8 +980,7 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
     for (let d = minD; d <= maxD; d++) {
       const s = seasonal[d];
       if (!s) continue;
-      // Find matching point in filtered for its date
-      const matchPt = filtered.find(p => p.d === d);
+      const matchPt = filteredByDay.get(d);
       if (!matchPt) continue;
       const timeVal = getTime(matchPt);
       bandData.push({ time: timeVal, low: s.min, high: s.max });
@@ -909,10 +1089,9 @@ function findDateForDay(filtered, d) {
 }
 
 /* Chart options helper — consistent styling */
-function baseChartOptions(container) {
+function baseChartOptions() {
   return {
-    width: container.clientWidth,
-    height: container.clientHeight,
+    autoSize: true,
     layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
     grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
@@ -926,9 +1105,7 @@ function renderHHStats(data, month, year) {
   const statsEl = document.getElementById('hh-stats');
   const last = data[data.length - 1];
   const first = data[0];
-  const high = Math.max(...data.map(d => d.p));
-  const low = Math.min(...data.map(d => d.p));
-  const avg = data.reduce((s, d) => s + d.p, 0) / data.length;
+  const { max: high, min: low, avg } = getSeriesStats(data);
   const seasonal = STATE.seasonalCache[month];
   const currentDay = last.d;
 
@@ -1090,7 +1267,10 @@ function renderTTFTab() {
         </div>
       </div>
     `;
-    document.getElementById('ttf-month').addEventListener('change', updateTTFChart);
+    document.getElementById('ttf-month').addEventListener('change', () => {
+      populateTTFYears();
+      updateTTFChart();
+    });
     document.getElementById('ttf-year').addEventListener('change', updateTTFChart);
     document.getElementById('ttf-tday').addEventListener('input', updateTTFChart);
     document.getElementById('ttf-mode-toggle').addEventListener('click', function() {
@@ -1114,7 +1294,11 @@ function populateTTFYears() {
     });
   }
   years.sort((a, b) => b - a);
+  const currentVal = yearSel.value ? parseInt(yearSel.value, 10) : null;
   yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  if (years.length) {
+    yearSel.value = String(currentVal && years.includes(currentVal) ? currentVal : years[0]);
+  }
 }
 
 function updateTTFChart() {
@@ -1132,9 +1316,12 @@ function updateTTFChart() {
 
   const data = getTTFContractData(ticker);
   if (data.length === 0) {
+    removeChart('ttf');
     document.getElementById('ttf-ticker').textContent = ticker;
     document.getElementById('ttf-desc').textContent = `${month} ${year}`;
     document.getElementById('ttf-price').textContent = 'No data';
+    document.getElementById('ttf-change').textContent = '';
+    document.getElementById('ttf-stats').innerHTML = '';
     return;
   }
 
@@ -1153,20 +1340,14 @@ function updateTTFChart() {
 
   // Chart
   const chartContainer = document.getElementById('ttf-chart-container');
-  if (STATE.charts.ttf && STATE.charts.ttf.main) STATE.charts.ttf.main.remove();
-  if (!STATE.charts.ttf) STATE.charts.ttf = {};
-
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
-  STATE.charts.ttf.main = chart;
+  const chart = createManagedChart('ttf', 'main', chartContainer);
 
   const series = chart.addLineSeries({ color: '#ff8c00', lineWidth: 2, priceLineVisible: true, lastValueVisible: true });
   series.setData(filtered.map(pt => ({ time: calendarMode ? dayToTime(pt.d) : pt.date, value: pt.p })));
   chart.timeScale().fitContent();
 
   // Stats
-  const high = Math.max(...data.map(d => d.p));
-  const low = Math.min(...data.map(d => d.p));
-  const avg = data.reduce((s, d) => s + d.p, 0) / data.length;
+  const { max: high, min: low, avg } = getSeriesStats(data);
   document.getElementById('ttf-stats').innerHTML = `
     <div class="card-title">Contract Statistics</div>
     <div class="stat"><div class="stat-label">Trading Days</div><div class="stat-value">${data.length}</div></div>
@@ -1251,7 +1432,9 @@ function updateSpotChart() {
   });
 
   if (unique.length === 0) {
+    removeChart('spot');
     document.getElementById('spot-price').textContent = 'No data';
+    document.getElementById('spot-stats').innerHTML = '';
     return;
   }
 
@@ -1259,26 +1442,13 @@ function updateSpotChart() {
   document.getElementById('spot-price').textContent = `$${last.p.toFixed(3)}`;
 
   // Compute stats
-  const high = Math.max(...unique.map(d => d.p));
-  const low = Math.min(...unique.map(d => d.p));
-  const avg = unique.reduce((s, d) => s + d.p, 0) / unique.length;
-
-  // Compute 5Y avg for spike detection
-  const allPrices = [];
-  MONTHS.forEach(m => {
-    if (!STATE.spot[m] || !STATE.spot[m].years) return;
-    Object.values(STATE.spot[m].years).forEach(arr => arr.forEach(pt => allPrices.push(pt.p)));
-  });
-  const globalAvg = allPrices.reduce((s, p) => s + p, 0) / allPrices.length;
-  const globalStd = Math.sqrt(allPrices.reduce((s, p) => s + (p - globalAvg) ** 2, 0) / allPrices.length);
+  const { max: high, min: low, avg } = getSeriesStats(unique);
+  const globalAvg = STATE.spotStats.avg;
+  const globalStd = STATE.spotStats.stddev;
 
   // Chart
   const chartContainer = document.getElementById('spot-chart-container');
-  if (STATE.charts.spot && STATE.charts.spot.main) STATE.charts.spot.main.remove();
-  if (!STATE.charts.spot) STATE.charts.spot = {};
-
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
-  STATE.charts.spot.main = chart;
+  const chart = createManagedChart('spot', 'main', chartContainer);
 
   // Main line
   const mainSeries = chart.addLineSeries({ color: '#a78bfa', lineWidth: 2, priceLineVisible: true, lastValueVisible: true });
@@ -1374,17 +1544,18 @@ function renderSpreadTab() {
         </div>
       </div>
     `;
-    document.getElementById('spread-front').addEventListener('change', updateSpreadChart);
-    document.getElementById('spread-back').addEventListener('change', updateSpreadChart);
-    document.getElementById('spread-year').addEventListener('change', updateSpreadChart);
+    document.getElementById('spread-front').addEventListener('change', scheduleSpreadChartUpdate);
+    document.getElementById('spread-back').addEventListener('change', scheduleSpreadChartUpdate);
+    document.getElementById('spread-year').addEventListener('change', scheduleSpreadChartUpdate);
   }
   populateSpreadYears();
-  updateSpreadChart();
-  buildSpreadHeatmap();
+  scheduleSpreadChartUpdate(true);
+  scheduleSpreadHeatmap();
 }
 
 function populateSpreadYears() {
   const sel = document.getElementById('spread-year');
+  const currentVal = sel.value ? parseInt(sel.value, 10) : null;
   const years = [];
   if (STATE.hh['Jan']) {
     Object.keys(STATE.hh['Jan'].contracts).forEach(t => {
@@ -1395,9 +1566,33 @@ function populateSpreadYears() {
   }
   years.sort((a, b) => b - a);
   sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  if (years.length) {
+    sel.value = String(currentVal && years.includes(currentVal) ? currentVal : years[0]);
+  }
+}
+
+function scheduleSpreadChartUpdate(immediate = false) {
+  immediate = immediate === true;
+  if (STATE._spreadUpdateTimer) {
+    clearTimeout(STATE._spreadUpdateTimer);
+    STATE._spreadUpdateTimer = null;
+  }
+
+  if (immediate) {
+    updateSpreadChart();
+    return;
+  }
+
+  STATE._spreadUpdateTimer = setTimeout(() => {
+    STATE._spreadUpdateTimer = null;
+    updateSpreadChart();
+  }, 60);
 }
 
 function computeSpread(frontMonth, backMonth, year) {
+  const cacheKey = `${frontMonth}|${backMonth}|${year}`;
+  if (STATE.spreadCache[cacheKey]) return STATE.spreadCache[cacheKey];
+
   const code1 = MONTH_CODES[frontMonth];
   const code2 = MONTH_CODES[backMonth];
   const yy = year % 100;
@@ -1406,7 +1601,11 @@ function computeSpread(frontMonth, backMonth, year) {
   const t2 = `NG${code2}${pad}`;
   const d1 = getContractData(t1);
   const d2 = getContractData(t2);
-  if (d1.length === 0 || d2.length === 0) return [];
+  if (d1.length === 0 || d2.length === 0) {
+    const empty = { points: [], stats: { min: 0, max: 0, avg: 0, count: 0 } };
+    STATE.spreadCache[cacheKey] = empty;
+    return empty;
+  }
   // Build map for d2
   const d2map = {};
   d2.forEach(pt => { d2map[pt.d] = pt.p; });
@@ -1416,7 +1615,12 @@ function computeSpread(frontMonth, backMonth, year) {
       spread.push({ d: pt.d, date: pt.date, value: pt.p - d2map[pt.d] });
     }
   });
-  return spread;
+  const result = {
+    points: spread,
+    stats: getSeriesStats(spread, point => point.value),
+  };
+  STATE.spreadCache[cacheKey] = result;
+  return result;
 }
 
 function updateSpreadChart() {
@@ -1428,11 +1632,7 @@ function updateSpreadChart() {
   document.getElementById('spread-desc').textContent = `${front} / ${back} Calendar Spread`;
 
   const chartContainer = document.getElementById('spread-chart-container');
-  if (STATE.charts.spread && STATE.charts.spread.main) STATE.charts.spread.main.remove();
-  if (!STATE.charts.spread) STATE.charts.spread = {};
-
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
-  STATE.charts.spread.main = chart;
+  const chart = createManagedChart('spread', 'main', chartContainer);
 
   // Plot historical years as thin gray lines
   const allYears = new Set();
@@ -1446,7 +1646,8 @@ function updateSpreadChart() {
   const tableRows = [];
 
   [...allYears].sort((a,b)=>b-a).forEach(yr => {
-    const sp = computeSpread(front, back, yr);
+    const spreadResult = computeSpread(front, back, yr);
+    const sp = spreadResult.points;
     if (sp.length === 0) return;
     const isSelected = yr === year;
     const color = isSelected ? '#9d4edd' : 'rgba(136,136,170,0.2)';
@@ -1459,10 +1660,14 @@ function updateSpreadChart() {
 
     // Table stats
     const last = sp[sp.length - 1].value;
-    const maxVal = Math.max(...sp.map(s=>s.value));
-    const minVal = Math.min(...sp.map(s=>s.value));
-    const avgVal = sp.reduce((s,d)=>s+d.value,0)/sp.length;
-    tableRows.push({ yr, last, max: maxVal, min: minVal, avg: avgVal, days: sp.length });
+    tableRows.push({
+      yr,
+      last,
+      max: spreadResult.stats.max,
+      min: spreadResult.stats.min,
+      avg: spreadResult.stats.avg,
+      days: sp.length,
+    });
   });
 
   // Zero line
@@ -1471,7 +1676,7 @@ function updateSpreadChart() {
     lineStyle: LightweightCharts.LineStyle.Dashed,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
-  const allSpreads = computeSpread(front, back, year);
+  const allSpreads = computeSpread(front, back, year).points;
   if (allSpreads.length > 0) {
     zeroLine.setData([
       { time: dayToTime(1), value: 0 },
@@ -1492,36 +1697,71 @@ function updateSpreadChart() {
   document.getElementById('spread-table').innerHTML = html;
 }
 
-function buildSpreadHeatmap() {
+async function buildSpreadHeatmap(force = false) {
+  const heatmapEl = document.getElementById('spread-heatmap');
+  if (!heatmapEl) return;
+  if (force) STATE.spreadHeatmapHtml = '';
+  if (STATE.spreadHeatmapHtml) {
+    heatmapEl.innerHTML = STATE.spreadHeatmapHtml;
+    return;
+  }
+
   // 12x12 grid: front(row) x back(col)
   const currentYear = new Date().getFullYear();
   let html = '<table style="font-size:11px;"><thead><tr><th></th>';
-  MONTHS.forEach(m => { html += `<th style="text-align:center;padding:4px 6px;">${m.slice(0,3)}</th>`; });
+  for (const month of MONTHS) {
+    html += `<th style="text-align:center;padding:4px 6px;">${month.slice(0,3)}</th>`;
+  }
   html += '</tr></thead><tbody>';
 
-  MONTHS.forEach((front, fi) => {
+  for (let fi = 0; fi < MONTHS.length; fi++) {
+    const front = MONTHS[fi];
     html += `<tr><td style="text-align:left;font-weight:600;padding:4px 6px;">${front.slice(0,3)}</td>`;
-    MONTHS.forEach((back, bi) => {
-      if (fi === bi) { html += '<td style="background:var(--bg-primary);"></td>'; return; }
+    for (let bi = 0; bi < MONTHS.length; bi++) {
+      const back = MONTHS[bi];
+      if (fi === bi) { html += '<td style="background:var(--bg-primary);"></td>'; continue; }
       // Compute avg spread across last 5 years
       let sum = 0, count = 0;
       for (let yr = currentYear - 5; yr < currentYear; yr++) {
-        const sp = computeSpread(front, back, yr);
-        if (sp.length > 0) {
-          const avg = sp.reduce((s,d)=>s+d.value,0)/sp.length;
-          sum += avg; count++;
+        const spreadResult = computeSpread(front, back, yr);
+        if (spreadResult.points.length > 0) {
+          sum += spreadResult.stats.avg;
+          count++;
         }
       }
       const avg = count > 0 ? sum / count : 0;
       const intensity = Math.min(Math.abs(avg) / 2, 1);
       const color = avg > 0 ? `rgba(0,255,136,${intensity * 0.4})` : `rgba(255,68,85,${intensity * 0.4})`;
       html += `<td style="text-align:center;padding:4px 6px;background:${color};cursor:pointer;font-family:var(--font-mono);font-size:11px;"
-        onclick="document.getElementById('spread-front').value='${front}';document.getElementById('spread-back').value='${back}';updateSpreadChart();">${avg.toFixed(2)}</td>`;
-    });
+        onclick="document.getElementById('spread-front').value='${front}';document.getElementById('spread-back').value='${back}';scheduleSpreadChartUpdate(true);">${avg.toFixed(2)}</td>`;
+    }
     html += '</tr>';
-  });
+    await yieldToBrowser();
+  }
   html += '</tbody></table>';
-  document.getElementById('spread-heatmap').innerHTML = html;
+  STATE.spreadHeatmapHtml = html;
+  heatmapEl.innerHTML = html;
+}
+
+function scheduleSpreadHeatmap(force = false) {
+  const heatmapEl = document.getElementById('spread-heatmap');
+  if (!heatmapEl) return;
+  if (STATE.spreadHeatmapHtml && !force) {
+    heatmapEl.innerHTML = STATE.spreadHeatmapHtml;
+    return;
+  }
+  if (STATE.spreadHeatmapPending && !force) return;
+
+  STATE.spreadHeatmapPending = true;
+  heatmapEl.innerHTML = '<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);padding:8px 0;">COMPUTING HEATMAP...</div>';
+
+  setTimeout(async () => {
+    try {
+      await buildSpreadHeatmap(force);
+    } finally {
+      STATE.spreadHeatmapPending = false;
+    }
+  }, 0);
 }
 </script>
 
@@ -1595,11 +1835,7 @@ function updateCurveChart() {
 
   // Chart
   const chartContainer = document.getElementById('curve-chart-container');
-  if (STATE.charts.curve && STATE.charts.curve.main) STATE.charts.curve.main.remove();
-  if (!STATE.charts.curve) STATE.charts.curve = {};
-
-  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer));
-  STATE.charts.curve.main = chart;
+  const chart = createManagedChart('curve', 'main', chartContainer);
 
   // Use histogram series for bar chart effect
   const colors = { winter: '#4488ff', summer: '#ff8c00', shoulder: '#666688' };
