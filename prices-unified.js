@@ -16,6 +16,16 @@ function timeKey(time) {
   return typeof time === 'string' ? time : JSON.stringify(time);
 }
 
+function timeToStamp(time) {
+  if (!time) return 0;
+  if (typeof time === 'string') return new Date(time).getTime();
+  if (typeof time === 'number') return time;
+  if (typeof time === 'object' && Number.isFinite(time.year)) {
+    return Date.UTC(time.year, (time.month || 1) - 1, time.day || 1);
+  }
+  return 0;
+}
+
 function buildTimeLookup(points, timeResolver = point => point.date) {
   const lookup = new Map();
   points.forEach(point => lookup.set(timeKey(timeResolver(point)), point));
@@ -78,15 +88,78 @@ function getSpotSeries(year) {
   return deduped;
 }
 
+function getWindowOptions(length) {
+  if (!Number.isFinite(length) || length <= 0) return [0];
+  const options = TDAY_STEPS.filter(step => step > 0 && step < length);
+  options.push(length);
+  return options;
+}
+
+function getRangeIndex(length, tdayIndex) {
+  const options = getWindowOptions(length);
+  return clamp(tdayIndex || 0, 0, options.length - 1);
+}
+
 function getRangeLimit(length, tdayIndex) {
-  const idx = clamp(tdayIndex || 0, 0, TDAY_STEPS.length - 1);
-  const step = TDAY_STEPS[idx] || 0;
-  return step > 0 ? Math.min(step, length) : 0;
+  if (!length) return 0;
+  const options = getWindowOptions(length);
+  return options[getRangeIndex(length, tdayIndex)];
 }
 
 function getRangeLabel(length, limit) {
   if (!length) return 'No data';
-  return !limit || limit >= length ? 'Full history' : `${limit} days`;
+  return limit >= length ? 'Full span' : `${limit} days`;
+}
+
+function getRangeEdgeLabels(length) {
+  const options = getWindowOptions(length);
+  const minLabel = options.length > 1 ? `${options[0]}D` : 'Current span';
+  return { minLabel, maxLabel: 'Full span' };
+}
+
+function enforceVisibleRange(chart, firstTime, lastTime) {
+  if (!chart || !firstTime || !lastTime) return;
+  const timeScale = chart.timeScale();
+  let adjusting = false;
+
+  const clampVisibleRange = range => {
+    if (!range) return;
+    const minStamp = timeToStamp(firstTime);
+    const maxStamp = timeToStamp(lastTime);
+    const fromStamp = timeToStamp(range.from);
+    const toStamp = timeToStamp(range.to);
+    let nextFrom = range.from;
+    let nextTo = range.to;
+    let changed = false;
+
+    if (fromStamp < minStamp) {
+      nextFrom = firstTime;
+      changed = true;
+    }
+    if (toStamp > maxStamp) {
+      nextTo = lastTime;
+      changed = true;
+    }
+
+    if (changed) {
+      adjusting = true;
+      timeScale.setVisibleRange({ from: nextFrom, to: nextTo });
+      adjusting = false;
+    }
+  };
+
+  timeScale.applyOptions({
+    rightOffset: 0,
+    fixLeftEdge: true,
+    fixRightEdge: true,
+    lockVisibleTimeRangeOnResize: true,
+    shiftVisibleRangeOnNewBar: false,
+  });
+  timeScale.setVisibleRange({ from: firstTime, to: lastTime });
+  timeScale.subscribeVisibleTimeRangeChange(range => {
+    if (adjusting || !range) return;
+    clampVisibleRange(range);
+  });
 }
 
 function getPriceTicker(instrument, month, year) {
@@ -315,7 +388,22 @@ function renderPricesTab() {
       <div class="flex gap" style="flex-wrap:wrap;">
         <div class="grow" style="min-width:0;">
           <div class="card" style="padding:0;"><div class="chart-wrap" id="prices-chart-container"></div></div>
-          <div class="card chart-footer" style="margin-top:var(--gap);"><div class="range-track"><div class="range-window" id="prices-range-window"></div></div><div class="chart-readout" id="prices-range-readout">Awaiting data</div></div>
+          <div class="card chart-footer" style="margin-top:var(--gap);">
+            <div class="range-toolbar">
+              <div class="flex flex-col gap-sm">
+                <span class="range-kicker">Window</span>
+                <span class="range-helper" id="prices-range-helper">Anchored to latest print</span>
+              </div>
+              <div class="range-scale-labels">
+                <span id="prices-range-min-label">25D</span>
+                <span id="prices-range-max-label">Full span</span>
+              </div>
+            </div>
+            <div class="range-input-shell">
+              <input type="range" id="prices-window-slider" min="0" max="0" value="0" aria-label="Price window slider">
+            </div>
+            <div class="chart-readout" id="prices-range-readout">Awaiting data</div>
+          </div>
           <div class="card" style="margin-top:var(--gap);padding:10px 14px;"><div class="flex gap wrap" id="prices-summary-bar" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);"></div></div>
         </div>
         <div class="sidebar-stack">
@@ -324,6 +412,14 @@ function renderPricesTab() {
         </div>
       </div>
     `;
+
+    const windowSlider = document.getElementById('prices-window-slider');
+    if (windowSlider) {
+      windowSlider.addEventListener('input', event => {
+        STATE.priceView.tdayIndex = parseInt(event.target.value, 10) || 0;
+        schedulePricesChartUpdate({ skipDetails: true });
+      });
+    }
   }
 
   syncPriceViewState();
@@ -341,10 +437,6 @@ function renderPricesControls() {
   const isSpot = view.instrument === 'spot';
   const years = isSpot ? getSpotYears() : getAvailableContractYears(view.instrument, view.month);
   const compareYears = years.filter(year => year !== view.year);
-  const preview = getPrimaryPriceSeries(view);
-  const totalPoints = preview.fullData.length;
-  const rangeLimit = getRangeLimit(totalPoints, view.tdayIndex);
-  const rangeLabel = getRangeLabel(totalPoints, rangeLimit);
 
   controls.innerHTML = `
     <div class="flex flex-col gap-sm" style="min-width:260px;">
@@ -375,15 +467,15 @@ function renderPricesControls() {
         <select id="prices-year">${years.map(year => `<option value="${year}" ${year === view.year ? 'selected' : ''}>${year}</option>`).join('')}</select>
       </div>
     `}
-    <div class="flex flex-col gap-sm" style="min-width:210px;">
-      <label>${isSpot ? 'Window' : 'Range'}: <span id="prices-tday-label">${rangeLabel}</span></label>
-      <input type="range" id="prices-tday" min="0" max="${TDAY_STEPS.length - 1}" value="${view.tdayIndex}">
-    </div>
     ${!isSpot ? `
       <button class="toggle-btn ${view.tradingDays ? 'active' : ''}" data-tone="${meta.tone}" id="prices-mode-toggle">Trading Days</button>
       <button class="toggle-btn ${view.compare ? 'active' : ''}" data-tone="${meta.tone}" id="prices-compare-toggle" ${compareYears.length ? '' : 'disabled'}>Compare Mode</button>
       ${view.compare && compareYears.length ? `<div class="flex flex-col gap-sm"><label>Compare Year</label><select id="prices-compare-year">${compareYears.map(year => `<option value="${year}" ${year === view.compareYear ? 'selected' : ''}>${year}</option>`).join('')}</select></div>` : ''}
-    ` : `<div class="prices-context" style="min-height:40px;"><span class="instrument-stamp"><span class="instrument-dot" style="background:${meta.color};"></span>5Y calendar band enabled</span></div>`}
+    ` : ''}
+    <div class="prices-context" style="min-height:40px;">
+      ${isSpot ? `<span class="instrument-stamp"><span class="instrument-dot" style="background:${meta.color};"></span>5Y calendar band enabled</span>` : ''}
+      <span class="instrument-stamp">Use bottom rail for window</span>
+    </div>
   `;
 
   controls.querySelectorAll('.segment-btn').forEach(button => {
@@ -394,16 +486,6 @@ function renderPricesControls() {
       renderPricesControls();
       schedulePricesChartUpdate();
     });
-  });
-
-  document.getElementById('prices-tday').addEventListener('input', event => {
-    STATE.priceView.tdayIndex = parseInt(event.target.value, 10) || 0;
-    const label = document.getElementById('prices-tday-label');
-    if (label) {
-      const nextLimit = getRangeLimit(totalPoints, STATE.priceView.tdayIndex);
-      label.textContent = getRangeLabel(totalPoints, nextLimit);
-    }
-    schedulePricesChartUpdate({ skipDetails: true });
   });
 
   if (isSpot) {
@@ -458,19 +540,30 @@ function renderPricesControls() {
 }
 
 function updatePricesRangeFooter(fullData, filteredData) {
-  const rangeWindow = document.getElementById('prices-range-window');
+  const windowSlider = document.getElementById('prices-window-slider');
   const rangeReadout = document.getElementById('prices-range-readout');
-  if (!rangeWindow || !rangeReadout || !fullData.length || !filteredData.length) return;
+  const minLabelEl = document.getElementById('prices-range-min-label');
+  const maxLabelEl = document.getElementById('prices-range-max-label');
+  const helperEl = document.getElementById('prices-range-helper');
+  if (!windowSlider || !rangeReadout || !fullData.length || !filteredData.length) return;
 
-  const startIndex = Math.max(0, fullData.length - filteredData.length);
-  const left = fullData.length > 1 ? (startIndex / (fullData.length - 1)) * 100 : 0;
-  const width = fullData.length > 1 ? (filteredData.length / fullData.length) * 100 : 100;
-  rangeWindow.style.left = `${left}%`;
-  rangeWindow.style.width = `${Math.max(width, 8)}%`;
+  const rangeIndex = getRangeIndex(fullData.length, STATE.priceView.tdayIndex);
+  const rangeLimit = getRangeLimit(fullData.length, rangeIndex);
+  const windowOptions = getWindowOptions(fullData.length);
+  const edgeLabels = getRangeEdgeLabels(fullData.length);
+  STATE.priceView.tdayIndex = rangeIndex;
+
+  windowSlider.min = '0';
+  windowSlider.max = String(Math.max(windowOptions.length - 1, 0));
+  windowSlider.value = String(rangeIndex);
+  windowSlider.disabled = windowOptions.length <= 1;
+  if (minLabelEl) minLabelEl.textContent = edgeLabels.minLabel;
+  if (maxLabelEl) maxLabelEl.textContent = edgeLabels.maxLabel;
+  if (helperEl) helperEl.textContent = `${getRangeLabel(fullData.length, rangeLimit)} anchored to latest print`;
 
   const start = filteredData[0];
   const end = filteredData[filteredData.length - 1];
-  const label = getRangeLabel(fullData.length, filteredData.length >= fullData.length ? 0 : filteredData.length);
+  const label = getRangeLabel(fullData.length, filteredData.length);
   rangeReadout.innerHTML = `<span>${formatDisplayDate(start.date)}</span><span style="color:var(--text-muted);">to</span><span>${formatDisplayDate(end.date)}</span><span style="color:var(--text-muted);">|</span><span>${label}</span><span style="color:var(--text-muted);">|</span><span>${filteredData.length}/${fullData.length} points</span>`;
 }
 
@@ -622,13 +715,30 @@ function updatePricesChart({ skipDetails = false } = {}) {
     descEl.textContent = 'No data available for the selected view';
     priceEl.textContent = 'No data';
     changeEl.textContent = '';
+    const windowSlider = document.getElementById('prices-window-slider');
+    const helperEl = document.getElementById('prices-range-helper');
+    const minLabelEl = document.getElementById('prices-range-min-label');
+    const maxLabelEl = document.getElementById('prices-range-max-label');
+    const readoutEl = document.getElementById('prices-range-readout');
+    if (windowSlider) {
+      windowSlider.min = '0';
+      windowSlider.max = '0';
+      windowSlider.value = '0';
+      windowSlider.disabled = true;
+    }
+    if (helperEl) helperEl.textContent = 'Awaiting data';
+    if (minLabelEl) minLabelEl.textContent = '--';
+    if (maxLabelEl) maxLabelEl.textContent = '--';
+    if (readoutEl) readoutEl.textContent = 'Awaiting data';
     document.getElementById('prices-summary-bar').innerHTML = '';
     document.getElementById('prices-stats').innerHTML = '';
     document.getElementById('prices-history-table').innerHTML = '';
     return;
   }
 
-  const rangeLimit = getRangeLimit(fullData.length, view.tdayIndex);
+  const rangeIndex = getRangeIndex(fullData.length, view.tdayIndex);
+  const rangeLimit = getRangeLimit(fullData.length, rangeIndex);
+  view.tdayIndex = rangeIndex;
   const filteredData = rangeLimit > 0 && fullData.length > rangeLimit ? fullData.slice(fullData.length - rangeLimit) : fullData.slice();
   const currentPoint = fullData[fullData.length - 1];
   const openPoint = fullData[0];
@@ -744,7 +854,11 @@ function updatePricesChart({ skipDetails = false } = {}) {
     }
   }
 
-  chart.timeScale().fitContent();
+  if (filteredData.length > 1) {
+    enforceVisibleRange(chart, timeResolver(filteredData[0]), timeResolver(filteredData[filteredData.length - 1]));
+  } else {
+    chart.timeScale().fitContent();
+  }
 
   attachChartTooltip({
     chart,
