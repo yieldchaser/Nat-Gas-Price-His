@@ -911,8 +911,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     upperSeries.setData(bandUpper);
 
     const lowerSeries = chart.addAreaSeries({
-      topColor: 'transparent',
-      bottomColor: 'transparent',
+      topColor: seasonalPalette.fillTop,
+      bottomColor: seasonalPalette.fillBottom,
       lineColor: seasonalPalette.line,
       lineWidth: 1,
       priceLineVisible: false,
@@ -936,8 +936,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
   const mainSeries = chart.addLineSeries({
     color: neutralPalette.main,
     lineWidth: 2.5,
-    priceLineVisible: true,
-    lastValueVisible: true,
+    priceLineVisible: false,
+    lastValueVisible: false,
     crosshairMarkerVisible: true,
     crosshairMarkerRadius: 4,
   });
