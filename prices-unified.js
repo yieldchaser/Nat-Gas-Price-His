@@ -84,6 +84,90 @@ function getRangeLimit(length, tdayIndex) {
   return step > 0 ? Math.min(step, length) : 0;
 }
 
+function getRangeLabel(length, limit) {
+  if (!length) return 'No data';
+  return !limit || limit >= length ? 'Full history' : `${limit} days`;
+}
+
+function getPriceTicker(instrument, month, year) {
+  const meta = getPriceInstrumentMeta(instrument);
+  if (!year) return meta.prefix;
+  const yy = year % 100;
+  const pad = yy < 10 ? '0' + yy : '' + yy;
+  return `${meta.prefix}${MONTH_CODES[month]}${pad}`;
+}
+
+function getPrimaryPriceSeries(view) {
+  if (view.instrument === 'spot') {
+    return {
+      ticker: `SPOT ${view.spotYear || '--'}`,
+      fullData: getSpotSeries(view.spotYear),
+    };
+  }
+  const ticker = getPriceTicker(view.instrument, view.month, view.year);
+  return {
+    ticker,
+    fullData: view.instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker),
+  };
+}
+
+function getComparePriceSeries(view) {
+  if (view.instrument === 'spot' || !view.compare || !view.compareYear) {
+    return { compareTicker: '', compareData: [] };
+  }
+  const compareTicker = getPriceTicker(view.instrument, view.month, view.compareYear);
+  return {
+    compareTicker,
+    compareData: view.instrument === 'ttf' ? getTTFContractData(compareTicker) : getContractData(compareTicker),
+  };
+}
+
+function getSeasonalEntry(view, point) {
+  if (!point) return null;
+  if (view.instrument === 'spot') {
+    return point.date ? STATE.spotSeasonalCache[point.date.slice(5)] || null : null;
+  }
+  const cacheBucket = view.instrument === 'ttf' ? STATE.ttfSeasonalCache[view.month] : STATE.seasonalCache[view.month];
+  return cacheBucket && cacheBucket[point.d] ? cacheBucket[point.d] : null;
+}
+
+function getSeasonalPalette(instrument) {
+  if (instrument === 'ttf') {
+    return {
+      fillTop: 'rgba(255, 140, 0, 0.08)',
+      fillBottom: 'rgba(255, 140, 0, 0.015)',
+      line: 'rgba(255, 140, 0, 0.2)',
+      avg: 'rgba(255, 191, 105, 0.6)',
+    };
+  }
+  if (instrument === 'spot') {
+    return {
+      fillTop: 'rgba(167, 139, 250, 0.08)',
+      fillBottom: 'rgba(167, 139, 250, 0.015)',
+      line: 'rgba(210, 186, 255, 0.18)',
+      avg: 'rgba(255, 170, 237, 0.5)',
+    };
+  }
+  return {
+    fillTop: 'rgba(0, 212, 255, 0.08)',
+    fillBottom: 'rgba(0, 212, 255, 0.01)',
+    line: 'rgba(0, 212, 255, 0.18)',
+    avg: 'rgba(0, 212, 255, 0.45)',
+  };
+}
+
+function schedulePricesChartUpdate(options = {}) {
+  const normalizedOptions = Object.assign({ skipDetails: false }, options);
+  STATE._pricesUpdateOptions = Object.assign({}, STATE._pricesUpdateOptions || {}, normalizedOptions);
+  if (STATE._pricesUpdateFrame) return;
+  STATE._pricesUpdateFrame = requestAnimationFrame(() => {
+    const pending = STATE._pricesUpdateOptions || {};
+    STATE._pricesUpdateFrame = null;
+    STATE._pricesUpdateOptions = null;
+    updatePricesChart(pending);
+  });
+}
+
 function formatDisplayDate(value) {
   if (!value) return 'No date';
   const date = new Date(value);
@@ -212,7 +296,7 @@ function cyclePriceYear(direction) {
     if (view.compare && compareYears.length && !compareYears.includes(view.compareYear)) view.compareYear = compareYears[0];
   }
   renderPricesControls();
-  updatePricesChart();
+  schedulePricesChartUpdate();
 }
 
 function renderPricesTab() {
@@ -257,8 +341,10 @@ function renderPricesControls() {
   const isSpot = view.instrument === 'spot';
   const years = isSpot ? getSpotYears() : getAvailableContractYears(view.instrument, view.month);
   const compareYears = years.filter(year => year !== view.year);
-  const rangeLimit = TDAY_STEPS[clamp(view.tdayIndex, 0, TDAY_STEPS.length - 1)] || 0;
-  const rangeLabel = rangeLimit === 0 ? 'All history' : `Last ${rangeLimit}`;
+  const preview = getPrimaryPriceSeries(view);
+  const totalPoints = preview.fullData.length;
+  const rangeLimit = getRangeLimit(totalPoints, view.tdayIndex);
+  const rangeLabel = getRangeLabel(totalPoints, rangeLimit);
 
   controls.innerHTML = `
     <div class="flex flex-col gap-sm" style="min-width:260px;">
@@ -297,7 +383,7 @@ function renderPricesControls() {
       <button class="toggle-btn ${view.tradingDays ? 'active' : ''}" data-tone="${meta.tone}" id="prices-mode-toggle">Trading Days</button>
       <button class="toggle-btn ${view.compare ? 'active' : ''}" data-tone="${meta.tone}" id="prices-compare-toggle" ${compareYears.length ? '' : 'disabled'}>Compare Mode</button>
       ${view.compare && compareYears.length ? `<div class="flex flex-col gap-sm"><label>Compare Year</label><select id="prices-compare-year">${compareYears.map(year => `<option value="${year}" ${year === view.compareYear ? 'selected' : ''}>${year}</option>`).join('')}</select></div>` : ''}
-    ` : `<div class="prices-context" style="min-height:40px;"><span class="instrument-stamp"><span class="instrument-dot" style="background:${meta.color};"></span>Seasonality and spike markers enabled</span></div>`}
+    ` : `<div class="prices-context" style="min-height:40px;"><span class="instrument-stamp"><span class="instrument-dot" style="background:${meta.color};"></span>5Y calendar band enabled</span></div>`}
   `;
 
   controls.querySelectorAll('.segment-btn').forEach(button => {
@@ -306,24 +392,29 @@ function renderPricesControls() {
       STATE.priceView.instrument = button.dataset.instrument;
       syncPriceViewState();
       renderPricesControls();
-      updatePricesChart();
+      schedulePricesChartUpdate();
     });
   });
 
   document.getElementById('prices-tday').addEventListener('input', event => {
     STATE.priceView.tdayIndex = parseInt(event.target.value, 10) || 0;
-    renderPricesControls();
-    updatePricesChart();
+    const label = document.getElementById('prices-tday-label');
+    if (label) {
+      const nextLimit = getRangeLimit(totalPoints, STATE.priceView.tdayIndex);
+      label.textContent = getRangeLabel(totalPoints, nextLimit);
+    }
+    schedulePricesChartUpdate({ skipDetails: true });
   });
 
   if (isSpot) {
     document.getElementById('prices-spot-year').addEventListener('change', event => {
       STATE.priceView.spotYear = parseInt(event.target.value, 10) || null;
-      updatePricesChart();
+      renderPricesControls();
+      schedulePricesChartUpdate();
     });
     document.getElementById('prices-spot-month').addEventListener('change', event => {
       STATE.priceView.spotMonth = event.target.value;
-      updatePricesChart();
+      schedulePricesChartUpdate();
     });
     return;
   }
@@ -332,18 +423,18 @@ function renderPricesControls() {
     STATE.priceView.month = event.target.value;
     syncPriceViewState();
     renderPricesControls();
-    updatePricesChart();
+    schedulePricesChartUpdate();
   });
   document.getElementById('prices-year').addEventListener('change', event => {
     STATE.priceView.year = parseInt(event.target.value, 10) || null;
     syncPriceViewState();
     renderPricesControls();
-    updatePricesChart();
+    schedulePricesChartUpdate();
   });
   document.getElementById('prices-mode-toggle').addEventListener('click', () => {
     STATE.priceView.tradingDays = !STATE.priceView.tradingDays;
     renderPricesControls();
-    updatePricesChart();
+    schedulePricesChartUpdate();
   });
 
   const compareToggle = document.getElementById('prices-compare-toggle');
@@ -353,7 +444,7 @@ function renderPricesControls() {
       STATE.priceView.compare = !STATE.priceView.compare;
       syncPriceViewState();
       renderPricesControls();
-      updatePricesChart();
+      schedulePricesChartUpdate();
     });
   }
 
@@ -361,7 +452,7 @@ function renderPricesControls() {
   if (compareSelect) {
     compareSelect.addEventListener('change', event => {
       STATE.priceView.compareYear = parseInt(event.target.value, 10) || null;
-      updatePricesChart();
+      schedulePricesChartUpdate();
     });
   }
 }
@@ -379,25 +470,24 @@ function updatePricesRangeFooter(fullData, filteredData) {
 
   const start = filteredData[0];
   const end = filteredData[filteredData.length - 1];
-  rangeReadout.innerHTML = `<span>${formatDisplayDate(start.date)}</span><span style="color:var(--text-muted);">to</span><span>${formatDisplayDate(end.date)}</span><span style="color:var(--text-muted);">|</span><span>${filteredData.length}/${fullData.length} points</span>`;
+  const label = getRangeLabel(fullData.length, filteredData.length >= fullData.length ? 0 : filteredData.length);
+  rangeReadout.innerHTML = `<span>${formatDisplayDate(start.date)}</span><span style="color:var(--text-muted);">to</span><span>${formatDisplayDate(end.date)}</span><span style="color:var(--text-muted);">|</span><span>${label}</span><span style="color:var(--text-muted);">|</span><span>${filteredData.length}/${fullData.length} points</span>`;
 }
 
 function renderPricesSummaryBar(context) {
   const summaryBar = document.getElementById('prices-summary-bar');
   if (!summaryBar) return;
 
-  const { instrument, fullData, filteredData, changePct, stats, currentPoint, seasonal, spikeCount } = context;
+  const { instrument, fullData, filteredData, changePct, stats, currentPoint, seasonal } = context;
   const items = [
     `Window <span style="color:var(--text-primary);">${filteredData.length}/${fullData.length}</span>`,
     `High / Low <span style="color:var(--text-primary);">${formatInstrumentValue(instrument, stats.max)} / ${formatInstrumentValue(instrument, stats.min)}</span>`,
     `From Open <span class="${changePct >= 0 ? 'positive' : 'negative'}">${formatPercent(changePct)}</span>`,
   ];
 
-  if (instrument === 'hh' && seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
+  if (seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
     const seasonalDelta = ((currentPoint.p - seasonal.avg) / seasonal.avg) * 100;
     items.push(`vs 5Y Avg <span class="${seasonalDelta >= 0 ? 'positive' : 'negative'}">${formatPercent(seasonalDelta)}</span>`);
-  } else if (instrument === 'spot') {
-    items.push(`Spike Markers <span style="color:var(--accent-spot);">${spikeCount}</span>`);
   } else {
     items.push(`Average <span style="color:var(--text-primary);">${formatInstrumentValue(instrument, stats.avg)}</span>`);
   }
@@ -409,17 +499,20 @@ function renderPricesStats(context) {
   const statsEl = document.getElementById('prices-stats');
   if (!statsEl) return;
 
-  const { instrument, meta, fullData, changePct, currentPoint, stats, ticker, view, seasonal, spikeCount } = context;
+  const { instrument, meta, fullData, changePct, currentPoint, stats, ticker, view, seasonal } = context;
   let extraBlock = '';
 
-  if (instrument === 'hh' && seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
+  if (seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
     const seasonalDelta = ((currentPoint.p - seasonal.avg) / seasonal.avg) * 100;
     const percentile = seasonal.max !== seasonal.min ? Math.round(((currentPoint.p - seasonal.min) / (seasonal.max - seasonal.min)) * 100) : 50;
-    const isLive = Boolean(STATE.liveData[`${ticker}.NYM`]);
+    const statusBlock = instrument === 'hh'
+      ? `<div class="stat"><div class="stat-label">Status</div><div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;background:${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'rgba(0,255,136,0.1)' : 'rgba(136,136,170,0.1)'};color:${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'var(--positive)' : 'var(--text-muted)'};">${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'ACTIVE - LIVE DATA' : 'HISTORICAL'}</div></div>`
+      : '';
     extraBlock = `
       <div class="stat"><div class="stat-label">vs 5Y Seasonal Avg</div><div style="font-family:var(--font-mono);font-size:14px;" class="${seasonalDelta >= 0 ? 'positive' : 'negative'}">${formatPercent(seasonalDelta)}</div></div>
       <div class="stat"><div class="stat-label">5Y Range Position</div><div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${percentile}th percentile</div></div>
-      <div class="stat"><div class="stat-label">Status</div><div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;background:${isLive ? 'rgba(0,255,136,0.1)' : 'rgba(136,136,170,0.1)'};color:${isLive ? 'var(--positive)' : 'var(--text-muted)'};">${isLive ? 'ACTIVE - LIVE DATA' : 'HISTORICAL'}</div></div>
+      <div class="stat"><div class="stat-label">5Y Range</div><div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">${formatInstrumentValue(instrument, seasonal.min)} / ${formatInstrumentValue(instrument, seasonal.max)}</div></div>
+      ${statusBlock}
     `;
   } else if (instrument === 'spot') {
     const globalAvg = STATE.spotStats.avg;
@@ -427,7 +520,6 @@ function renderPricesStats(context) {
     const avgDelta = globalAvg ? ((stats.avg - globalAvg) / globalAvg) * 100 : 0;
     extraBlock = `
       <div class="stat"><div class="stat-label">Year vs Global Avg</div><div style="font-family:var(--font-mono);font-size:14px;" class="${avgDelta >= 0 ? 'positive' : 'negative'}">${formatPercent(avgDelta)}</div></div>
-      <div class="stat"><div class="stat-label">Spike Markers</div><div class="stat-value" style="color:var(--accent-spot);">${spikeCount}</div></div>
       <div class="stat"><div class="stat-label">Global Avg / Sigma</div><div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">${formatInstrumentValue('spot', globalAvg)} / ${formatInstrumentValue('spot', globalStd)}</div></div>
     `;
   } else {
@@ -475,17 +567,19 @@ function renderPricesHistoryTable(context) {
   }
 
   if (instrument === 'ttf') {
-    const rows = getAvailableContractYears('ttf', view.month).slice(0, 12).map(year => {
-      const yy = year % 100;
-      const pad = yy < 10 ? '0' + yy : '' + yy;
-      const ticker = `TG${MONTH_CODES[view.month]}${pad}`;
+    const years = getAvailableContractYears('ttf', view.month).slice(0, 12);
+    const rows = years.map((year, index) => {
+      const ticker = getPriceTicker('ttf', view.month, year);
       const data = getTTFContractData(ticker);
       if (!data.length) return '';
-      const stats = getSeriesStats(data);
-      const change = data[0].p ? ((data[data.length - 1].p - data[0].p) / data[0].p) * 100 : 0;
-      return `<tr><td style="text-align:left;">${ticker}</td><td>${formatInstrumentValue('ttf', data[data.length - 1].p)}</td><td>${formatInstrumentValue('ttf', stats.avg)}</td><td class="${change >= 0 ? 'positive' : 'negative'}">${formatPercent(change)}</td></tr>`;
+      const lastPrice = data[data.length - 1].p;
+      const priorYear = years[index + 1];
+      const priorData = priorYear ? getTTFContractData(getPriceTicker('ttf', view.month, priorYear)) : [];
+      const priorPrice = priorData.length ? priorData[priorData.length - 1].p : null;
+      const delta = Number.isFinite(priorPrice) && priorPrice !== 0 ? ((lastPrice - priorPrice) / priorPrice) * 100 : null;
+      return `<tr><td style="text-align:left;">${year}</td><td>${formatInstrumentValue('ttf', lastPrice)}</td><td class="${delta !== null ? (delta >= 0 ? 'positive' : 'negative') : ''}">${delta !== null ? formatPercent(delta) : '--'}</td></tr>`;
     }).join('');
-    tableEl.innerHTML = `<div class="card-title">TTF Contract Ladder</div><table><thead><tr><th style="text-align:left;">Contract</th><th>Last</th><th>Avg</th><th>From Open</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No TTF contracts found</td></tr>'}</tbody></table>`;
+    tableEl.innerHTML = `<div class="card-title">Same Month TTF History</div><table><thead><tr><th style="text-align:left;">Year</th><th>Last Print</th><th>Delta vs Prior</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No TTF contracts found</td></tr>'}</tbody></table>`;
     return;
   }
 
@@ -498,33 +592,18 @@ function renderPricesHistoryTable(context) {
   tableEl.innerHTML = `<div class="card-title">Monthly Spot Summary</div><table><thead><tr><th style="text-align:left;">Month</th><th>Average</th><th>High</th><th>Low</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function updatePricesChart() {
+function updatePricesChart({ skipDetails = false } = {}) {
   syncPriceViewState();
   const view = STATE.priceView;
   const meta = getPriceInstrumentMeta(view.instrument);
   const isSpot = view.instrument === 'spot';
   const useTradingAxis = !isSpot && (view.tradingDays || view.compare);
-
-  let ticker = meta.prefix;
-  let fullData = [];
-  let compareData = [];
-  let compareTicker = '';
-
-  if (isSpot) {
-    fullData = getSpotSeries(view.spotYear);
-    ticker = `SPOT ${view.spotYear || '--'}`;
-  } else {
-    const yy = view.year % 100;
-    const pad = yy < 10 ? '0' + yy : '' + yy;
-    ticker = `${meta.prefix}${MONTH_CODES[view.month]}${pad}`;
-    fullData = view.instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker);
-    if (view.compare && view.compareYear) {
-      const compareYY = view.compareYear % 100;
-      const comparePad = compareYY < 10 ? '0' + compareYY : '' + compareYY;
-      compareTicker = `${meta.prefix}${MONTH_CODES[view.month]}${comparePad}`;
-      compareData = view.instrument === 'ttf' ? getTTFContractData(compareTicker) : getContractData(compareTicker);
-    }
-  }
+  const primary = getPrimaryPriceSeries(view);
+  const compare = getComparePriceSeries(view);
+  const ticker = primary.ticker;
+  const fullData = primary.fullData;
+  const compareTicker = compare.compareTicker;
+  const compareData = compare.compareData;
 
   const tickerEl = document.getElementById('prices-ticker');
   const descEl = document.getElementById('prices-desc');
@@ -571,83 +650,98 @@ function updatePricesChart() {
   let seasonalPoint = null;
   let seasonalAvgSeries = null;
   let seasonalLookup = new Map();
+  const seasonalPalette = getSeasonalPalette(view.instrument);
+  const bandUpper = [];
+  const bandLower = [];
+  const avgLine = [];
 
-  if (view.instrument === 'hh') {
-    const seasonal = STATE.seasonalCache[view.month];
-    if (seasonal) {
-      const bandUpper = [];
-      const bandLower = [];
-      const avgLine = [];
-      filteredData.forEach(point => {
-        const seasonalStats = seasonal[point.d];
-        if (!seasonalStats) return;
-        const time = timeResolver(point);
-        bandUpper.push({ time, value: seasonalStats.max });
-        bandLower.push({ time, value: seasonalStats.min });
-        avgLine.push({ time, value: seasonalStats.avg });
-        seasonalLookup.set(timeKey(time), { value: seasonalStats.avg, seasonal: seasonalStats, d: point.d, date: point.date });
-      });
+  filteredData.forEach(point => {
+    const seasonalStats = getSeasonalEntry(view, point);
+    if (!seasonalStats) return;
+    const time = timeResolver(point);
+    bandUpper.push({ time, value: seasonalStats.max });
+    bandLower.push({ time, value: seasonalStats.min });
+    avgLine.push({ time, value: seasonalStats.avg });
+    seasonalLookup.set(timeKey(time), { value: seasonalStats.avg, seasonal: seasonalStats, d: point.d, date: point.date });
+  });
 
-      if (bandUpper.length) {
-        const upperSeries = chart.addAreaSeries({ topColor: 'rgba(0, 212, 255, 0.08)', bottomColor: 'rgba(0, 212, 255, 0.01)', lineColor: 'rgba(0, 212, 255, 0.18)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-        upperSeries.setData(bandUpper);
-        const lowerSeries = chart.addAreaSeries({ topColor: 'transparent', bottomColor: 'transparent', lineColor: 'rgba(0, 212, 255, 0.18)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-        lowerSeries.setData(bandLower);
-        seasonalAvgSeries = chart.addLineSeries({ color: 'rgba(0, 212, 255, 0.45)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-        seasonalAvgSeries.setData(avgLine);
-        seasonalPoint = seasonal[currentPoint.d] || null;
-      }
-    }
+  if (bandUpper.length) {
+    const upperSeries = chart.addAreaSeries({
+      topColor: seasonalPalette.fillTop,
+      bottomColor: seasonalPalette.fillBottom,
+      lineColor: seasonalPalette.line,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    upperSeries.setData(bandUpper);
+
+    const lowerSeries = chart.addAreaSeries({
+      topColor: 'transparent',
+      bottomColor: 'transparent',
+      lineColor: seasonalPalette.line,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    lowerSeries.setData(bandLower);
+
+    seasonalAvgSeries = chart.addLineSeries({
+      color: seasonalPalette.avg,
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    seasonalAvgSeries.setData(avgLine);
+    seasonalPoint = getSeasonalEntry(view, currentPoint);
   }
 
-  const mainSeries = chart.addLineSeries({ color: meta.color, lineWidth: 2.5, priceLineVisible: true, lastValueVisible: true, crosshairMarkerVisible: true, crosshairMarkerRadius: 4 });
+  const mainSeries = chart.addLineSeries({
+    color: meta.color,
+    lineWidth: 2.5,
+    priceLineVisible: true,
+    lastValueVisible: true,
+    crosshairMarkerVisible: true,
+    crosshairMarkerRadius: 4,
+  });
   mainSeries.setData(filteredData.map(point => ({ time: timeResolver(point), value: point.p })));
 
   let compareSeries = null;
   let compareLookup = new Map();
   if (compareTicker && compareData.length) {
     const compareWindow = rangeLimit > 0 && compareData.length > rangeLimit ? compareData.slice(compareData.length - rangeLimit) : compareData.slice();
-    compareSeries = chart.addLineSeries({ color: '#ffcc66', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: true });
+    compareSeries = chart.addLineSeries({
+      color: '#ffcc66',
+      lineWidth: 1.5,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: true,
+    });
     compareSeries.setData(compareWindow.map(point => ({ time: useTradingAxis ? dayToTime(point.d) : point.date, value: point.p })));
     compareLookup = buildTimeLookup(compareWindow, point => useTradingAxis ? dayToTime(point.d) : point.date);
   }
-  let rollingSeries = null;
-  let rollingLookup = new Map();
+
   let highlightSeries = null;
   let highlightLookup = new Map();
-  let spikeCount = 0;
-
-  if (isSpot) {
-    if (filteredData.length > 20) {
-      const rollingData = [];
-      for (let index = 19; index < filteredData.length; index++) {
-        const slice = filteredData.slice(index - 19, index + 1);
-        rollingData.push({ time: filteredData[index].date, value: slice.reduce((sum, point) => sum + point.p, 0) / slice.length });
-      }
-      rollingSeries = chart.addLineSeries({ color: 'rgba(255, 204, 102, 0.7)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-      rollingSeries.setData(rollingData);
-      rollingLookup = new Map(rollingData.map(point => [timeKey(point.time), point]));
+  if (isSpot && view.spotMonth) {
+    const focusedPoints = filteredData.filter(point => point.month === view.spotMonth);
+    if (focusedPoints.length) {
+      highlightSeries = chart.addLineSeries({
+        color: 'rgba(255, 170, 237, 0.92)',
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 3,
+      });
+      highlightSeries.setData(focusedPoints.map(point => ({ time: point.date, value: point.p })));
+      highlightLookup = buildTimeLookup(focusedPoints, point => point.date);
     }
-
-    if (view.spotMonth) {
-      const focusedPoints = filteredData.filter(point => point.month === view.spotMonth);
-      if (focusedPoints.length) {
-        highlightSeries = chart.addLineSeries({ color: '#ff9ff3', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: true });
-        highlightSeries.setData(focusedPoints.map(point => ({ time: point.date, value: point.p })));
-        highlightLookup = buildTimeLookup(focusedPoints, point => point.date);
-      }
-    }
-
-    const spikeThreshold = STATE.spotStats.avg + 2 * STATE.spotStats.stddev;
-    const spikeMarkers = filteredData.filter(point => Number.isFinite(point.p) && Number.isFinite(spikeThreshold) && point.p > spikeThreshold).map(point => ({
-      time: point.date,
-      position: 'aboveBar',
-      color: point.p > STATE.spotStats.avg * 3 ? '#ff4455' : '#ffcc00',
-      shape: 'circle',
-      text: point.p > STATE.spotStats.avg * 3 ? formatInstrumentValue('spot', point.p) : '',
-    }));
-    spikeCount = spikeMarkers.length;
-    if (spikeMarkers.length) mainSeries.setMarkers(spikeMarkers);
   }
 
   chart.timeScale().fitContent();
@@ -658,10 +752,9 @@ function updatePricesChart() {
     titleColor: meta.color,
     seriesConfigs: [
       { series: mainSeries, label: meta.label, color: meta.color, priority: 0, getPoint: param => mainLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue(view.instrument, value) },
-      seasonalAvgSeries ? { series: seasonalAvgSeries, label: '5Y Avg', color: 'rgba(0, 212, 255, 0.45)', priority: 1, getPoint: param => seasonalLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue('hh', value) } : null,
+      seasonalAvgSeries ? { series: seasonalAvgSeries, label: '5Y Avg', color: seasonalPalette.avg, priority: 1, getPoint: param => seasonalLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue(view.instrument, value) } : null,
       compareSeries ? { series: compareSeries, label: compareTicker, color: '#ffcc66', priority: 2, getPoint: param => compareLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue(view.instrument, value) } : null,
-      rollingSeries ? { series: rollingSeries, label: '20D Avg', color: 'rgba(255, 204, 102, 0.7)', priority: 3, getPoint: param => rollingLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue('spot', value) } : null,
-      highlightSeries ? { series: highlightSeries, label: `${view.spotMonth} Focus`, color: '#ff9ff3', priority: 4, getPoint: param => highlightLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue('spot', value) } : null,
+      highlightSeries ? { series: highlightSeries, label: `${view.spotMonth} Focus`, color: 'rgba(255, 170, 237, 0.92)', priority: 3, getPoint: param => highlightLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue('spot', value) } : null,
     ].filter(Boolean),
     getTitle: param => {
       const point = mainLookup.get(timeKey(param.time)) || compareLookup.get(timeKey(param.time));
@@ -670,16 +763,30 @@ function updatePricesChart() {
     getNote: param => {
       const point = mainLookup.get(timeKey(param.time)) || compareLookup.get(timeKey(param.time));
       if (!point) return '';
-      if (view.instrument === 'spot') return `${point.month} ${view.spotYear} | observation ${point.d}`;
+      const seasonalMatch = seasonalLookup.get(timeKey(param.time));
+      if (view.instrument === 'spot') {
+        const noteParts = [`${point.month} ${view.spotYear}`, `observation ${point.d}`];
+        if (seasonalMatch && seasonalMatch.seasonal && seasonalMatch.seasonal.avg) {
+          const delta = ((point.p - seasonalMatch.seasonal.avg) / seasonalMatch.seasonal.avg) * 100;
+          noteParts.push(`vs 5Y ${formatPercent(delta)}`);
+        }
+        return noteParts.join(' | ');
+      }
       const noteParts = [`T-Day ${point.d}`];
       if (view.compare) noteParts.push('compare aligned');
+      if (seasonalMatch && seasonalMatch.seasonal && seasonalMatch.seasonal.avg) {
+        const delta = ((point.p - seasonalMatch.seasonal.avg) / seasonalMatch.seasonal.avg) * 100;
+        noteParts.push(`vs 5Y ${formatPercent(delta)}`);
+      }
       if (Number.isFinite(point.o) && Number.isFinite(point.h) && Number.isFinite(point.l)) noteParts.push(`O ${point.o.toFixed(3)} / H ${point.h.toFixed(3)} / L ${point.l.toFixed(3)}`);
       return noteParts.join(' | ');
     },
   });
 
   updatePricesRangeFooter(fullData, filteredData);
-  renderPricesSummaryBar({ instrument: view.instrument, fullData, filteredData, changePct, stats, currentPoint, seasonal: seasonalPoint, spikeCount });
-  renderPricesStats({ instrument: view.instrument, meta, fullData, changePct, currentPoint, stats, ticker, view, seasonal: seasonalPoint, spikeCount });
-  renderPricesHistoryTable({ instrument: view.instrument, view });
+  renderPricesSummaryBar({ instrument: view.instrument, fullData, filteredData, changePct, stats, currentPoint, seasonal: seasonalPoint });
+  if (!skipDetails) {
+    renderPricesStats({ instrument: view.instrument, meta, fullData, changePct, currentPoint, stats, ticker, view, seasonal: seasonalPoint });
+    renderPricesHistoryTable({ instrument: view.instrument, view });
+  }
 }

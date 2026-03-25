@@ -196,20 +196,20 @@ label {
    ═══════════════════════════════════════════════════════════ */
 input[type="range"] {
   -webkit-appearance: none; appearance: none;
-  width: 100%; height: 6px;
-  background: linear-gradient(90deg, rgba(0,212,255,0.18), rgba(0,212,255,0.5));
+  width: 100%; height: 10px;
+  background: linear-gradient(90deg, rgba(0,212,255,0.14), rgba(0,212,255,0.56));
   border-radius: 999px; outline: none;
 }
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 18px; height: 18px;
-  background: #f4fbff; border-radius: 6px; cursor: pointer;
+  -webkit-appearance: none; width: 22px; height: 22px;
+  background: #f4fbff; border-radius: 7px; cursor: pointer;
   border: 2px solid rgba(0,212,255,0.8);
-  box-shadow: 0 0 0 4px rgba(0,212,255,0.14), 0 0 18px rgba(0,212,255,0.35);
+  box-shadow: 0 0 0 5px rgba(0,212,255,0.14), 0 0 24px rgba(0,212,255,0.4);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 18px; height: 18px; background: #f4fbff;
-  border-radius: 6px; cursor: pointer; border: 2px solid rgba(0,212,255,0.8);
-  box-shadow: 0 0 0 4px rgba(0,212,255,0.14), 0 0 18px rgba(0,212,255,0.35);
+  width: 22px; height: 22px; background: #f4fbff;
+  border-radius: 7px; cursor: pointer; border: 2px solid rgba(0,212,255,0.8);
+  box-shadow: 0 0 0 5px rgba(0,212,255,0.14), 0 0 24px rgba(0,212,255,0.4);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -507,6 +507,8 @@ const STATE = {
   liveData: {},
   charts: {},
   seasonalCache: {},
+  ttfSeasonalCache: {},
+  spotSeasonalCache: {},
   contractCache: {},
   spreadCache: {},
   spotStats: { avg: 0, stddev: 0, count: 0 },
@@ -865,6 +867,66 @@ async function buildSeasonalCache() {
   }
 }
 
+async function buildTTFSeasonalCache() {
+  const currentYear = new Date().getFullYear();
+  for (let index = 0; index < MONTHS.length; index++) {
+    const month = MONTHS[index];
+    if (!STATE.ttf[month]) continue;
+    const contracts = STATE.ttf[month].contracts;
+    const cache = {};
+    for (let yr = currentYear - 5; yr < currentYear; yr++) {
+      const yy = yr % 100;
+      const pad = yy < 10 ? '0' + yy : '' + yy;
+      const ticker = `TG${MONTH_CODES[month]}${pad}`;
+      const data = contracts[ticker];
+      if (!data) continue;
+      data.forEach(pt => {
+        if (!cache[pt.d]) cache[pt.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+        cache[pt.d].sum += pt.p;
+        cache[pt.d].count++;
+        cache[pt.d].min = Math.min(cache[pt.d].min, pt.p);
+        cache[pt.d].max = Math.max(cache[pt.d].max, pt.p);
+      });
+    }
+    Object.keys(cache).forEach(d => {
+      const entry = cache[d];
+      entry.avg = entry.sum / entry.count;
+      if (entry.min === Infinity) entry.min = 0;
+      if (entry.max === -Infinity) entry.max = 0;
+    });
+    STATE.ttfSeasonalCache[month] = cache;
+    await yieldToBrowser();
+  }
+}
+
+function buildSpotSeasonalCache() {
+  const currentYear = new Date().getFullYear();
+  const cache = {};
+  for (let year = currentYear - 5; year < currentYear; year++) {
+    MONTHS.forEach(month => {
+      const series = STATE.spot[month] && STATE.spot[month].years && STATE.spot[month].years[String(year)];
+      if (!series) return;
+      series.forEach(point => {
+        if (!point.date) return;
+        const key = point.date.slice(5);
+        if (!cache[key]) cache[key] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+        cache[key].sum += point.p;
+        cache[key].count++;
+        cache[key].min = Math.min(cache[key].min, point.p);
+        cache[key].max = Math.max(cache[key].max, point.p);
+      });
+    });
+  }
+
+  Object.keys(cache).forEach(key => {
+    const entry = cache[key];
+    entry.avg = entry.sum / entry.count;
+    if (entry.min === Infinity) entry.min = 0;
+    if (entry.max === -Infinity) entry.max = 0;
+  });
+  STATE.spotSeasonalCache = cache;
+}
+
 /* ─── Helper: get contract data (merged historical + live) ─── */
 function getContractData(ticker) {
   if (STATE.contractCache[ticker]) return STATE.contractCache[ticker];
@@ -921,6 +983,8 @@ async function init() {
     await loadHistoricalData();
     buildSpotStatsCache();
     await buildSeasonalCache();
+    await buildTTFSeasonalCache();
+    buildSpotSeasonalCache();
     setLoadProgress(95, 'BUILDING INTERFACE...');
     await renderTab(STATE.activeTab);
     setLoadProgress(100, 'READY');
