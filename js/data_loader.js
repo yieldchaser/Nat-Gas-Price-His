@@ -21,11 +21,21 @@ async function loadContractCSV(benchmark, contractID) {
         return csvCache.get(key)
     }
 
+    // Extract month code from contract ID (3rd character, lowercase)
+    // E.g. "ngf26" → "f", "ttfk26" → "k"
+    const monthCodeLower = contractID.charAt(2)
+    const MC = ['f','g','h','j','k','m','n','q','u','v','x','z']
+    const monthIndex = MC.indexOf(monthCodeLower)
+    const monthNames = ['01_Jan','02_Feb','03_Mar','04_Apr','05_May','06_Jun',
+                        '07_Jul','08_Aug','09_Sep','10_Oct','11_Nov','12_Dec']
+    const monthFolder = monthIndex >= 0 ? monthNames[monthIndex] : '01_Jan'
+
     // Build URL with proper encoding: each path segment encoded individually
     const segments = [
         'Cleaned_Database',
         benchmark,
         'Monthwise',
+        monthFolder,
         contractID + '.csv'
     ]
     const path = segments.map(s => encodeURIComponent(s)).join('/')
@@ -86,4 +96,48 @@ function generateContractList(prefix, startYear, startMonth, endYear, endMonth) 
     }
 
     return contracts
+}
+
+/**
+ * Load Spot Price CSV by month (not by contract year)
+ * Spot Price is continuous, not expiring, so just month folder
+ * @param {number} monthIndex - 0-11 (Jan=0, Dec=11)
+ * @returns {Promise<Array>} Parsed CSV rows
+ */
+async function loadSpotPriceCSV(monthIndex) {
+    const key = `Spot Price::month_${monthIndex}`
+    if (csvCache.has(key)) {
+        return csvCache.get(key)
+    }
+
+    const monthNames = ['01_Jan','02_Feb','03_Mar','04_Apr','05_May','06_Jun',
+                        '07_Jul','08_Aug','09_Sep','10_Oct','11_Nov','12_Dec']
+    const monthFolder = monthNames[monthIndex]
+    const fileName = `Spot_Price_${monthFolder}.csv`
+
+    const segments = [
+        'Cleaned_Database',
+        'Spot Price',
+        'Monthwise',
+        monthFolder,
+        fileName
+    ]
+    const path = segments.map(s => encodeURIComponent(s)).join('/')
+    const url = BASE_RAW + path
+
+    console.log('[DataLoader] Fetching Spot Price:', url)
+
+    const resp = await fetch(url)
+    if (!resp.ok) {
+        throw new Error(`Spot CSV fetch failed (${resp.status}): ${url}`)
+    }
+
+    const text = await resp.text()
+    const parsed = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true
+    }).data
+
+    csvCache.set(key, parsed)
+    return parsed
 }

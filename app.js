@@ -403,16 +403,15 @@ async function initSpotChart(state) {
 
 async function renderSpotChart(state) {
     try {
-        const MC = ['f', 'g', 'h', 'j', 'k', 'm', 'n', 'q', 'u', 'v', 'x', 'z']
-        const yy = String(state.spot.year).slice(-2)
-        const contractID = `spot_${MC[state.spot.month]}${yy}`
-
-        const series = await getContractSeries('Spot Price', contractID, null)
+        // Spot Price is loaded by month only, not by year/contract
+        const series = await getSpotPriceSeries(state.spot.month, state.spot.year)
+        
+        // For seasonal band, use same month from previous 5 years
         const band = await getSeasonalBand('Spot Price', state.spot.month, state.spot.year, state.spot.tDay)
 
         const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
                             'July', 'August', 'September', 'October', 'November', 'December']
-        const title = `${monthNames[state.spot.month]} ${state.spot.year}`
+        const title = `${monthNames[state.spot.month]} (from ${state.spot.year})`
 
         renderContractChart('spot-chart', series, band, state.spot.tDay, title, '$/MMBTU')
 

@@ -27,6 +27,30 @@ function toTDaySeries(csvRows) {
 }
 
 /**
+ * Get Spot Price series for a specific month (all years)
+ * Spot Price is continuous, not contract-based
+ * @param {number} monthIndex - 0-11 (Jan=0, Dec=11)
+ * @param {number} targetYear - Filter to data from this year onward
+ * @returns {Promise<Array>} T-Day series: {tDay, date, price}
+ */
+async function getSpotPriceSeries(monthIndex, targetYear) {
+    const rows = await loadSpotPriceCSV(monthIndex)
+    
+    // Filter to target year and onward
+    const filtered = rows
+        .map(r => ({
+            date: r.Date,
+            price: parseFloat(r.Price)
+        }))
+        .filter(d => {
+            const year = parseInt(d.date.split('-')[0])
+            return year >= targetYear && !isNaN(d.price)
+        })
+    
+    return toTDaySeries(filtered.map(d => ({ Date: d.date, Price: d.price })))
+}
+
+/**
  * Get full contract series: historical CSV + live Yahoo tail (if not expired)
  * @param {string} benchmark - e.g. "Henry Hub", "Dutch TTF"
  * @param {string} contractID - e.g. "ngf26"
@@ -56,14 +80,63 @@ async function getContractSeries(benchmark, contractID, yahooTicker) {
 
 /**
  * Calculate 5-year seasonal band (avg, high, low)
- * Compares same delivery month across last 5 years
- * @param {string} benchmark - e.g. "Henry Hub"
+ * For contracts: compares same delivery month across last 5 years
+ * For Spot Price: compares same month across different years
+ * @param {string} benchmark - e.g. "Henry Hub", "Spot Price"
  * @param {number} monthIndex - 0-11 (Jan=0, Dec=11)
  * @param {number} targetYear - Year to compare against
  * @param {number} tDayWindow - Max T-Days to include
  * @returns {Promise<Object>} {avg, high, low, tDays}
  */
 async function getSeasonalBand(benchmark, monthIndex, targetYear, tDayWindow) {
+    // Special handling for Spot Price (not contract-based)
+    if (benchmark === 'Spot Price') {
+        const allData = await loadSpotPriceCSV(monthIndex)
+        const years = [1, 2, 3, 4, 5].map(n => targetYear - n)
+        const series = []
+
+        for (const y of years) {
+            const yearData = allData
+                .map(r => ({
+                    date: r.Date,
+                    price: parseFloat(r.Price)
+                }))
+                .filter(d => {
+                    const year = parseInt(d.date.split('-')[0])
+                    return year === y && !isNaN(d.price)
+                })
+
+            if (yearData.length > 0) {
+                series.push(toTDaySeries(yearData.map(d => ({ Date: d.date, Price: d.price }))))
+            }
+        }
+
+        if (series.length === 0) {
+            return { avg: [], high: [], low: [], tDays: [] }
+        }
+
+        const maxT = Math.min(tDayWindow, ...series.map(s => s.length))
+        const tDays = Array.from({ length: maxT }, (_, i) => i + 1)
+
+        const avg = tDays.map(t => {
+            const vals = series
+                .map(s => s[t - 1]?.price)
+                .filter(v => v !== undefined)
+            return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+        })
+
+        const high = tDays.map(t =>
+            Math.max(...series.map(s => s[t - 1]?.price).filter(v => v !== undefined))
+        )
+
+        const low = tDays.map(t =>
+            Math.min(...series.map(s => s[t - 1]?.price).filter(v => v !== undefined))
+        )
+
+        return { avg, high, low, tDays }
+    }
+
+    // Standard contract-based seasonal band (Henry Hub, TTF, etc)
     const MC = ['f', 'g', 'h', 'j', 'k', 'm', 'n', 'q', 'u', 'v', 'x', 'z']
     const years = [1, 2, 3, 4, 5].map(n => targetYear - n)
     const series = []
