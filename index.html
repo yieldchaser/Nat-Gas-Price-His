@@ -1,351 +1,66 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>⚡ NatGas Dashboard</title>
-    
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>NatGas Pro Terminal</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <!-- GLOBAL TOOLTIP -->
-    <div id="global-tooltip"></div>
-    
-    <!-- GLOBAL LOADER -->
-    <div id="global-loader" style="display: none;">
-        <div class="spinner"></div>
+  <div id="overlay-loader" class="overlay hidden"><div class="spinner"></div><div class="loader-text">Loading data ...</div></div>
+  <header class="app-header">
+    <div class="header-left">⚡ NatGas Pro Terminal</div>
+    <div class="header-center">
+      <div class="ticker-card" id="ng-ticker">NG=F: --</div>
+      <div class="ticker-card" id="ttf-ticker">TTF=F: --</div>
+      <div class="ticker-card" id="eurusd-ticker">EUR/USD: --</div>
     </div>
-    
-    <!-- HEADER -->
-    <header>
-        <div class="header-left">
-            <span style="color: #58a6ff; font-size: 16px; margin-right: 4px;">⚡</span>
-            <span>NatGas Dashboard</span>
-        </div>
-        <div class="header-right">
-            <span id="ng-ticker" class="ticker-pill">--</span>
-            <span id="ttf-ticker" class="ticker-pill">--</span>
-        </div>
-    </header>
-    
-    <!-- NAVIGATION -->
-    <nav>
-        <button class="tab-button" data-tab="hh">HH Chart</button>
-        <button class="tab-button" data-tab="ttf">TTF Chart</button>
-        <button class="tab-button" data-tab="spot">Spot Price</button>
-        <button class="tab-button" data-tab="spread">Spread Analysis</button>
-        <button class="tab-button" data-tab="curve">Forward Curve</button>
-        <button class="tab-button" data-tab="expiry">Expiry Table</button>
-        <button class="tab-button" data-tab="log">Daily Log</button>
-        <button class="tab-button" data-tab="cross">HH/TTF Spread</button>
-    </nav>
-    
-    <!-- MAIN CONTENT -->
-    <main>
-        
-        <!-- PANEL 1: HH CHART -->
-        <section class="panel" id="panel-hh" style="display: flex;">
-            <div class="control-bar">
-                <select id="hh-year">
-                    <option value="">Select Year</option>
-                </select>
-                <select id="hh-month">
-                    <option value="">Select Month</option>
-                </select>
-                <div class="tday-buttons">
-                    <button class="tday-button" data-tday="25" id="hh-tday-25">25</button>
-                    <button class="tday-button" data-tday="50" id="hh-tday-50">50</button>
-                    <button class="tday-button" data-tday="75" id="hh-tday-75">75</button>
-                    <button class="tday-button" data-tday="100" id="hh-tday-100">100</button>
-                    <button class="tday-button" data-tday="150" id="hh-tday-150">150</button>
-                    <button class="tday-button" data-tday="200" id="hh-tday-200">200</button>
-                    <button class="tday-button" data-tday="250" id="hh-tday-250">250</button>
-                    <button class="tday-button" data-tday="300" id="hh-tday-300">300</button>
-                    <button class="tday-button" data-tday="350" id="hh-tday-350">350</button>
-                    <button class="tday-button" data-tday="400" id="hh-tday-400">400</button>
-                    <button class="tday-button" data-tday="450" id="hh-tday-450">450</button>
-                    <button class="tday-button" data-tday="500" id="hh-tday-500">500</button>
-                    <button class="tday-button" data-tday="518" id="hh-tday-518">518</button>
-                </div>
-            </div>
-            <div class="stats-row">
-                <div class="stat-card" data-tooltip="Highest closing price&#10;for this contract&#10;over selected T-Day window">
-                    <div class="stat-label">HIGH</div>
-                    <div class="stat-value" id="hh-stat-high">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card" data-tooltip="Lowest closing price&#10;for this contract&#10;over selected T-Day window">
-                    <div class="stat-label">LOW</div>
-                    <div class="stat-value" id="hh-stat-low">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card" data-tooltip="Most recent available close&#10;Live from Yahoo Finance&#10;or last CSV row if expired">
-                    <div class="stat-label">LAST PRICE</div>
-                    <div class="stat-value" id="hh-stat-last">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card" data-tooltip="Total trading days&#10;from contract inception&#10;to latest available date">
-                    <div class="stat-label">DAYS TRADED</div>
-                    <div class="stat-value" id="hh-stat-days">--</div>
-                    <div class="stat-sub">trading days</div>
-                </div>
-            </div>
-            <div class="chart-wrap">
-                <div id="hh-chart"></div>
-            </div>
-        </section>
-        
-        <!-- PANEL 2: TTF CHART -->
-        <section class="panel" id="panel-ttf" style="display: none;">
-            <div class="control-bar">
-                <select id="ttf-year">
-                    <option value="">Select Year</option>
-                </select>
-                <select id="ttf-month">
-                    <option value="">Select Month</option>
-                </select>
-                <div class="tday-buttons">
-                    <button class="tday-button" data-tday="25" id="ttf-tday-25">25</button>
-                    <button class="tday-button" data-tday="50" id="ttf-tday-50">50</button>
-                    <button class="tday-button" data-tday="75" id="ttf-tday-75">75</button>
-                    <button class="tday-button" data-tday="100" id="ttf-tday-100">100</button>
-                    <button class="tday-button" data-tday="150" id="ttf-tday-150">150</button>
-                    <button class="tday-button" data-tday="200" id="ttf-tday-200">200</button>
-                    <button class="tday-button" data-tday="250" id="ttf-tday-250">250</button>
-                    <button class="tday-button" data-tday="300" id="ttf-tday-300">300</button>
-                    <button class="tday-button" data-tday="350" id="ttf-tday-350">350</button>
-                    <button class="tday-button" data-tday="400" id="ttf-tday-400">400</button>
-                    <button class="tday-button" data-tday="450" id="ttf-tday-450">450</button>
-                    <button class="tday-button" data-tday="500" id="ttf-tday-500">500</button>
-                    <button class="tday-button" data-tday="518" id="ttf-tday-518">518</button>
-                </div>
-            </div>
-            <div class="stats-row">
-                <div class="stat-card" data-tooltip="Highest closing price&#10;for this contract&#10;over selected T-Day window">
-                    <div class="stat-label">HIGH</div>
-                    <div class="stat-value" id="ttf-stat-high">--</div>
-                    <div class="stat-sub">€/MWh</div>
-                </div>
-                <div class="stat-card" data-tooltip="Lowest closing price&#10;for this contract&#10;over selected T-Day window">
-                    <div class="stat-label">LOW</div>
-                    <div class="stat-value" id="ttf-stat-low">--</div>
-                    <div class="stat-sub">€/MWh</div>
-                </div>
-                <div class="stat-card" data-tooltip="Most recent available close&#10;Live from Yahoo Finance&#10;or last CSV row if expired">
-                    <div class="stat-label">LAST PRICE</div>
-                    <div class="stat-value" id="ttf-stat-last">--</div>
-                    <div class="stat-sub">€/MWh</div>
-                </div>
-                <div class="stat-card" data-tooltip="Total trading days&#10;from contract inception&#10;to latest available date">
-                    <div class="stat-label">DAYS TRADED</div>
-                    <div class="stat-value" id="ttf-stat-days">--</div>
-                    <div class="stat-sub">trading days</div>
-                </div>
-            </div>
-            <div class="chart-wrap">
-                <div id="ttf-chart"></div>
-            </div>
-        </section>
-        
-        <!-- PANEL 3: SPOT PRICE -->
-        <section class="panel" id="panel-spot" style="display: none;">
-            <div class="control-bar">
-                <select id="spot-year">
-                    <option value="">Select Year</option>
-                </select>
-                <select id="spot-month">
-                    <option value="">Select Month</option>
-                </select>
-                <div class="tday-buttons">
-                    <button class="tday-button" data-tday="25" id="spot-tday-25">25</button>
-                    <button class="tday-button" data-tday="50" id="spot-tday-50">50</button>
-                    <button class="tday-button" data-tday="75" id="spot-tday-75">75</button>
-                    <button class="tday-button" data-tday="100" id="spot-tday-100">100</button>
-                    <button class="tday-button" data-tday="150" id="spot-tday-150">150</button>
-                    <button class="tday-button" data-tday="200" id="spot-tday-200">200</button>
-                    <button class="tday-button" data-tday="250" id="spot-tday-250">250</button>
-                    <button class="tday-button" data-tday="300" id="spot-tday-300">300</button>
-                    <button class="tday-button" data-tday="350" id="spot-tday-350">350</button>
-                    <button class="tday-button" data-tday="400" id="spot-tday-400">400</button>
-                    <button class="tday-button" data-tday="450" id="spot-tday-450">450</button>
-                    <button class="tday-button" data-tday="500" id="spot-tday-500">500</button>
-                    <button class="tday-button" data-tday="518" id="spot-tday-518">518</button>
-                </div>
-            </div>
-            <div class="stats-row">
-                <div class="stat-card" data-tooltip="Highest closing price&#10;for this period&#10;over selected T-Day window">
-                    <div class="stat-label">HIGH</div>
-                    <div class="stat-value" id="spot-stat-high">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card" data-tooltip="Lowest closing price&#10;for this period&#10;over selected T-Day window">
-                    <div class="stat-label">LOW</div>
-                    <div class="stat-value" id="spot-stat-low">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card" data-tooltip="Most recent available close&#10;Live from EIA&#10;or last CSV row">
-                    <div class="stat-label">LAST PRICE</div>
-                    <div class="stat-value" id="spot-stat-last">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card" data-tooltip="Total trading days&#10;in selected period&#10;from inception to latest date">
-                    <div class="stat-label">DAYS TRADED</div>
-                    <div class="stat-value" id="spot-stat-days">--</div>
-                    <div class="stat-sub">trading days</div>
-                </div>
-            </div>
-            <div class="chart-wrap">
-                <div id="spot-chart"></div>
-            </div>
-        </section>
-        
-        <!-- PANEL 4: SPREAD ANALYSIS -->
-        <section class="panel" id="panel-spread" style="display: none;">
-            <div class="control-bar">
-                <select id="spread-front">
-                    <option value="">Front Month</option>
-                </select>
-                <select id="spread-back">
-                    <option value="">Back Month</option>
-                </select>
-                <select id="spread-year">
-                    <option value="">Select Year</option>
-                </select>
-                <div class="tday-buttons">
-                    <button class="tday-button" data-tday="25" id="spread-tday-25">25</button>
-                    <button class="tday-button" data-tday="50" id="spread-tday-50">50</button>
-                    <button class="tday-button" data-tday="75" id="spread-tday-75">75</button>
-                    <button class="tday-button" data-tday="100" id="spread-tday-100">100</button>
-                    <button class="tday-button" data-tday="150" id="spread-tday-150">150</button>
-                    <button class="tday-button" data-tday="200" id="spread-tday-200">200</button>
-                    <button class="tday-button" data-tday="250" id="spread-tday-250">250</button>
-                    <button class="tday-button" data-tday="300" id="spread-tday-300">300</button>
-                    <button class="tday-button" data-tday="350" id="spread-tday-350">350</button>
-                    <button class="tday-button" data-tday="400" id="spread-tday-400">400</button>
-                    <button class="tday-button" data-tday="450" id="spread-tday-450">450</button>
-                    <button class="tday-button" data-tday="500" id="spread-tday-500">500</button>
-                    <button class="tday-button" data-tday="518" id="spread-tday-518">518</button>
-                </div>
-            </div>
-            <div id="spread-table-container"></div>
-            <div class="stats-row">
-                <div class="stat-card">
-                    <div class="stat-label">T-DAY SPREAD</div>
-                    <div class="stat-value" id="spread-stat-atday">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">MAX</div>
-                    <div class="stat-value" id="spread-stat-max">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">MIN</div>
-                    <div class="stat-value" id="spread-stat-min">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">AVERAGE</div>
-                    <div class="stat-value" id="spread-stat-avg">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-            </div>
-            <div class="chart-wrap">
-                <div id="spread-chart"></div>
-            </div>
-        </section>
-        
-        <!-- PANEL 5: FORWARD CURVE -->
-        <section class="panel" id="panel-curve" style="display: none;">
-            <div class="control-bar">
-                <button class="overlay-button" id="curve-overlay-today" style="font-weight: 600;">[Today]</button>
-                <button class="overlay-button" id="curve-overlay-1y">[-1Y]</button>
-                <button class="overlay-button" id="curve-overlay-2y">[-2Y]</button>
-                <button class="overlay-button" id="curve-overlay-3y">[-3Y]</button>
-            </div>
-            <div class="chart-wrap">
-                <div id="curve-chart"></div>
-            </div>
-        </section>
-        
-        <!-- PANEL 6: EXPIRY TABLE -->
-        <section class="panel" id="panel-expiry" style="display: none;">
-            <div class="control-bar">
-                <button class="avg-mode-button" id="expiry-mode-3y" style="font-weight: 600;">[3Y Avg]</button>
-                <button class="avg-mode-button" id="expiry-mode-5y">[-5Y Avg]</button>
-                <button class="avg-mode-button" id="expiry-mode-all">[-All Years]</button>
-            </div>
-            <div id="expiry-table-container" style="overflow-x: auto; padding: 12px 16px;"></div>
-        </section>
-        
-        <!-- PANEL 7: DAILY LOG -->
-        <section class="panel" id="panel-log" style="display: none;">
-            <div id="daily-log-container" style="overflow-y: auto; flex: 1; padding: 0 16px;"></div>
-            <div style="padding: 12px 16px; text-align: center; border-top: 1px solid #30363d;">
-                <button id="log-load-more" style="padding: 8px 16px; background: #0d1117; border: 1px solid #30363d; color: #8b949e; border-radius: 6px; cursor: pointer;">Load More</button>
-            </div>
-        </section>
-        
-        <!-- PANEL 8: HH/TTF SPREAD -->
-        <section class="panel" id="panel-cross" style="display: none;">
-            <div class="control-bar">
-                <select id="cross-hh-year">
-                    <option value="">HH Year</option>
-                </select>
-                <select id="cross-hh-month">
-                    <option value="">HH Month</option>
-                </select>
-                <select id="cross-ttf-year">
-                    <option value="">TTF Year</option>
-                </select>
-                <select id="cross-ttf-month">
-                    <option value="">TTF Month</option>
-                </select>
-                <button class="mode-button" id="cross-mode-native" style="font-weight: 600;">[Native Units]</button>
-                <button class="mode-button" id="cross-mode-usd">[-USD Equivalent]</button>
-            </div>
-            <div class="stats-row">
-                <div class="stat-card">
-                    <div class="stat-label">HH PRICE</div>
-                    <div class="stat-value" id="cross-stat-hh">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">TTF PRICE</div>
-                    <div class="stat-value" id="cross-stat-ttf">--</div>
-                    <div class="stat-sub">€/MWh</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">SPREAD (USD)</div>
-                    <div class="stat-value" id="cross-stat-spread">--</div>
-                    <div class="stat-sub">$/MMBTU</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">EUR/USD</div>
-                    <div class="stat-value" id="cross-stat-rate">--</div>
-                    <div class="stat-sub">rate</div>
-                </div>
-            </div>
-            <div class="chart-wrap">
-                <div id="cross-chart"></div>
-            </div>
-        </section>
-        
-    </main>
-    
-    <!-- PLOTLY, PAPA PARSE, SHEETJS FROM CDN -->
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-    
-    <!-- PROJECT JS MODULES (order matters) -->
-    <script src="js/tooltip.js"></script>
-    <script src="js/data_loader.js"></script>
-    <script src="js/yahoo_fetch.js"></script>
-    <script src="js/eia_fetch.js"></script>
-    <script src="js/data_engine.js"></script>
-    <script src="js/charts.js"></script>
-    <script src="app.js"></script>
+    <div class="header-right">
+      <button class="icon-btn" id="refresh-btn">⟳ Refresh</button>
+    </div>
+  </header>
+
+  <section class="tool-menu">
+    <button data-tab="market" data-choice="ng" class="tool-btn active">HH</button>
+    <button data-tab="market" data-choice="ttf" class="tool-btn">TTF</button>
+    <button data-tab="market" data-choice="spot" class="tool-btn">Spot</button>
+    <button data-tab="spread" class="tool-btn">Spread</button>
+    <button data-tab="curve" class="tool-btn">Curve</button>
+    <button data-tab="expiry" class="tool-btn">Expiry</button>
+    <button data-tab="log" class="tool-btn">Log</button>
+    <button data-tab="cross" class="tool-btn">Cross</button>
+  </section>
+
+  <main class="app-shell">
+    <aside class="side-panel">
+      <div class="panel-title">Contracts</div>
+      <div class="quick-grid" id="quick-contracts"></div>
+      <div class="panel-title">Controls</div>
+      <div class="control-group"><label>Year:</label><select id="global-year"></select></div>
+      <div class="control-group"><label>Month:</label><select id="global-month"></select></div>
+      <div class="control-group"><label>T-Day:</label><div class="tdays-grid" id="global-tdays"></div></div>
+    </aside>
+
+    <section class="main-panel">
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="chart-container" id="chart-container"></div>
+      <div class="data-grid" id="data-grid"></div>
+    </section>
+  </main>
+
+  <div id="global-tooltip" class="tooltip"></div>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="js/tooltip.js"></script>
+  <script src="js/data_loader.js"></script>
+  <script src="js/yahoo_fetch.js"></script>
+  <script src="js/eia_fetch.js"></script>
+  <script src="js/data_engine.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

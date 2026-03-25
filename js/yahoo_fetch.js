@@ -13,6 +13,20 @@ const YAHOO_TTL = 4 * 60 * 60 * 1000  // 4 hours in milliseconds
  * @param {string} ticker - e.g. "NGK26.NYM", "TTFM26.NYM"
  * @returns {Promise<Array>} Array of {date (YYYY-MM-DD), price}
  */
+async function retryFetch(url, options = {}, retries = 2, delay = 500) {
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const resp = await fetch(url, options)
+            if (resp.ok) return resp
+            if (i === retries) return resp
+            await new Promise(r => setTimeout(r, delay * (i + 1)))
+        } catch (e) {
+            if (i === retries) throw e
+            await new Promise(r => setTimeout(r, delay * (i + 1)))
+        }
+    }
+}
+
 async function fetchYahoo(ticker) {
     const key = 'yf_' + ticker
     const cached = sessionStorage.getItem(key)
@@ -29,16 +43,14 @@ async function fetchYahoo(ticker) {
     
     let resp
     try {
-        resp = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-        })
+        resp = await retryFetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, 3, 300)
     } catch (e) {
         console.warn('[Yahoo] Network error:', ticker, e)
         return []
     }
 
-    if (!resp.ok) {
-        console.warn('[Yahoo] HTTP', resp.status, ticker)
+    if (!resp || !resp.ok) {
+        console.warn('[Yahoo] HTTP', resp?.status, ticker)
         return []
     }
 
