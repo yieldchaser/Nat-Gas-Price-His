@@ -270,7 +270,7 @@ function getNeutralChartPalette() {
     historical: 'rgba(142, 146, 156, 0.22)',
     zero: 'rgba(255, 255, 255, 0.16)',
     fillTop: 'rgba(255, 255, 255, 0.12)',
-    fillBottom: 'rgba(255, 255, 255, 0.03)',
+    fillBottom: 'rgba(255, 255, 255, 0.00)',
     line: 'rgba(255, 255, 255, 0.18)',
     avg: 'rgba(196, 199, 206, 0.62)',
     highlight: 'rgba(255, 255, 255, 0.72)',
@@ -899,7 +899,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
   });
 
   if (bandUpper.length) {
-    const bandMaskColor = 'rgba(16, 17, 20, 0.82)';
+    const bandMaskColor = 'rgba(16, 17, 20, 0.18)';
     const upperSeries = chart.addAreaSeries({
       topColor: seasonalPalette.fillTop,
       bottomColor: seasonalPalette.fillBottom,
@@ -914,8 +914,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     const lowerSeries = chart.addAreaSeries({
       topColor: bandMaskColor,
       bottomColor: bandMaskColor,
-      lineColor: seasonalPalette.line,
-      lineWidth: 1,
+      lineColor: 'rgba(255, 255, 255, 0.30)',
+      lineWidth: 1.25,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
