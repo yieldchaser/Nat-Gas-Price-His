@@ -243,7 +243,10 @@ tr:hover td { background: var(--bg-card-hover); }
 .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
 
 /* Chart container */
-.chart-wrap { width: 100%; min-height: 400px; height: 60vh; border-radius: 6px; overflow: hidden; }
+.chart-wrap { width: 100%; min-height: 400px; height: 60vh; border-radius: 6px; overflow: hidden; position: relative; }
+/* Hide TradingView attribution logo */
+.chart-wrap a[href*="tradingview"], .chart-wrap div[data-lw-attribution] { display: none !important; }
+.tv-lightweight-charts a { display: none !important; }
 
 /* ═══════════════════════════════════════════════════════════
    SCROLLBAR
@@ -641,7 +644,7 @@ function renderHHTab() {
           <label>T-Day Range: <span id="hh-tday-label">ALL</span></label>
           <input type="range" id="hh-tday" min="0" max="13" value="0">
         </div>
-        <button class="toggle-btn" id="hh-mode-toggle">Calendar Dates</button>
+        <button class="toggle-btn" id="hh-mode-toggle">Trading Days</button>
         <button class="toggle-btn" id="hh-compare-toggle">Compare Mode</button>
         <div class="flex flex-col gap-sm" id="hh-compare-select" style="display:none;">
           <label>Compare Year</label>
@@ -777,15 +780,14 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
   }
   if (!STATE.charts.hh) STATE.charts.hh = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, {
-    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
-    grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: 'rgba(0,212,255,0.3)', labelBackgroundColor: '#1e1e2e' }, horzLine: { color: 'rgba(0,212,255,0.3)', labelBackgroundColor: '#1e1e2e' } },
-    rightPriceScale: { borderColor: '#1e1e2e', scaleMargins: { top: 0.1, bottom: 0.1 } },
-    timeScale: { borderColor: '#1e1e2e', timeVisible: false },
-    handleScroll: true, handleScale: true,
-  });
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(0,212,255,'));
   STATE.charts.hh.main = chart;
+
+  // Time mapping: default=calendar dates, toggle active=trading day numbers
+  function getTime(pt) {
+    return calendarMode ? dayToTime(pt.d) : pt.date;
+  }
+  // calendarMode here means "Trading Days" button is active = use dayToTime
 
   // 5Y seasonal band (min/max area)
   const seasonal = STATE.seasonalCache[month];
@@ -797,8 +799,10 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
     for (let d = minD; d <= maxD; d++) {
       const s = seasonal[d];
       if (!s) continue;
-      const timeVal = calendarMode ? findDateForDay(filtered, d) : dayToTime(d);
-      if (!timeVal) continue;
+      // Find matching point in filtered for its date
+      const matchPt = filtered.find(p => p.d === d);
+      if (!matchPt) continue;
+      const timeVal = getTime(matchPt);
       bandData.push({ time: timeVal, low: s.min, high: s.max });
       avgData.push({ time: timeVal, value: s.avg });
     }
@@ -851,7 +855,7 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
   });
 
   const mainData = filtered.map(pt => ({
-    time: calendarMode ? pt.date : dayToTime(pt.d),
+    time: getTime(pt),
     value: pt.p,
   }));
   mainSeries.setData(mainData);
@@ -873,10 +877,9 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
         lastValueVisible: false,
         crosshairMarkerVisible: true,
       });
-      // In trading-day mode, both use same day index; in calendar mode use respective dates
-      const compFiltered = calendarMode ? compData : compData;
-      compSeries.setData(compFiltered.map(pt => ({
-        time: calendarMode ? pt.date : dayToTime(pt.d),
+      // In trading-day mode (calendarMode=true), both use day index for overlay
+      compSeries.setData(compData.map(pt => ({
+        time: calendarMode ? dayToTime(pt.d) : pt.date,
         value: pt.p,
       })));
     }
@@ -885,17 +888,38 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
   chart.timeScale().fitContent();
 }
 
+const _dayToTimeCache = {};
 function dayToTime(d) {
-  // Convert trading day number to a pseudo-date for lightweight-charts
-  // Use a base date and add d business days
-  const base = new Date(1990, 0, 1);
-  base.setDate(base.getDate() + d);
-  return base.toISOString().slice(0, 10);
+  if (_dayToTimeCache[d]) return _dayToTimeCache[d];
+  // Convert trading day number to a pseudo-date (fast math, no loops)
+  // Each week has 5 trading days, so d trading days = d + floor((d-1)/5)*2 calendar days
+  const weeks = Math.floor((d - 1) / 5);
+  const remainder = ((d - 1) % 5);
+  const calDays = weeks * 7 + remainder;
+  const base = new Date(2000, 0, 3); // A Monday
+  const result = new Date(base.getTime() + calDays * 86400000);
+  const s = result.toISOString().slice(0, 10);
+  _dayToTimeCache[d] = s;
+  return s;
 }
 
 function findDateForDay(filtered, d) {
   const pt = filtered.find(p => p.d === d);
   return pt ? pt.date : null;
+}
+
+/* Chart options helper — removes watermark, consistent styling */
+function baseChartOptions(container, accentColor) {
+  return {
+    width: container.clientWidth,
+    height: container.clientHeight,
+    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, attributionLogo: false },
+    grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: (accentColor || 'rgba(0,212,255,') + '0.3)', labelBackgroundColor: '#1e1e2e' }, horzLine: { color: (accentColor || 'rgba(0,212,255,') + '0.3)', labelBackgroundColor: '#1e1e2e' } },
+    rightPriceScale: { borderColor: '#1e1e2e', scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderColor: '#1e1e2e', timeVisible: false },
+    handleScroll: true, handleScale: true,
+  };
 }
 
 function renderHHStats(data, month, year) {
@@ -1053,7 +1077,7 @@ function renderTTFTab() {
           <label>T-Day Range: <span id="ttf-tday-label">ALL</span></label>
           <input type="range" id="ttf-tday" min="0" max="13" value="0">
         </div>
-        <button class="toggle-btn" id="ttf-mode-toggle">Calendar Dates</button>
+        <button class="toggle-btn" id="ttf-mode-toggle">Trading Days</button>
       </div>
       <div class="flex gap" style="flex-wrap:wrap;">
         <div class="grow" style="min-width:0;">
@@ -1132,17 +1156,11 @@ function updateTTFChart() {
   if (STATE.charts.ttf && STATE.charts.ttf.main) STATE.charts.ttf.main.remove();
   if (!STATE.charts.ttf) STATE.charts.ttf = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, {
-    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
-    grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: 'rgba(255,140,0,0.3)', labelBackgroundColor: '#1e1e2e' }, horzLine: { color: 'rgba(255,140,0,0.3)', labelBackgroundColor: '#1e1e2e' } },
-    rightPriceScale: { borderColor: '#1e1e2e' },
-    timeScale: { borderColor: '#1e1e2e' },
-  });
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(255,140,0,'));
   STATE.charts.ttf.main = chart;
 
   const series = chart.addLineSeries({ color: '#ff8c00', lineWidth: 2, priceLineVisible: true, lastValueVisible: true });
-  series.setData(filtered.map(pt => ({ time: calendarMode ? pt.date : dayToTime(pt.d), value: pt.p })));
+  series.setData(filtered.map(pt => ({ time: calendarMode ? dayToTime(pt.d) : pt.date, value: pt.p })));
   chart.timeScale().fitContent();
 
   // Stats
@@ -1259,13 +1277,7 @@ function updateSpotChart() {
   if (STATE.charts.spot && STATE.charts.spot.main) STATE.charts.spot.main.remove();
   if (!STATE.charts.spot) STATE.charts.spot = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, {
-    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
-    grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#1e1e2e' },
-    timeScale: { borderColor: '#1e1e2e' },
-  });
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(167,139,250,'));
   STATE.charts.spot.main = chart;
 
   // Main line
@@ -1419,13 +1431,7 @@ function updateSpreadChart() {
   if (STATE.charts.spread && STATE.charts.spread.main) STATE.charts.spread.main.remove();
   if (!STATE.charts.spread) STATE.charts.spread = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, {
-    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
-    grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#1e1e2e' },
-    timeScale: { borderColor: '#1e1e2e' },
-  });
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(157,78,221,'));
   STATE.charts.spread.main = chart;
 
   // Plot historical years as thin gray lines
@@ -1592,12 +1598,7 @@ function updateCurveChart() {
   if (STATE.charts.curve && STATE.charts.curve.main) STATE.charts.curve.main.remove();
   if (!STATE.charts.curve) STATE.charts.curve = {};
 
-  const chart = LightweightCharts.createChart(chartContainer, {
-    layout: { background: { type: 'solid', color: '#111118' }, textColor: '#8888aa', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
-    grid: { vertLines: { color: 'rgba(30,30,46,0.5)' }, horzLines: { color: 'rgba(30,30,46,0.5)' } },
-    rightPriceScale: { borderColor: '#1e1e2e' },
-    timeScale: { borderColor: '#1e1e2e' },
-  });
+  const chart = LightweightCharts.createChart(chartContainer, baseChartOptions(chartContainer, 'rgba(0,212,255,'));
   STATE.charts.curve.main = chart;
 
   // Use histogram series for bar chart effect
