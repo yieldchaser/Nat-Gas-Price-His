@@ -953,7 +953,8 @@ function getActiveHHTickers() {
 }
 
 function getActiveTTFTickers() {
-  // Generate tickers for currently active/forward TTF contracts (24 months forward)
+  // Yahoo Finance uses TTF{CODE}{YY}.NYM for NYMEX-listed TTF contracts
+  // (internal historical format uses TG prefix, but Yahoo uses TTF prefix)
   const now = new Date();
   const tickers = [];
   for (let offset = 0; offset < 24; offset++) {
@@ -962,7 +963,7 @@ function getActiveTTFTickers() {
     const monthIdx = d.getMonth();
     const code = MONTH_CODES[MONTHS[monthIdx]];
     const pad = yr < 10 ? '0' + yr : '' + yr;
-    tickers.push(`TG${code}${pad}.NYM`);
+    tickers.push(`TTF${code}${pad}.NYM`);
   }
   return tickers;
 }
@@ -1150,8 +1151,9 @@ function getTTFContractData(ticker) {
     hist = STATE.ttf[month].contracts[ticker];
   }
 
-  // Try live data
-  const liveTicker = ticker + '.NYM';
+  // Try live data — Yahoo uses TTF{CODE}{YY}.NYM; internal tickers use TG{CODE}{YY}
+  // e.g. internal TGJ26 → Yahoo TTFJ26.NYM
+  const liveTicker = 'TTF' + ticker.slice(2) + '.NYM';
   const live = STATE.liveData[liveTicker];
   if (live && live.length > 0) {
     if (hist.length === 0) {
