@@ -957,7 +957,7 @@ function getActiveTTFTickers() {
   // (internal historical format uses TG prefix, but Yahoo uses TTF prefix)
   const now = new Date();
   const tickers = [];
-  for (let offset = 0; offset < 24; offset++) {
+  for (let offset = 0; offset < 7; offset++) {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const yr = d.getFullYear() % 100;
     const monthIdx = d.getMonth();
