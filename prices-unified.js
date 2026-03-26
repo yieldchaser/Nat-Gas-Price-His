@@ -1014,7 +1014,6 @@ function updatePricesChart({ skipDetails = false } = {}) {
   });
 
   if (bandUpper.length) {
-    const bandMaskColor = '#101114';
     const upperSeries = chart.addAreaSeries({
       topColor: seasonalPalette.fillTop,
       bottomColor: seasonalPalette.fillBottom,
@@ -1027,8 +1026,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     upperSeries.setData(bandUpper);
 
     const lowerSeries = chart.addAreaSeries({
-      topColor: bandMaskColor,
-      bottomColor: bandMaskColor,
+      topColor: 'rgba(0,0,0,0)',
+      bottomColor: 'rgba(0,0,0,0)',
       lineColor: 'rgba(255, 255, 255, 0.30)',
       lineWidth: 1.25,
       priceLineVisible: false,
