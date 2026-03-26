@@ -607,7 +607,7 @@ function renderPricesTab() {
             </div>
             <div class="chart-readout" id="prices-range-readout">Awaiting data</div>
           </div>
-          <div class="card" style="margin-top:var(--gap);padding:10px 14px;"><div class="flex gap wrap" id="prices-summary-bar" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);"></div></div>
+          <div class="card" style="margin-top:var(--gap);padding:12px 16px;" id="prices-summary-bar"></div>
         </div>
         <div class="sidebar-stack">
           <div class="card" id="prices-stats"></div>
@@ -801,21 +801,72 @@ function renderPricesSummaryBar(context) {
   const summaryBar = document.getElementById('prices-summary-bar');
   if (!summaryBar) return;
 
-  const { instrument, fullData, filteredData, changePct, stats, currentPoint, seasonal } = context;
-  const items = [
-    `Window <span style="color:var(--text-primary);">${filteredData.length}/${fullData.length}</span>`,
-    `Window High / Low <span style="color:var(--text-primary);">${formatInstrumentValue(instrument, stats.max)} / ${formatInstrumentValue(instrument, stats.min)}</span>`,
-    `From Open <span class="${changePct >= 0 ? 'positive' : 'negative'}">${formatPercent(changePct)}</span>`,
-  ];
+  const { instrument, fullData, filteredData, stats, currentPoint, seasonal } = context;
+  const fmt = v => formatInstrumentValue(instrument, v);
 
+  // Window-specific change: first → last point in the visible window
+  const wFirst = filteredData[0];
+  const wLast  = filteredData[filteredData.length - 1];
+  const windowDelta = wFirst && wLast && wFirst.p
+    ? ((wLast.p - wFirst.p) / wFirst.p) * 100
+    : null;
+
+  // Price spread (high − low within window)
+  const spread = Number.isFinite(stats.max) && Number.isFinite(stats.min)
+    ? stats.max - stats.min : null;
+
+  // Seasonal position
+  let seasonalDelta = null, percentile = null;
   if (seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
-    const seasonalDelta = ((currentPoint.p - seasonal.avg) / seasonal.avg) * 100;
-    items.push(`vs 5Y Avg <span class="${seasonalDelta >= 0 ? 'positive' : 'negative'}">${formatPercent(seasonalDelta)}</span>`);
-  } else {
-    items.push(`Average <span style="color:var(--text-primary);">${formatInstrumentValue(instrument, stats.avg)}</span>`);
+    seasonalDelta = ((currentPoint.p - seasonal.avg) / seasonal.avg) * 100;
+    percentile = seasonal.max !== seasonal.min
+      ? Math.round(((currentPoint.p - seasonal.min) / (seasonal.max - seasonal.min)) * 100)
+      : 50;
   }
 
-  summaryBar.innerHTML = items.map(item => `<span>${item}</span>`).join('<span style="color:var(--text-muted);">|</span>');
+  const col = v => v >= 0 ? 'var(--positive)' : 'var(--negative)';
+  const bandColor = percentile != null
+    ? (percentile >= 80 ? 'var(--negative)' : percentile <= 20 ? 'var(--positive)' : 'var(--text-secondary)')
+    : 'var(--text-secondary)';
+
+  const metrics = [
+    {
+      label: 'POINTS',
+      html: `<span style="color:var(--text-primary);">${filteredData.length}</span><span style="color:var(--text-muted);font-size:11px;margin-left:3px;">/ ${fullData.length}</span>`,
+    },
+    { label: 'HIGH',   html: `<span style="color:var(--text-primary);">${fmt(stats.max)}</span>` },
+    { label: 'LOW',    html: `<span style="color:var(--text-primary);">${fmt(stats.min)}</span>` },
+    { label: 'AVG',    html: `<span style="color:var(--text-secondary);">${fmt(stats.avg)}</span>` },
+    spread != null
+      ? { label: 'SPREAD', html: `<span style="color:var(--text-secondary);">${fmt(spread)}</span>` }
+      : null,
+    windowDelta != null
+      ? { label: 'WINDOW \u0394', html: `<span style="color:${col(windowDelta)};">${formatPercent(windowDelta)}</span>` }
+      : null,
+    seasonalDelta != null
+      ? { label: 'vs 5Y AVG', html: `<span style="color:${col(seasonalDelta)};">${formatPercent(seasonalDelta)}</span>` }
+      : null,
+    percentile != null
+      ? { label: '5Y BAND', html: `<span style="color:${bandColor};">${percentile}th pct</span>` }
+      : null,
+  ].filter(Boolean);
+
+  const DIVIDER = `<div style="width:1px;background:var(--border);align-self:stretch;margin:0 14px;flex-shrink:0;"></div>`;
+  const LABEL_STYLE = `font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--text-muted);margin-bottom:4px;`;
+  const VALUE_STYLE = `font-family:var(--font-mono);font-size:13px;`;
+
+  summaryBar.innerHTML = `
+    <div style="font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;">Window Metrics</div>
+    <div style="display:flex;align-items:center;overflow-x:auto;padding-bottom:2px;">
+      ${metrics.map((m, i) => `
+        ${i > 0 ? DIVIDER : ''}
+        <div style="display:flex;flex-direction:column;flex-shrink:0;">
+          <div style="${LABEL_STYLE}">${m.label}</div>
+          <div style="${VALUE_STYLE}">${m.html}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 function renderPricesStats(context) {
