@@ -684,6 +684,7 @@ const STATE = {
   },
   renderedTabs: {},
   spreadHeatmapHtml: '',
+  spreadHeatmapKey: '',
   spreadHeatmapPending: false,
   loaded: false,
 };
@@ -704,6 +705,7 @@ function invalidateDerivedCaches() {
   STATE.contractCache = {};
   STATE.spreadCache = {};
   STATE.spreadHeatmapHtml = '';
+  STATE.spreadHeatmapKey = '';
   STATE.priceSeasonalCache = {};
   STATE.priceTtfSeasonalCache = {};
   STATE.priceSpotSeasonalCache = {};
@@ -1985,6 +1987,51 @@ const SPREAD_YEAR_COLORS = [
 function getSpreadYearColor(yr) {
   return SPREAD_YEAR_COLORS[(yr - 1990) % SPREAD_YEAR_COLORS.length];
 }
+
+function getSpreadBackYear(frontMonth, backMonth, year) {
+  return year + (MONTHS.indexOf(backMonth) < MONTHS.indexOf(frontMonth) ? 1 : 0);
+}
+
+function getSpreadLegInfo(frontMonth, backMonth, year, instrument = 'hh') {
+  const backYear = getSpreadBackYear(frontMonth, backMonth, year);
+  const prefix = instrument === 'ttf' ? 'TG' : 'NG';
+  const frontTicker = `${prefix}${MONTH_CODES[frontMonth]}${String(year % 100).padStart(2, '0')}`;
+  const backTicker = `${prefix}${MONTH_CODES[backMonth]}${String(backYear % 100).padStart(2, '0')}`;
+  return {
+    frontYear: year,
+    backYear,
+    frontTicker,
+    backTicker,
+    shortLabel: `${frontMonth}${String(year).slice(-2)}/${backMonth}${String(backYear).slice(-2)}`,
+    longLabel: `${frontMonth} ${year} / ${backMonth} ${backYear}`,
+  };
+}
+
+function formatSignedSpread(value, digits = 3) {
+  if (!Number.isFinite(value)) return '—';
+  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
+}
+
+function onSpreadPairChange() {
+  populateSpreadYears();
+  scheduleSpreadChartUpdate(true);
+}
+
+function setSpreadPair(front, back) {
+  const frontEl = document.getElementById('spread-front');
+  const backEl = document.getElementById('spread-back');
+  if (frontEl) frontEl.value = front;
+  if (backEl) backEl.value = back;
+  onSpreadPairChange();
+}
+
+function syncSpreadHeatmapTitle() {
+  const titleEl = document.getElementById('spread-heatmap-title');
+  if (!titleEl) return;
+  const instrument = getSpreadInstrument();
+  titleEl.textContent = `Spread Heatmap — Average Calendar Spread (Last 5 Years · ${instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub'})`;
+}
+
 function toggleSpreadYear(yr) {
   yr = parseInt(yr);
   if (!STATE.spreadVisibleYears) STATE.spreadVisibleYears = new Set();
@@ -2072,15 +2119,15 @@ function renderSpreadTab() {
             <div class="chart-readout" id="spread-range-readout">Awaiting data</div>
           </div>
           <div class="card" style="margin-top:var(--gap);">
-            <div class="card-title">Spread Heatmap — Average Calendar Spread (All Years)</div>
+            <div class="card-title" id="spread-heatmap-title">Spread Heatmap — Average Calendar Spread (Last 5 Years)</div>
             <div id="spread-heatmap" style="overflow-x:auto;"></div>
           </div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="spread-table"></div>
         </div>
       </div>
     `;
-    document.getElementById('spread-front').addEventListener('change', scheduleSpreadChartUpdate);
-    document.getElementById('spread-back').addEventListener('change', scheduleSpreadChartUpdate);
+    document.getElementById('spread-front').addEventListener('change', onSpreadPairChange);
+    document.getElementById('spread-back').addEventListener('change', onSpreadPairChange);
     document.getElementById('spread-year').addEventListener('change', scheduleSpreadChartUpdate);
     document.getElementById('spread-window-start').addEventListener('input', onSpreadSlider);
     document.getElementById('spread-window-end').addEventListener('input', onSpreadSlider);
@@ -2092,11 +2139,12 @@ function renderSpreadTab() {
       STATE.spreadPairKey = null; // force visible years reset on instrument change
       populateSpreadYears();
       scheduleSpreadChartUpdate(true);
+      scheduleSpreadHeatmap(true);
     });
   }
   populateSpreadYears();
   scheduleSpreadChartUpdate(true);
-  scheduleSpreadHeatmap();
+  scheduleSpreadHeatmap(true);
 }
 
 function getSpreadInstrument() {
@@ -2106,13 +2154,15 @@ function getSpreadInstrument() {
 
 function populateSpreadYears() {
   const sel = document.getElementById('spread-year');
+  const front = document.getElementById('spread-front')?.value || 'Jan';
+  const back = document.getElementById('spread-back')?.value || 'Feb';
   const currentVal = sel.value ? parseInt(sel.value, 10) : null;
   const instrument = getSpreadInstrument();
   const yearSet = new Set();
   const store = instrument === 'ttf' ? STATE.ttf : STATE.hh;
-  MONTHS.forEach(m => {
-    if (!store[m]) return;
-    Object.keys(store[m].contracts).forEach(t => {
+  [front, back].forEach(month => {
+    if (!store[month]) return;
+    Object.keys(store[month].contracts).forEach(t => {
       const yr = parseInt(t.slice(3));
       if (Number.isFinite(yr)) yearSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
     });
@@ -2125,10 +2175,12 @@ function populateSpreadYears() {
     const yr = parseInt(t.slice(yrStart, yrStart + 2));
     if (Number.isFinite(yr)) yearSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
   });
-  const years = [...yearSet].sort((a, b) => b - a);
+  const years = [...yearSet]
+    .sort((a, b) => b - a)
+    .filter(y => computeSpread(front, back, y, instrument).points.length > 0);
   sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
   if (years.length) {
-    sel.value = String(currentVal && yearSet.has(currentVal) ? currentVal : years[0]);
+    sel.value = String(currentVal && years.includes(currentVal) ? currentVal : years[0]);
   }
 }
 
@@ -2154,13 +2206,9 @@ function computeSpread(frontMonth, backMonth, year, instrument = 'hh') {
   const cacheKey = `${instrument}|${frontMonth}|${backMonth}|${year}`;
   if (STATE.spreadCache[cacheKey]) return STATE.spreadCache[cacheKey];
 
-  const code1 = MONTH_CODES[frontMonth];
-  const code2 = MONTH_CODES[backMonth];
-  const yy = year % 100;
-  const pad = yy < 10 ? '0' + yy : '' + yy;
-  const prefix = instrument === 'ttf' ? 'TG' : 'NG';
-  const t1 = `${prefix}${code1}${pad}`;
-  const t2 = `${prefix}${code2}${pad}`;
+  const legInfo = getSpreadLegInfo(frontMonth, backMonth, year, instrument);
+  const t1 = legInfo.frontTicker;
+  const t2 = legInfo.backTicker;
   const d1 = instrument === 'ttf' ? getTTFContractData(t1) : getContractData(t1);
   const d2 = instrument === 'ttf' ? getTTFContractData(t2) : getContractData(t2);
   if (d1.length === 0 || d2.length === 0) {
@@ -2185,6 +2233,43 @@ function computeSpread(frontMonth, backMonth, year, instrument = 'hh') {
   return result;
 }
 
+function getSpreadReferenceMetrics(frontMonth, backMonth, year, instrument, referenceDay) {
+  if (!Number.isFinite(referenceDay)) {
+    return { allTime: null, avg5y: null, avg10y: null };
+  }
+
+  const instrumentStore = instrument === 'ttf' ? STATE.ttf : STATE.hh;
+  const yearSet = new Set();
+  [frontMonth, backMonth].forEach(month => {
+    if (!instrumentStore[month]) return;
+    Object.keys(instrumentStore[month].contracts).forEach(ticker => {
+      const yr = parseInt(ticker.slice(3), 10);
+      if (Number.isFinite(yr)) yearSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
+    });
+  });
+
+  const referenceRows = [...yearSet]
+    .filter(yr => yr < year)
+    .sort((a, b) => b - a)
+    .map(yr => {
+      const spreadResult = computeSpread(frontMonth, backMonth, yr, instrument);
+      if (!spreadResult.points.length) return null;
+      const point = spreadResult.points.find(entry => entry.d === referenceDay);
+      return point ? { yr, value: point.value } : null;
+    })
+    .filter(Boolean);
+
+  const avgFor = rows => rows.length
+    ? rows.reduce((sum, row) => sum + row.value, 0) / rows.length
+    : null;
+
+  return {
+    allTime: avgFor(referenceRows),
+    avg5y: avgFor(referenceRows.filter(row => row.yr >= year - 5)),
+    avg10y: avgFor(referenceRows.filter(row => row.yr >= year - 10)),
+  };
+}
+
 function updateSpreadChart() {
   const front = document.getElementById('spread-front').value;
   const back = document.getElementById('spread-back').value;
@@ -2192,8 +2277,9 @@ function updateSpreadChart() {
   if (!year) return;
 
   const instrument = getSpreadInstrument();
+  const legInfo = getSpreadLegInfo(front, back, year, instrument);
   const unit = instrument === 'ttf' ? 'EUR/MWh' : 'USD/MMBtu';
-  document.getElementById('spread-desc').textContent = `${front} / ${back} Calendar Spread · ${instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub'} · ${unit}`;
+  document.getElementById('spread-desc').textContent = `${legInfo.longLabel} Calendar Spread · ${instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub'} · ${unit}`;
 
   const chartContainer = document.getElementById('spread-chart-container');
   const chart = createManagedChart('spread', 'main', chartContainer);
@@ -2202,12 +2288,13 @@ function updateSpreadChart() {
   // Collect all years with data for selected instrument
   const allYearsSet = new Set();
   const store = instrument === 'ttf' ? STATE.ttf : STATE.hh;
-  if (store[front]) {
-    Object.keys(store[front].contracts).forEach(t => {
+  [front, back].forEach(month => {
+    if (!store[month]) return;
+    Object.keys(store[month].contracts).forEach(t => {
       const yr = parseInt(t.slice(3));
       allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
     });
-  }
+  });
   const livePrefix = instrument === 'ttf' ? 'TTF' : 'NG';
   Object.keys(STATE.liveData).forEach(t => {
     if (!t.startsWith(livePrefix)) return;
@@ -2266,30 +2353,27 @@ function updateSpreadChart() {
   // KPI bar
   const kpiEl = document.getElementById('spread-kpis');
   if (kpiEl && tableRows.length) {
-    const currentYear = new Date().getFullYear();
-    const allAvgs = tableRows.map(r => r.avg).filter(Number.isFinite);
-    const atAvg = allAvgs.reduce((s, v) => s + v, 0) / (allAvgs.length || 1);
-    const rows5y = tableRows.filter(r => r.yr >= currentYear - 5 && r.yr < year);
-    const avg5y = rows5y.length ? rows5y.reduce((s, r) => s + r.avg, 0) / rows5y.length : null;
-    const rows10y = tableRows.filter(r => r.yr >= currentYear - 10 && r.yr < year);
-    const avg10y = rows10y.length ? rows10y.reduce((s, r) => s + r.avg, 0) / rows10y.length : null;
     const curRow = tableRows.find(r => r.yr === year);
     const curLast = curRow ? curRow.last : null;
-    const vs5y = avg5y != null && curLast != null ? ((curLast - avg5y) / Math.abs(avg5y) * 100) : null;
-    const vs10y = avg10y != null && curLast != null ? ((curLast - avg10y) / Math.abs(avg10y) * 100) : null;
+    const referenceDay = computeSpread(front, back, year, instrument).points.at(-1)?.d ?? null;
+    const refs = getSpreadReferenceMetrics(front, back, year, instrument, referenceDay);
+    const delta5y = refs.avg5y != null && curLast != null ? curLast - refs.avg5y : null;
+    const delta10y = refs.avg10y != null && curLast != null ? curLast - refs.avg10y : null;
     const chip = (label, val, color = 'var(--text-primary)') =>
       `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${color};">${val}</div></div>`;
     const sep = `<div class="ctrl-sep"></div>`;
     kpiEl.innerHTML = [
-      chip('All-Time Avg', `${atAvg >= 0 ? '+' : ''}${atAvg.toFixed(3)}`),
+      chip('Ref T-Day', referenceDay != null ? String(referenceDay) : '—'),
       sep,
-      chip('5Y Avg', avg5y != null ? `${avg5y >= 0 ? '+' : ''}${avg5y.toFixed(3)}` : '—'),
+      chip('All-Time Ref', formatSignedSpread(refs.allTime)),
       sep,
-      chip('10Y Avg', avg10y != null ? `${avg10y >= 0 ? '+' : ''}${avg10y.toFixed(3)}` : '—'),
+      chip('5Y Ref', formatSignedSpread(refs.avg5y)),
       sep,
-      chip('Curr vs 5Y', vs5y != null ? `${vs5y >= 0 ? '+' : ''}${vs5y.toFixed(1)}%` : '—', vs5y != null ? (vs5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+      chip('10Y Ref', formatSignedSpread(refs.avg10y)),
       sep,
-      chip('Curr vs 10Y', vs10y != null ? `${vs10y >= 0 ? '+' : ''}${vs10y.toFixed(1)}%` : '—', vs10y != null ? (vs10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+      chip('Curr - 5Y', formatSignedSpread(delta5y), delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+      sep,
+      chip('Curr - 10Y', formatSignedSpread(delta10y), delta10y != null ? (delta10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
     ].join('');
   }
 
@@ -2343,7 +2427,7 @@ function updateSpreadChart() {
       titleColor: '#f5f7fb',
       seriesConfigs: [{
         series: selectedSeries,
-        label: `${year} ${front}/${back}`,
+        label: legInfo.shortLabel,
         color: palette.main,
         emphasis: true,
         getPoint: param => selectedLookup.get(timeKey(param.time)),
@@ -2351,9 +2435,9 @@ function updateSpreadChart() {
       }],
       getTitle: param => {
         const point = selectedLookup.get(timeKey(param.time));
-        return point ? formatDisplayDate(point.date) : `${front}/${back} spread`;
+        return point ? formatDisplayDate(point.date) : `${legInfo.shortLabel} spread`;
       },
-      getSubtitle: () => `${front}/${back} spread | ${year}`,
+      getSubtitle: () => `${legInfo.longLabel} spread`,
       getMetrics: param => {
         const point = selectedLookup.get(timeKey(param.time));
         if (!point) return [];
@@ -2366,7 +2450,7 @@ function updateSpreadChart() {
       },
       getNote: param => {
         const point = selectedLookup.get(timeKey(param.time));
-        return point ? `T-Day ${point.d} • ${front}/${back} calendar spread` : '';
+        return point ? `T-Day ${point.d} • ${legInfo.longLabel} calendar spread` : '';
       },
     });
   }
@@ -2381,7 +2465,7 @@ function updateSpreadChart() {
         const sign = selected.last >= 0 ? '+' : '';
         priceEl.textContent = `${sign}${selected.last.toFixed(3)}`;
         priceEl.style.color = selected.last >= 0 ? 'var(--positive)' : 'var(--negative)';
-        if (changeEl) changeEl.textContent = `${front} / ${back} · ${year}`;
+        if (changeEl) changeEl.textContent = `${legInfo.shortLabel} · ref T-Day ${allSpreads.at(-1)?.d ?? '—'}`;
       }
     } else {
       priceEl.textContent = '--';
@@ -2398,7 +2482,7 @@ function updateSpreadChart() {
 
   const SCROLL_WRAP = inner => `<div style="overflow-x:auto;">${inner}</div>`;
 
-  let html = `<div class="card-title" style="padding:12px 16px 8px;">${front}/${back} Spread History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${tableRows.length} years</span></div>`;
+  let html = `<div class="card-title" style="padding:12px 16px 8px;">${legInfo.shortLabel} Spread History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${tableRows.length} years</span></div>`;
   html += SCROLL_WRAP(`<table><thead><tr>
     <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Year</th>
     <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Last</th>
@@ -2494,7 +2578,13 @@ function onSpreadSlider() {
 async function buildSpreadHeatmap(force = false) {
   const heatmapEl = document.getElementById('spread-heatmap');
   if (!heatmapEl) return;
-  if (force) STATE.spreadHeatmapHtml = '';
+  const instrument = getSpreadInstrument();
+  const cacheKey = `${instrument}|last5`;
+  syncSpreadHeatmapTitle();
+  if (force || STATE.spreadHeatmapKey !== cacheKey) {
+    STATE.spreadHeatmapHtml = '';
+    STATE.spreadHeatmapKey = cacheKey;
+  }
   if (STATE.spreadHeatmapHtml) {
     heatmapEl.innerHTML = STATE.spreadHeatmapHtml;
     return;
@@ -2517,17 +2607,21 @@ async function buildSpreadHeatmap(force = false) {
       // Compute avg spread across last 5 years
       let sum = 0, count = 0;
       for (let yr = currentYear - 5; yr < currentYear; yr++) {
-        const spreadResult = computeSpread(front, back, yr, 'hh');
+        const spreadResult = computeSpread(front, back, yr, instrument);
         if (spreadResult.points.length > 0) {
           sum += spreadResult.stats.avg;
           count++;
         }
       }
-      const avg = count > 0 ? sum / count : 0;
-      const intensity = Math.min(Math.abs(avg) / 2, 1);
-      const color = avg > 0 ? `rgba(0,255,136,${intensity * 0.4})` : `rgba(255,68,85,${intensity * 0.4})`;
-      html += `<td style="text-align:center;padding:4px 6px;background:${color};cursor:pointer;font-family:var(--font-mono);font-size:11px;"
-        onclick="document.getElementById('spread-front').value='${front}';document.getElementById('spread-back').value='${back}';scheduleSpreadChartUpdate(true);">${avg.toFixed(2)}</td>`;
+      const avg = count > 0 ? sum / count : null;
+      const intensity = avg != null ? Math.min(Math.abs(avg) / 2, 1) : 0;
+      const color = avg == null
+        ? 'transparent'
+        : (avg > 0 ? `rgba(0,255,136,${intensity * 0.4})` : `rgba(255,68,85,${intensity * 0.4})`);
+      const cursor = avg == null ? 'default' : 'pointer';
+      const value = avg == null ? '—' : avg.toFixed(2);
+      const click = avg == null ? '' : ` onclick="setSpreadPair('${front}','${back}')"`;
+      html += `<td style="text-align:center;padding:4px 6px;background:${color};cursor:${cursor};font-family:var(--font-mono);font-size:11px;"${click}>${value}</td>`;
     }
     html += '</tr>';
     await yieldToBrowser();
@@ -2540,7 +2634,9 @@ async function buildSpreadHeatmap(force = false) {
 function scheduleSpreadHeatmap(force = false) {
   const heatmapEl = document.getElementById('spread-heatmap');
   if (!heatmapEl) return;
-  if (STATE.spreadHeatmapHtml && !force) {
+  syncSpreadHeatmapTitle();
+  const cacheKey = `${getSpreadInstrument()}|last5`;
+  if (STATE.spreadHeatmapHtml && STATE.spreadHeatmapKey === cacheKey && !force) {
     heatmapEl.innerHTML = STATE.spreadHeatmapHtml;
     return;
   }
