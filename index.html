@@ -1969,6 +1969,33 @@ function updateSpotChart() {
      ═══════════════════════════════════════════════════════════ -->
 <script src="prices-unified.js"></script>
 <script>
+const SPREAD_YEAR_COLORS = [
+  '#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c',
+  '#38bdf8','#4ade80','#facc15','#f472b6','#c084fc','#2dd4bf',
+  '#fb7185','#818cf8','#a3e635','#e879f9','#22d3ee','#86efac',
+  '#fde68a','#fca5a5','#67e8f9','#bbf7d0','#fed7aa','#ddd6fe',
+];
+function getSpreadYearColor(yr) {
+  return SPREAD_YEAR_COLORS[(yr - 1990) % SPREAD_YEAR_COLORS.length];
+}
+function toggleSpreadYear(yr) {
+  yr = parseInt(yr);
+  if (!STATE.spreadVisibleYears) STATE.spreadVisibleYears = new Set();
+  if (STATE.spreadVisibleYears.has(yr)) {
+    STATE.spreadVisibleYears.delete(yr);
+  } else {
+    STATE.spreadVisibleYears.add(yr);
+  }
+  const on = STATE.spreadVisibleYears.has(yr);
+  const series = STATE.spreadSeriesMap && STATE.spreadSeriesMap.get(yr);
+  if (series) series.applyOptions({ visible: on });
+  const chip = document.querySelector(`[data-spread-yr="${yr}"]`);
+  if (chip) {
+    chip.style.opacity = on ? '1' : '0.28';
+    chip.style.background = on ? `${getSpreadYearColor(yr)}22` : 'transparent';
+  }
+}
+
 function renderSpreadTab() {
   const container = document.getElementById('tab-spread');
   if (!container.dataset.built) {
@@ -2004,9 +2031,11 @@ function renderSpreadTab() {
           </div>
         </div>
       </div>
+      <div class="ctrl-toolbar" id="spread-kpis" style="margin-bottom:var(--gap);padding:10px 14px;background:var(--bg-card);border-radius:var(--radius);border:1px solid var(--border);"></div>
       <div class="flex gap" style="flex-wrap:wrap;">
         <div class="grow" style="min-width:0;">
           <div class="card" style="padding:0;">
+            <div id="spread-legend" style="padding:10px 14px 6px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:5px;"></div>
             <div class="chart-wrap" id="spread-chart-container" style="min-height:350px;height:50vh;"></div>
           </div>
           <div class="card" style="margin-top:var(--gap);">
@@ -2117,61 +2146,120 @@ function updateSpreadChart() {
   const chart = createManagedChart('spread', 'main', chartContainer);
   const palette = getNeutralChartPalette();
 
-  // Plot historical years as thin gray lines
-  const allYears = new Set();
+  // Collect all years with data
+  const allYearsSet = new Set();
   if (STATE.hh[front]) {
     Object.keys(STATE.hh[front].contracts).forEach(t => {
       const yr = parseInt(t.slice(3));
-      allYears.add(yr < 50 ? 2000 + yr : 1900 + yr);
+      allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
     });
   }
+  // Add live data years
+  Object.keys(STATE.liveData).forEach(t => {
+    if (!t.startsWith('NG')) return;
+    const yr = parseInt(t.slice(3, 5));
+    if (Number.isFinite(yr)) allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
+  });
+  const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
+
+  // Init/reset visible years when pair changes
+  const pairKey = `${front}|${back}`;
+  if (!STATE.spreadVisibleYears || STATE.spreadPairKey !== pairKey) {
+    STATE.spreadPairKey = pairKey;
+    // Default: selected year + 4 most recent other years
+    const defaults = new Set([year]);
+    allYearsSorted.filter(y => y !== year).slice(0, 4).forEach(y => defaults.add(y));
+    STATE.spreadVisibleYears = defaults;
+  }
+  // Always ensure selected year is visible
+  STATE.spreadVisibleYears.add(year);
+  STATE.spreadSeriesMap = new Map();
 
   const tableRows = [];
   let selectedSeries = null;
   let selectedLookup = new Map();
   let selectedStats = { min: 0, max: 0, avg: 0, count: 0 };
 
-  [...allYears].sort((a,b)=>b-a).forEach(yr => {
+  // Render oldest→newest so selected year draws on top
+  [...allYearsSorted].reverse().forEach(yr => {
     const spreadResult = computeSpread(front, back, yr);
     const sp = spreadResult.points;
     if (sp.length === 0) return;
     const isSelected = yr === year;
-    const yearsAgo = year - yr;
-    // Tier: selected = white, last 5 = medium gray labeled, older = dim unlabeled
-    let color, lineWidth, showLabel;
-    if (isSelected) {
-      color = palette.main; lineWidth = 2.5; showLabel = true;
-    } else if (yearsAgo >= 1 && yearsAgo <= 5) {
-      const opacity = 0.55 - (yearsAgo - 1) * 0.07;
-      color = `rgba(180,180,190,${opacity.toFixed(2)})`; lineWidth = 1; showLabel = true;
-    } else {
-      color = 'rgba(255,255,255,0.10)'; lineWidth = 0.8; showLabel = false;
-    }
+    const visible = STATE.spreadVisibleYears.has(yr);
+    const color = isSelected ? '#ffffff' : getSpreadYearColor(yr);
+    const lineWidth = isSelected ? 2.5 : 1.2;
     const series = chart.addLineSeries({
       color, lineWidth,
       priceLineVisible: false,
-      lastValueVisible: showLabel,
-      title: showLabel && !isSelected ? String(yr) : '',
+      lastValueVisible: false,
       crosshairMarkerVisible: isSelected,
+      visible,
     });
     series.setData(sp.map(pt => ({ time: dayToTime(pt.d), value: pt.value })));
+    STATE.spreadSeriesMap.set(yr, series);
     if (isSelected) {
       selectedSeries = series;
       selectedLookup = new Map(sp.map(point => [timeKey(dayToTime(point.d)), point]));
       selectedStats = spreadResult.stats;
     }
-
-    // Table stats
     const last = sp[sp.length - 1].value;
-    tableRows.push({
-      yr,
-      last,
-      max: spreadResult.stats.max,
-      min: spreadResult.stats.min,
-      avg: spreadResult.stats.avg,
-      days: sp.length,
-    });
+    tableRows.push({ yr, last, max: spreadResult.stats.max, min: spreadResult.stats.min, avg: spreadResult.stats.avg, days: sp.length });
   });
+
+  // KPI bar
+  const kpiEl = document.getElementById('spread-kpis');
+  if (kpiEl && tableRows.length) {
+    const currentYear = new Date().getFullYear();
+    const allAvgs = tableRows.map(r => r.avg).filter(Number.isFinite);
+    const atAvg = allAvgs.reduce((s, v) => s + v, 0) / (allAvgs.length || 1);
+    const rows5y = tableRows.filter(r => r.yr >= currentYear - 5 && r.yr < year);
+    const avg5y = rows5y.length ? rows5y.reduce((s, r) => s + r.avg, 0) / rows5y.length : null;
+    const rows10y = tableRows.filter(r => r.yr >= currentYear - 10 && r.yr < year);
+    const avg10y = rows10y.length ? rows10y.reduce((s, r) => s + r.avg, 0) / rows10y.length : null;
+    const curRow = tableRows.find(r => r.yr === year);
+    const curLast = curRow ? curRow.last : null;
+    const vs5y = avg5y != null && curLast != null ? ((curLast - avg5y) / Math.abs(avg5y) * 100) : null;
+    const vs10y = avg10y != null && curLast != null ? ((curLast - avg10y) / Math.abs(avg10y) * 100) : null;
+    const chip = (label, val, color = 'var(--text-primary)') =>
+      `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${color};">${val}</div></div>`;
+    const sep = `<div class="ctrl-sep"></div>`;
+    kpiEl.innerHTML = [
+      chip('All-Time Avg', `${atAvg >= 0 ? '+' : ''}${atAvg.toFixed(3)}`),
+      sep,
+      chip('5Y Avg', avg5y != null ? `${avg5y >= 0 ? '+' : ''}${avg5y.toFixed(3)}` : '—'),
+      sep,
+      chip('10Y Avg', avg10y != null ? `${avg10y >= 0 ? '+' : ''}${avg10y.toFixed(3)}` : '—'),
+      sep,
+      chip('Curr vs 5Y', vs5y != null ? `${vs5y >= 0 ? '+' : ''}${vs5y.toFixed(1)}%` : '—', vs5y != null ? (vs5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+      sep,
+      chip('Curr vs 10Y', vs10y != null ? `${vs10y >= 0 ? '+' : ''}${vs10y.toFixed(1)}%` : '—', vs10y != null ? (vs10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+    ].join('');
+  }
+
+  // Year legend chips
+  const legendEl = document.getElementById('spread-legend');
+  if (legendEl) {
+    const yearsWithData = allYearsSorted.filter(yr => {
+      const r = computeSpread(front, back, yr);
+      return r.points.length > 0;
+    });
+    legendEl.innerHTML = yearsWithData.map(yr => {
+      const on = STATE.spreadVisibleYears.has(yr);
+      const color = yr === year ? '#ffffff' : getSpreadYearColor(yr);
+      const isSelected = yr === year;
+      return `<span data-spread-yr="${yr}" onclick="toggleSpreadYear(${yr})" style="
+        display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:4px;
+        border:1px solid ${on ? color : 'rgba(255,255,255,0.15)'};
+        background:${on ? color + '22' : 'transparent'};
+        opacity:${on ? '1' : '0.28'};
+        cursor:pointer;font-family:var(--font-mono);font-size:11px;
+        color:${color};font-weight:${isSelected ? '700' : '400'};
+        transition:opacity 0.15s,background 0.15s;
+        ${isSelected ? 'box-shadow:0 0 0 1px '+color+';' : ''}
+      "><span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>${yr}</span>`;
+    }).join('');
+  }
 
   // Zero line
   const zeroLine = chart.addLineSeries({
