@@ -259,6 +259,13 @@ tr:hover td { background: var(--bg-card-hover); }
 .contract-header .desc { font-size: 14px; color: var(--text-secondary); }
 .contract-header .price { font-family: var(--font-mono); font-size: 22px; font-weight: 700; margin-left: auto; }
 .contract-header .change { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+/* Prices tab two-column header */
+#prices-header { align-items: center; }
+.ch-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ch-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; margin-left: auto; }
+#prices-header .price { font-size: 24px; margin-left: 0; }
+#prices-header .change { font-size: 13px; }
 .positive { color: var(--positive); }
 .negative { color: var(--negative); }
 
@@ -487,17 +494,50 @@ tr:hover td { background: var(--bg-card-hover); }
   padding-top: 8px;
   border-top: 1px solid rgba(255,255,255,0.06);
 }
-.prices-control-grid {
+.ctrl-toolbar {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: var(--gap);
-  align-items: flex-end;
+  gap: 0;
+  min-height: 52px;
 }
-.prices-context {
+.ctrl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px;
+}
+.ctrl-group:first-child { padding-left: 0; }
+.ctrl-group-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.ctrl-sep {
+  width: 1px;
+  height: 36px;
+  background: var(--border);
+  flex-shrink: 0;
+  align-self: center;
+}
+.ctrl-hint-badge {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  white-space: nowrap;
 }
 .instrument-stamp {
   display: inline-flex;
