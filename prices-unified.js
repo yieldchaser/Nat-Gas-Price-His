@@ -611,7 +611,7 @@ function renderPricesTab() {
         </div>
         <div class="sidebar-stack">
           <div class="card" id="prices-stats"></div>
-          <div class="card" style="margin-top:var(--gap);max-height:320px;overflow-y:auto;" id="prices-history-table"></div>
+          <div class="card" style="margin-top:var(--gap);" id="prices-history-table"></div>
         </div>
       </div>
     `;
@@ -926,44 +926,144 @@ function renderPricesHistoryTable(context) {
   if (!tableEl) return;
   const { instrument, view } = context;
 
+  // Inner scroll wrapper — overflow lives here, NOT on the outer card
+  // This keeps the card title + subtitle always visible and prevents th sticky from escaping
+  const SCROLL_WRAP = (inner) =>
+    `<div style="max-height:268px;overflow-y:auto;overflow-x:auto;margin:8px -16px 0;padding:0 16px;">` +
+    inner + `</div>`;
+
+  // Delta bar: proportional width capped at 44px
+  const deltaBar = (delta) => {
+    if (!Number.isFinite(delta)) return '';
+    const w = Math.min(Math.abs(delta) / 80 * 44, 44);
+    const color = delta >= 0 ? 'var(--positive)' : 'var(--negative)';
+    return `<span style="display:inline-block;width:${w.toFixed(1)}px;height:3px;background:${color};border-radius:2px;vertical-align:middle;opacity:0.7;"></span>`;
+  };
+
   if (instrument === 'hh') {
-    let rows = '';
-    Object.keys(STATE.expiry).sort((a, b) => b - a).forEach(year => {
+    const sortedYears = Object.keys(STATE.expiry).sort((a, b) => b - a);
+    const rowData = [];
+    sortedYears.forEach(year => {
       const price = STATE.expiry[year] && STATE.expiry[year][view.month];
       if (price == null) return;
-      const priorYear = String(parseInt(year, 10) - 1);
-      const prior = STATE.expiry[priorYear] ? STATE.expiry[priorYear][view.month] : null;
+      const prior = STATE.expiry[String(parseInt(year, 10) - 1)]?.[view.month] ?? null;
       const delta = prior ? ((price - prior) / prior) * 100 : null;
-      rows += `<tr><td style="text-align:left;">${year}</td><td>${formatInstrumentValue('hh', price)}</td><td class="${delta !== null ? (delta >= 0 ? 'positive' : 'negative') : ''}">${delta !== null ? formatPercent(delta) : '--'}</td></tr>`;
+      rowData.push({ year, price, delta });
     });
-    tableEl.innerHTML = `<div class="card-title">Same Month Expiry History</div><table><thead><tr><th style="text-align:left;">Year</th><th>Expiry</th><th>Delta vs Prior</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No expiry data</td></tr>'}</tbody></table>`;
+
+    const validDeltas = rowData.map(r => r.delta).filter(d => Number.isFinite(d));
+    const avgDelta = validDeltas.length ? validDeltas.reduce((s, d) => s + d, 0) / validDeltas.length : null;
+    const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-hh);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · HH</span>`;
+    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${avgDelta != null ? ` &nbsp;·&nbsp; avg yr/yr <span style="color:${avgDelta >= 0 ? 'var(--positive)' : 'var(--negative)'};">${formatPercent(avgDelta)}</span>` : ''}</div>`;
+
+    const rows = rowData.map((r, i) => {
+      const isNewest = i === 0;
+      const rowBg = isNewest ? 'background:rgba(255,255,255,0.03);' : '';
+      const dot = isNewest ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-hh);margin-right:5px;vertical-align:middle;"></span>` : '';
+      const deltaClass = r.delta !== null ? (r.delta >= 0 ? 'positive' : 'negative') : '';
+      return `<tr style="${rowBg}">
+        <td style="text-align:left;color:${isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
+        <td>${formatInstrumentValue('hh', r.price)}</td>
+        <td class="${deltaClass}">${r.delta !== null ? formatPercent(r.delta) : '--'}</td>
+        <td style="padding:6px 10px 6px 4px;">${deltaBar(r.delta)}</td>
+      </tr>`;
+    }).join('');
+
+    tableEl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div class="card-title" style="margin-bottom:0;">Same Month Expiry History</div>
+        ${badge}
+      </div>
+      ${subtitle}
+      ${SCROLL_WRAP(`<table><thead><tr>
+        <th style="text-align:left;">Year</th>
+        <th>Expiry</th>
+        <th>Δ Prior Yr</th>
+        <th style="width:52px;"></th>
+      </tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No expiry data</td></tr>`}</tbody></table>`)}`;
     return;
   }
 
   if (instrument === 'ttf') {
     const years = getAvailableContractYears('ttf', view.month).slice(0, 12);
-    const rows = years.map((year, index) => {
-      const ticker = getPriceTicker('ttf', view.month, year);
-      const data = getTTFContractData(ticker);
-      if (!data.length) return '';
+    const rowData = [];
+    years.forEach((year, index) => {
+      const data = getTTFContractData(getPriceTicker('ttf', view.month, year));
+      if (!data.length) return;
       const lastPrice = data[data.length - 1].p;
-      const priorYear = years[index + 1];
-      const priorData = priorYear ? getTTFContractData(getPriceTicker('ttf', view.month, priorYear)) : [];
+      const priorData = years[index + 1] ? getTTFContractData(getPriceTicker('ttf', view.month, years[index + 1])) : [];
       const priorPrice = priorData.length ? priorData[priorData.length - 1].p : null;
       const delta = Number.isFinite(priorPrice) && priorPrice !== 0 ? ((lastPrice - priorPrice) / priorPrice) * 100 : null;
-      return `<tr><td style="text-align:left;">${year}</td><td>${formatInstrumentValue('ttf', lastPrice)}</td><td class="${delta !== null ? (delta >= 0 ? 'positive' : 'negative') : ''}">${delta !== null ? formatPercent(delta) : '--'}</td></tr>`;
+      rowData.push({ year, price: lastPrice, delta });
+    });
+
+    const validDeltas = rowData.map(r => r.delta).filter(d => Number.isFinite(d));
+    const avgDelta = validDeltas.length ? validDeltas.reduce((s, d) => s + d, 0) / validDeltas.length : null;
+    const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-ttf);background:rgba(255,140,0,0.08);border:1px solid rgba(255,140,0,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · TTF</span>`;
+    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${avgDelta != null ? ` &nbsp;·&nbsp; avg yr/yr <span style="color:${avgDelta >= 0 ? 'var(--positive)' : 'var(--negative)'};">${formatPercent(avgDelta)}</span>` : ''}</div>`;
+
+    const rows = rowData.map((r, i) => {
+      const isNewest = i === 0;
+      const rowBg = isNewest ? 'background:rgba(255,255,255,0.03);' : '';
+      const dot = isNewest ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-ttf);margin-right:5px;vertical-align:middle;"></span>` : '';
+      const deltaClass = r.delta !== null ? (r.delta >= 0 ? 'positive' : 'negative') : '';
+      return `<tr style="${rowBg}">
+        <td style="text-align:left;color:${isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
+        <td>${formatInstrumentValue('ttf', r.price)}</td>
+        <td class="${deltaClass}">${r.delta !== null ? formatPercent(r.delta) : '--'}</td>
+        <td style="padding:6px 10px 6px 4px;">${deltaBar(r.delta)}</td>
+      </tr>`;
     }).join('');
-    tableEl.innerHTML = `<div class="card-title">Same Month TTF History</div><table><thead><tr><th style="text-align:left;">Year</th><th>Last Print</th><th>Delta vs Prior</th></tr></thead><tbody>${rows || '<tr><td colspan="3">No TTF contracts found</td></tr>'}</tbody></table>`;
+
+    tableEl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div class="card-title" style="margin-bottom:0;">Same Month TTF History</div>
+        ${badge}
+      </div>
+      ${subtitle}
+      ${SCROLL_WRAP(`<table><thead><tr>
+        <th style="text-align:left;">Year</th>
+        <th>Last Print</th>
+        <th>Δ Prior Yr</th>
+        <th style="width:52px;"></th>
+      </tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No TTF data</td></tr>`}</tbody></table>`)}`;
     return;
   }
 
-  const rows = MONTHS.map(month => {
-    const series = STATE.spot[month] && STATE.spot[month].years && STATE.spot[month].years[String(view.spotYear)];
-    if (!series || !series.length) return `<tr><td style="text-align:left;">${month}</td><td>--</td><td>--</td><td>--</td></tr>`;
-    const stats = getSeriesStats(series);
-    return `<tr><td style="text-align:left;">${month}</td><td>${formatInstrumentValue('spot', stats.avg)}</td><td>${formatInstrumentValue('spot', stats.max)}</td><td>${formatInstrumentValue('spot', stats.min)}</td></tr>`;
+  // Spot: monthly breakdown for selected year
+  const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-spot);background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.spotYear} · SPOT</span>`;
+  const rowData = MONTHS.map(month => {
+    const series = STATE.spot[month]?.years?.[String(view.spotYear)];
+    if (!series || !series.length) return { month, avg: null, max: null, min: null };
+    const s = getSeriesStats(series);
+    return { month, avg: s.avg, max: s.max, min: s.min };
+  });
+  const validAvgs = rowData.map(r => r.avg).filter(v => Number.isFinite(v));
+  const yearAvg = validAvgs.length ? validAvgs.reduce((s, v) => s + v, 0) / validAvgs.length : null;
+  const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">Monthly breakdown${yearAvg != null ? ` &nbsp;·&nbsp; year avg <span style="color:var(--text-secondary);">${formatInstrumentValue('spot', yearAvg)}</span>` : ''}</div>`;
+
+  const rows = rowData.map(r => {
+    const hasData = r.avg != null;
+    return `<tr>
+      <td style="text-align:left;color:${hasData ? 'var(--text-primary)' : 'var(--text-muted)'};">${r.month}</td>
+      <td>${hasData ? formatInstrumentValue('spot', r.avg) : '--'}</td>
+      <td>${hasData ? formatInstrumentValue('spot', r.max) : '--'}</td>
+      <td>${hasData ? formatInstrumentValue('spot', r.min) : '--'}</td>
+    </tr>`;
   }).join('');
-  tableEl.innerHTML = `<div class="card-title">Monthly Spot Summary</div><table><thead><tr><th style="text-align:left;">Month</th><th>Average</th><th>High</th><th>Low</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  tableEl.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div class="card-title" style="margin-bottom:0;">Monthly Spot Summary</div>
+      ${badge}
+    </div>
+    ${subtitle}
+    ${SCROLL_WRAP(`<table><thead><tr>
+      <th style="text-align:left;">Month</th>
+      <th>Avg</th>
+      <th>High</th>
+      <th>Low</th>
+    </tr></thead><tbody>${rows}</tbody></table>`)}`;
 }
 
 function updatePricesChart({ skipDetails = false } = {}) {
