@@ -2859,6 +2859,17 @@ function scheduleCurveAnnotationRender() {
   });
 }
 
+function isCurveTurningPoint(points, index) {
+  if (!Array.isArray(points) || index <= 0 || index >= points.length - 1) return false;
+  const prev = points[index - 1] && points[index - 1].slot ? points[index - 1].slot.price : null;
+  const curr = points[index] && points[index].slot ? points[index].slot.price : null;
+  const next = points[index + 1] && points[index + 1].slot ? points[index + 1].slot.price : null;
+  if (![prev, curr, next].every(Number.isFinite)) return false;
+  const isPeak = curr >= prev && curr >= next && (curr > prev || curr > next);
+  const isTrough = curr <= prev && curr <= next && (curr < prev || curr < next);
+  return isPeak || isTrough;
+}
+
 function renderCurveAnnotations() {
   const chart = STATE._curveChart;
   const series = STATE._curveSeries;
@@ -2908,7 +2919,10 @@ function renderCurveAnnotations() {
 
   layer.innerHTML = visiblePoints.map((point, index) => {
     const dropHeight = Math.max(10, height - point.y - bottomInset);
-    const showLabel = index === 0 || index === lastVisibleIndex || index % labelStride === 0;
+    const showLabel = index === 0
+      || index === lastVisibleIndex
+      || isCurveTurningPoint(visiblePoints, index)
+      || index % labelStride === 0;
     return `<div class="curve-annotation" style="left:${point.x.toFixed(2)}px;top:${point.y.toFixed(2)}px;">
       <div class="curve-drop-line" style="height:${dropHeight.toFixed(2)}px;"></div>
       <div class="curve-drop-dot"></div>
