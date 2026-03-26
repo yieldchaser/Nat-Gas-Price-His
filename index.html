@@ -2873,7 +2873,10 @@ function isCurveTurningPoint(points, index) {
 function renderCurveAnnotations() {
   const chart = STATE._curveChart;
   const series = STATE._curveSeries;
-  const slots = STATE._curveSlots || [];
+  const windowContext = STATE._curveWindowContext;
+  const slots = (windowContext && Array.isArray(windowContext.windowSlots) && windowContext.windowSlots.length)
+    ? windowContext.windowSlots
+    : (STATE._curveSlots || []);
   const container = document.getElementById('curve-chart-container');
   const layer = ensureCurveAnnotationLayer(container);
   if (!layer) return;
