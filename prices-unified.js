@@ -856,11 +856,11 @@ function renderPricesSummaryBar(context) {
   const VALUE_STYLE = `font-family:var(--font-mono);font-size:13px;`;
 
   summaryBar.innerHTML = `
-    <div style="font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;">Window Metrics</div>
-    <div style="display:flex;align-items:center;overflow-x:auto;padding-bottom:2px;">
+    <div style="font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;text-align:center;">Window Metrics</div>
+    <div style="display:flex;align-items:center;justify-content:center;overflow-x:auto;padding-bottom:2px;">
       ${metrics.map((m, i) => `
         ${i > 0 ? DIVIDER : ''}
-        <div style="display:flex;flex-direction:column;flex-shrink:0;">
+        <div style="display:flex;flex-direction:column;flex-shrink:0;align-items:center;text-align:center;">
           <div style="${LABEL_STYLE}">${m.label}</div>
           <div style="${VALUE_STYLE}">${m.html}</div>
         </div>
