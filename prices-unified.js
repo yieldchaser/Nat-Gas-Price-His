@@ -947,40 +947,41 @@ function renderPricesHistoryTable(context) {
     `<div style="max-height:268px;overflow-y:auto;overflow-x:auto;margin:8px -16px 0;padding:0 16px;">` +
     inner + `</div>`;
 
-  // Delta bar: proportional width capped at 44px
-  const deltaBar = (delta) => {
-    if (!Number.isFinite(delta)) return '';
-    const w = Math.min(Math.abs(delta) / 80 * 44, 44);
-    const color = delta >= 0 ? 'var(--positive)' : 'var(--negative)';
-    return `<span style="display:inline-block;width:${w.toFixed(1)}px;height:3px;background:${color};border-radius:2px;vertical-align:middle;opacity:0.7;"></span>`;
-  };
-
   if (instrument === 'hh') {
     const sortedYears = Object.keys(STATE.expiry).sort((a, b) => b - a);
     const rowData = [];
     sortedYears.forEach(year => {
       const price = STATE.expiry[year] && STATE.expiry[year][view.month];
       if (price == null) return;
-      const prior = STATE.expiry[String(parseInt(year, 10) - 1)]?.[view.month] ?? null;
-      const delta = prior ? ((price - prior) / prior) * 100 : null;
-      rowData.push({ year, price, delta });
+      rowData.push({ year, price });
     });
 
-    const validDeltas = rowData.map(r => r.delta).filter(d => Number.isFinite(d));
-    const avgDelta = validDeltas.length ? validDeltas.reduce((s, d) => s + d, 0) / validDeltas.length : null;
+    const allPrices = rowData.map(r => r.price).filter(Number.isFinite);
+    const priceMin = Math.min(...allPrices);
+    const priceMax = Math.max(...allPrices);
+    const priceRange = priceMax - priceMin || 1;
+    const sortedDesc = [...allPrices].sort((a, b) => b - a);
+    rowData.forEach(r => { r.rank = Number.isFinite(r.price) ? sortedDesc.indexOf(r.price) + 1 : null; });
+    const total = allPrices.length;
+
+    const posBar = (price) => {
+      if (!Number.isFinite(price)) return '';
+      const w = ((price - priceMin) / priceRange * 44).toFixed(1);
+      return `<span style="display:inline-block;width:${w}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.6;"></span>`;
+    };
+
     const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-hh);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · HH</span>`;
-    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${avgDelta != null ? ` &nbsp;·&nbsp; avg yr/yr <span style="color:${avgDelta >= 0 ? 'var(--positive)' : 'var(--negative)'};">${formatPercent(avgDelta)}</span>` : ''}</div>`;
+    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${total} contracts</div>`;
 
     const rows = rowData.map((r, i) => {
       const isNewest = i === 0;
       const rowBg = isNewest ? 'background:rgba(255,255,255,0.03);' : '';
       const dot = isNewest ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-hh);margin-right:5px;vertical-align:middle;"></span>` : '';
-      const deltaClass = r.delta !== null ? (r.delta >= 0 ? 'positive' : 'negative') : '';
       return `<tr style="${rowBg}">
         <td style="text-align:left;color:${isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
         <td>${formatInstrumentValue('hh', r.price)}</td>
-        <td class="${deltaClass}">${r.delta !== null ? formatPercent(r.delta) : '--'}</td>
-        <td style="padding:6px 10px 6px 4px;">${deltaBar(r.delta)}</td>
+        <td style="color:var(--text-secondary);font-size:12px;">${r.rank != null ? `#${r.rank}` : '--'}</td>
+        <td style="padding:6px 10px 6px 4px;">${posBar(r.price)}</td>
       </tr>`;
     }).join('');
 
@@ -993,7 +994,7 @@ function renderPricesHistoryTable(context) {
       ${SCROLL_WRAP(`<table><thead><tr>
         <th style="text-align:left;">Year</th>
         <th>Expiry</th>
-        <th>Δ Prior Yr</th>
+        <th>Rank</th>
         <th style="width:52px;"></th>
       </tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No expiry data</td></tr>`}</tbody></table>`)}`;
     return;
@@ -1002,31 +1003,38 @@ function renderPricesHistoryTable(context) {
   if (instrument === 'ttf') {
     const years = getAvailableContractYears('ttf', view.month).slice(0, 12);
     const rowData = [];
-    years.forEach((year, index) => {
+    years.forEach(year => {
       const data = getTTFContractData(getPriceTicker('ttf', view.month, year));
       if (!data.length) return;
-      const lastPrice = data[data.length - 1].p;
-      const priorData = years[index + 1] ? getTTFContractData(getPriceTicker('ttf', view.month, years[index + 1])) : [];
-      const priorPrice = priorData.length ? priorData[priorData.length - 1].p : null;
-      const delta = Number.isFinite(priorPrice) && priorPrice !== 0 ? ((lastPrice - priorPrice) / priorPrice) * 100 : null;
-      rowData.push({ year, price: lastPrice, delta });
+      rowData.push({ year, price: data[data.length - 1].p });
     });
 
-    const validDeltas = rowData.map(r => r.delta).filter(d => Number.isFinite(d));
-    const avgDelta = validDeltas.length ? validDeltas.reduce((s, d) => s + d, 0) / validDeltas.length : null;
+    const allPrices = rowData.map(r => r.price).filter(Number.isFinite);
+    const priceMin = Math.min(...allPrices);
+    const priceMax = Math.max(...allPrices);
+    const priceRange = priceMax - priceMin || 1;
+    const sortedDesc = [...allPrices].sort((a, b) => b - a);
+    rowData.forEach(r => { r.rank = Number.isFinite(r.price) ? sortedDesc.indexOf(r.price) + 1 : null; });
+    const total = allPrices.length;
+
+    const posBar = (price) => {
+      if (!Number.isFinite(price)) return '';
+      const w = ((price - priceMin) / priceRange * 44).toFixed(1);
+      return `<span style="display:inline-block;width:${w}px;height:3px;background:var(--accent-ttf);border-radius:2px;vertical-align:middle;opacity:0.6;"></span>`;
+    };
+
     const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-ttf);background:rgba(255,140,0,0.08);border:1px solid rgba(255,140,0,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · TTF</span>`;
-    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${avgDelta != null ? ` &nbsp;·&nbsp; avg yr/yr <span style="color:${avgDelta >= 0 ? 'var(--positive)' : 'var(--negative)'};">${formatPercent(avgDelta)}</span>` : ''}</div>`;
+    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${total} contracts</div>`;
 
     const rows = rowData.map((r, i) => {
       const isNewest = i === 0;
       const rowBg = isNewest ? 'background:rgba(255,255,255,0.03);' : '';
       const dot = isNewest ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-ttf);margin-right:5px;vertical-align:middle;"></span>` : '';
-      const deltaClass = r.delta !== null ? (r.delta >= 0 ? 'positive' : 'negative') : '';
       return `<tr style="${rowBg}">
         <td style="text-align:left;color:${isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
         <td>${formatInstrumentValue('ttf', r.price)}</td>
-        <td class="${deltaClass}">${r.delta !== null ? formatPercent(r.delta) : '--'}</td>
-        <td style="padding:6px 10px 6px 4px;">${deltaBar(r.delta)}</td>
+        <td style="color:var(--text-secondary);font-size:12px;">${r.rank != null ? `#${r.rank}` : '--'}</td>
+        <td style="padding:6px 10px 6px 4px;">${posBar(r.price)}</td>
       </tr>`;
     }).join('');
 
@@ -1039,7 +1047,7 @@ function renderPricesHistoryTable(context) {
       ${SCROLL_WRAP(`<table><thead><tr>
         <th style="text-align:left;">Year</th>
         <th>Last Print</th>
-        <th>Δ Prior Yr</th>
+        <th>Rank</th>
         <th style="width:52px;"></th>
       </tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No TTF data</td></tr>`}</tbody></table>`)}`;
     return;
