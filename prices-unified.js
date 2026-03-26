@@ -208,6 +208,108 @@ function buildDateAxisFormatter(resolvePoint) {
   };
 }
 
+function computeAxisLabels(filteredData, chartPixelWidth) {
+  const count = filteredData.length;
+  if (!count) return new Map();
+  const pxW = Math.max(100, chartPixelWidth || 900);
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function utc(s) {
+    if (!s) return null;
+    const p = s.split('-');
+    return new Date(Date.UTC(+p[0], +p[1]-1, +p[2]));
+  }
+  function isoWk(d) {
+    const t = new Date(d); t.setUTCDate(t.getUTCDate()+4-(t.getUTCDay()||7));
+    const y1 = new Date(Date.UTC(t.getUTCFullYear(),0,1));
+    return t.getUTCFullYear()*100 + Math.ceil(((t-y1)/864e5+1)/7);
+  }
+
+  const raw = new Map();
+
+  if (count <= 14) {
+    // Micro: every trading day; "Mon D" at month boundary, plain day number otherwise
+    for (const pt of filteredData) {
+      const d = utc(pt.date); if (!d) continue;
+      const day = d.getUTCDate();
+      raw.set(pt.date, day === 1 ? `${MONTHS[d.getUTCMonth()]} 1` : String(day));
+    }
+  } else if (count <= 35) {
+    // Short: weekly — first trading day of each calendar week
+    let lastWk = -1;
+    for (const pt of filteredData) {
+      const d = utc(pt.date); if (!d) continue;
+      const wk = isoWk(d);
+      if (wk !== lastWk) { lastWk = wk; raw.set(pt.date, `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`); }
+    }
+  } else if (count <= 65) {
+    // Medium: biweekly — first trading day of every other calendar week
+    let lastWk = -1, wkIdx = 0;
+    for (const pt of filteredData) {
+      const d = utc(pt.date); if (!d) continue;
+      const wk = isoWk(d);
+      if (wk !== lastWk) {
+        lastWk = wk; wkIdx++;
+        if (wkIdx % 2 === 1) raw.set(pt.date, `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`);
+      }
+    }
+  } else {
+    // Macro: month or year boundaries
+    const first = utc(filteredData[0].date), last = utc(filteredData[filteredData.length-1].date);
+    if (!first || !last) return new Map();
+    const spanYrs = (last - first) / (365.25 * 864e5);
+    const maxLbls = Math.max(2, Math.floor(pxW / 150));
+
+    if (spanYrs > 3) {
+      // Year-boundary mode (Google Finance style)
+      let iv = 1;
+      for (const v of [1,2,3,5,10]) { iv = v; if (Math.ceil(spanYrs/v) <= maxLbls) break; }
+      let lastYr = -1;
+      for (const pt of filteredData) {
+        const d = utc(pt.date); if (!d) continue;
+        const yr = d.getUTCFullYear();
+        if (yr !== lastYr && yr % iv === 0) { lastYr = yr; raw.set(pt.date, String(yr)); }
+      }
+    } else {
+      // Month-boundary mode; interval = 1,2,3,6,12 months
+      const totalMo = Math.max(1, Math.round(spanYrs * 12));
+      let mo = 12;
+      for (const v of [1,2,3,6,12]) { mo = v; if (Math.ceil(totalMo/v) <= maxLbls) break; }
+      const singleYr = first.getUTCFullYear() === last.getUTCFullYear();
+      let lastMk = -1;
+      for (const pt of filteredData) {
+        const d = utc(pt.date); if (!d) continue;
+        const mk = d.getUTCFullYear()*12 + d.getUTCMonth();
+        if (mk !== lastMk && d.getUTCMonth() % mo === 0) {
+          lastMk = mk;
+          raw.set(pt.date, singleYr ? MONTHS[d.getUTCMonth()] : `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`);
+        }
+      }
+    }
+  }
+
+  // Anti-collision: drop labels closer than 45px apart
+  const pxPerPt = pxW / count;
+  const minGapPts = Math.max(1, Math.ceil(45 / pxPerPt));
+  const toIdx = new Map(filteredData.map((pt,i) => [pt.date, i]));
+  const sorted = [...raw.entries()].map(([dt,tx]) => [dt, tx, toIdx.get(dt)??0]).sort((a,b) => a[2]-b[2]);
+  const out = new Map();
+  let lastI = -minGapPts - 1;
+  for (const [dt, tx, i] of sorted) {
+    if (i - lastI >= minGapPts) { out.set(dt, tx); lastI = i; }
+  }
+  return out;
+}
+
+function buildSmartAxisFormatter(filteredData, chartPixelWidth, resolvePoint) {
+  const labelMap = computeAxisLabels(filteredData, chartPixelWidth);
+  return time => {
+    const point = typeof resolvePoint === 'function' ? resolvePoint(time) : null;
+    const ds = (point && point.date) ? point.date : (typeof time === 'string' ? time : '');
+    return labelMap.get(ds) || '';
+  };
+}
+
 function buildCurveAxisFormatter(resolveContract) {
   return time => {
     const point = typeof resolveContract === 'function' ? resolveContract(time) : null;
@@ -995,8 +1097,10 @@ function updatePricesChart({ skipDetails = false } = {}) {
     }
   }
 
+  const chartPixelWidth = Math.max(100, (chartContainer.clientWidth || 900) - 72);
+  const resolvePointForAxis = time => mainLookup.get(timeKey(time)) || compareLookup.get(timeKey(time)) || highlightLookup.get(timeKey(time));
   applyChartTimeScaleOptions(chart, {
-    formatter: buildDateAxisFormatter(time => mainLookup.get(timeKey(time)) || compareLookup.get(timeKey(time)) || highlightLookup.get(timeKey(time))),
+    formatter: buildSmartAxisFormatter(filteredData, chartPixelWidth, resolvePointForAxis),
     barSpacing: getChartBarSpacing(filteredData.length),
   });
   chart.timeScale().fitContent();
