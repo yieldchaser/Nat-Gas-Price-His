@@ -324,6 +324,24 @@ tr:hover td { background: var(--bg-card-hover); }
   white-space: nowrap;
   text-shadow: 0 1px 4px rgba(0,0,0,0.92), 0 0 10px rgba(0,0,0,0.65);
 }
+.spread-axis-label {
+  position: absolute;
+  right: 8px;
+  min-width: 50px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  color: #f5f7fb;
+  background: rgba(15,16,21,0.96);
+  border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.32);
+  pointer-events: none;
+  z-index: 4;
+}
 .chart-footer {
   margin-top: var(--gap);
   border: 1px solid var(--border);
@@ -2110,6 +2128,13 @@ function syncSpreadHeatmapTitle() {
 
 function toggleSpreadYear(yr) {
   yr = parseInt(yr);
+  const selectedYear = parseInt(document.getElementById('spread-year')?.value, 10);
+  if (yr === selectedYear) {
+    if (!STATE.spreadVisibleYears) STATE.spreadVisibleYears = new Set();
+    STATE.spreadVisibleYears.add(yr);
+    scheduleSpreadChartUpdate(true);
+    return;
+  }
   if (!STATE.spreadVisibleYears) STATE.spreadVisibleYears = new Set();
   if (STATE.spreadVisibleYears.has(yr)) {
     STATE.spreadVisibleYears.delete(yr);
@@ -2124,6 +2149,43 @@ function toggleSpreadYear(yr) {
     chip.style.opacity = on ? '1' : '0.28';
     chip.style.background = on ? `${getSpreadYearColor(yr)}22` : 'transparent';
   }
+}
+
+function ensureSpreadAxisLabel(container) {
+  if (!container) return null;
+  let label = container.querySelector('.spread-axis-label');
+  if (!label) {
+    label = document.createElement('div');
+    label.className = 'spread-axis-label';
+    container.appendChild(label);
+  }
+  return label;
+}
+
+function renderSpreadAxisLabel() {
+  const chart = STATE._spreadChart;
+  const series = STATE._spreadSelectedSeries;
+  const point = STATE._spreadSelectedLastPoint;
+  const container = document.getElementById('spread-chart-container');
+  const label = ensureSpreadAxisLabel(container);
+  if (!label) return;
+
+  if (!chart || !series || !point || !Number.isFinite(point.value)) {
+    label.style.display = 'none';
+    return;
+  }
+
+  const y = series.priceToCoordinate(point.value);
+  if (!Number.isFinite(y)) {
+    label.style.display = 'none';
+    return;
+  }
+
+  const top = clamp(y, 16, Math.max(16, (container.clientHeight || 0) - 16));
+  label.textContent = formatSignedSpread(point.value);
+  label.style.top = `${top}px`;
+  label.style.display = 'block';
+  label.style.color = point.value >= 0 ? 'var(--positive)' : 'var(--negative)';
 }
 
 function renderSpreadTab() {
@@ -2402,6 +2464,7 @@ function updateSpreadChart() {
   let selectedSeries = null;
   let selectedLookup = new Map();
   let selectedStats = { min: 0, max: 0, avg: 0, count: 0 };
+  let selectedLastPoint = null;
 
   // Render oldest→newest so selected year draws on top
   [...allYearsSorted].reverse().forEach(yr => {
@@ -2415,7 +2478,7 @@ function updateSpreadChart() {
     const series = chart.addLineSeries({
       color, lineWidth,
       priceLineVisible: false,
-      lastValueVisible: isSelected,
+      lastValueVisible: false,
       crosshairMarkerVisible: isSelected,
       visible,
     });
@@ -2425,6 +2488,7 @@ function updateSpreadChart() {
       selectedSeries = series;
       selectedLookup = new Map(sp.map(point => [timeKey(dayToTime(point.d)), point]));
       selectedStats = spreadResult.stats;
+      selectedLastPoint = sp[sp.length - 1] || null;
     }
     const last = sp[sp.length - 1].value;
     tableRows.push({ yr, last, max: spreadResult.stats.max, min: spreadResult.stats.min, avg: spreadResult.stats.avg, days: sp.length });
@@ -2609,7 +2673,10 @@ function updateSpreadChart() {
   // Store refs and sync range footer
   STATE._spreadChart = chart;
   STATE._spreadSelectedPoints = allSpreads; // selected year's points
+  STATE._spreadSelectedSeries = selectedSeries;
+  STATE._spreadSelectedLastPoint = selectedLastPoint;
   syncSpreadRangeFooter();
+  renderSpreadAxisLabel();
 }
 
 function syncSpreadRangeFooter() {
@@ -2653,6 +2720,7 @@ function syncSpreadRangeFooter() {
   } else {
     chart.timeScale().fitContent();
   }
+  renderSpreadAxisLabel();
 }
 
 function onSpreadSlider() {
@@ -2857,6 +2925,17 @@ function scheduleCurveAnnotationRender() {
     STATE._curveAnnotationFrame = null;
     renderCurveAnnotations();
   });
+
+  if (selectedSeries && selectedLastPoint && typeof selectedSeries.createPriceLine === 'function') {
+    selectedSeries.createPriceLine({
+      price: selectedLastPoint.value,
+      color: selectedLastPoint.value >= 0 ? '#00ff88' : '#ff4455',
+      lineVisible: false,
+      axisLabelVisible: true,
+      lineWidth: 1,
+      title: '',
+    });
+  }
 }
 
 function isCurveTurningPoint(points, index) {
