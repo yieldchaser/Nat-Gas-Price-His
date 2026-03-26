@@ -2016,6 +2016,14 @@ function renderSpreadTab() {
       <div class="card" style="margin-bottom:var(--gap);">
         <div class="ctrl-toolbar">
           <div class="ctrl-group">
+            <div class="ctrl-group-label">Market</div>
+            <div class="segment-switch" id="spread-instrument-switch">
+              <button class="segment-btn active" data-tone="hh" data-val="hh">Henry Hub</button>
+              <button class="segment-btn" data-tone="ttf" data-val="ttf">Dutch TTF</button>
+            </div>
+          </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
             <div class="ctrl-group-label">Front Leg</div>
             <select id="spread-front">${MONTHS.map((m,i)=>`<option value="${m}" ${i===0?'selected':''}>${m}</option>`).join('')}</select>
           </div>
@@ -2051,28 +2059,45 @@ function renderSpreadTab() {
     document.getElementById('spread-front').addEventListener('change', scheduleSpreadChartUpdate);
     document.getElementById('spread-back').addEventListener('change', scheduleSpreadChartUpdate);
     document.getElementById('spread-year').addEventListener('change', scheduleSpreadChartUpdate);
+    document.getElementById('spread-instrument-switch').addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#spread-instrument-switch .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      STATE.spreadPairKey = null; // force visible years reset on instrument change
+      populateSpreadYears();
+      scheduleSpreadChartUpdate(true);
+    });
   }
   populateSpreadYears();
   scheduleSpreadChartUpdate(true);
   scheduleSpreadHeatmap();
 }
 
+function getSpreadInstrument() {
+  const btn = document.querySelector('#spread-instrument-switch .segment-btn.active');
+  return btn ? btn.dataset.val : 'hh';
+}
+
 function populateSpreadYears() {
   const sel = document.getElementById('spread-year');
   const currentVal = sel.value ? parseInt(sel.value, 10) : null;
+  const instrument = getSpreadInstrument();
   const yearSet = new Set();
-  // Scan all HH months from historical data
+  const store = instrument === 'ttf' ? STATE.ttf : STATE.hh;
   MONTHS.forEach(m => {
-    if (!STATE.hh[m]) return;
-    Object.keys(STATE.hh[m].contracts).forEach(t => {
+    if (!store[m]) return;
+    Object.keys(store[m].contracts).forEach(t => {
       const yr = parseInt(t.slice(3));
       if (Number.isFinite(yr)) yearSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
     });
   });
-  // Also include live data years
+  // Live data years
+  const livePrefix = instrument === 'ttf' ? 'TTF' : 'NG';
   Object.keys(STATE.liveData).forEach(t => {
-    if (!t.startsWith('NG')) return;
-    const yr = parseInt(t.slice(3, 5));
+    if (!t.startsWith(livePrefix)) return;
+    const yrStart = livePrefix.length + 1;
+    const yr = parseInt(t.slice(yrStart, yrStart + 2));
     if (Number.isFinite(yr)) yearSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
   });
   const years = [...yearSet].sort((a, b) => b - a);
@@ -2100,18 +2125,19 @@ function scheduleSpreadChartUpdate(immediate = false) {
   }, 60);
 }
 
-function computeSpread(frontMonth, backMonth, year) {
-  const cacheKey = `${frontMonth}|${backMonth}|${year}`;
+function computeSpread(frontMonth, backMonth, year, instrument = 'hh') {
+  const cacheKey = `${instrument}|${frontMonth}|${backMonth}|${year}`;
   if (STATE.spreadCache[cacheKey]) return STATE.spreadCache[cacheKey];
 
   const code1 = MONTH_CODES[frontMonth];
   const code2 = MONTH_CODES[backMonth];
   const yy = year % 100;
   const pad = yy < 10 ? '0' + yy : '' + yy;
-  const t1 = `NG${code1}${pad}`;
-  const t2 = `NG${code2}${pad}`;
-  const d1 = getContractData(t1);
-  const d2 = getContractData(t2);
+  const prefix = instrument === 'ttf' ? 'TG' : 'NG';
+  const t1 = `${prefix}${code1}${pad}`;
+  const t2 = `${prefix}${code2}${pad}`;
+  const d1 = instrument === 'ttf' ? getTTFContractData(t1) : getContractData(t1);
+  const d2 = instrument === 'ttf' ? getTTFContractData(t2) : getContractData(t2);
   if (d1.length === 0 || d2.length === 0) {
     const empty = { points: [], stats: { min: 0, max: 0, avg: 0, count: 0 } };
     STATE.spreadCache[cacheKey] = empty;
@@ -2140,24 +2166,28 @@ function updateSpreadChart() {
   const year = parseInt(document.getElementById('spread-year').value);
   if (!year) return;
 
-  document.getElementById('spread-desc').textContent = `${front} / ${back} Calendar Spread`;
+  const instrument = getSpreadInstrument();
+  const unit = instrument === 'ttf' ? 'EUR/MWh' : 'USD/MMBtu';
+  document.getElementById('spread-desc').textContent = `${front} / ${back} Calendar Spread · ${instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub'} · ${unit}`;
 
   const chartContainer = document.getElementById('spread-chart-container');
   const chart = createManagedChart('spread', 'main', chartContainer);
   const palette = getNeutralChartPalette();
 
-  // Collect all years with data
+  // Collect all years with data for selected instrument
   const allYearsSet = new Set();
-  if (STATE.hh[front]) {
-    Object.keys(STATE.hh[front].contracts).forEach(t => {
+  const store = instrument === 'ttf' ? STATE.ttf : STATE.hh;
+  if (store[front]) {
+    Object.keys(store[front].contracts).forEach(t => {
       const yr = parseInt(t.slice(3));
       allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
     });
   }
-  // Add live data years
+  const livePrefix = instrument === 'ttf' ? 'TTF' : 'NG';
   Object.keys(STATE.liveData).forEach(t => {
-    if (!t.startsWith('NG')) return;
-    const yr = parseInt(t.slice(3, 5));
+    if (!t.startsWith(livePrefix)) return;
+    const yrStart = livePrefix.length + 1;
+    const yr = parseInt(t.slice(yrStart, yrStart + 2));
     if (Number.isFinite(yr)) allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
   });
   const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
@@ -2182,7 +2212,7 @@ function updateSpreadChart() {
 
   // Render oldest→newest so selected year draws on top
   [...allYearsSorted].reverse().forEach(yr => {
-    const spreadResult = computeSpread(front, back, yr);
+    const spreadResult = computeSpread(front, back, yr, instrument);
     const sp = spreadResult.points;
     if (sp.length === 0) return;
     const isSelected = yr === year;
@@ -2241,7 +2271,7 @@ function updateSpreadChart() {
   const legendEl = document.getElementById('spread-legend');
   if (legendEl) {
     const yearsWithData = allYearsSorted.filter(yr => {
-      const r = computeSpread(front, back, yr);
+      const r = computeSpread(front, back, yr, instrument);
       return r.points.length > 0;
     });
     legendEl.innerHTML = yearsWithData.map(yr => {
@@ -2267,7 +2297,7 @@ function updateSpreadChart() {
     lineStyle: LightweightCharts.LineStyle.Dashed,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
-  const allSpreads = computeSpread(front, back, year).points;
+  const allSpreads = computeSpread(front, back, year, instrument).points;
   if (allSpreads.length > 0) {
     zeroLine.setData([
       { time: dayToTime(1), value: 0 },
@@ -2401,7 +2431,7 @@ async function buildSpreadHeatmap(force = false) {
       // Compute avg spread across last 5 years
       let sum = 0, count = 0;
       for (let yr = currentYear - 5; yr < currentYear; yr++) {
-        const spreadResult = computeSpread(front, back, yr);
+        const spreadResult = computeSpread(front, back, yr, 'hh');
         if (spreadResult.points.length > 0) {
           sum += spreadResult.stats.avg;
           count++;
