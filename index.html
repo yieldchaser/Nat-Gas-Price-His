@@ -2136,10 +2136,22 @@ function updateSpreadChart() {
     const sp = spreadResult.points;
     if (sp.length === 0) return;
     const isSelected = yr === year;
-    const color = isSelected ? palette.main : palette.historical;
+    const yearsAgo = year - yr;
+    // Tier: selected = white, last 5 = medium gray labeled, older = dim unlabeled
+    let color, lineWidth, showLabel;
+    if (isSelected) {
+      color = palette.main; lineWidth = 2.5; showLabel = true;
+    } else if (yearsAgo >= 1 && yearsAgo <= 5) {
+      const opacity = 0.55 - (yearsAgo - 1) * 0.07;
+      color = `rgba(180,180,190,${opacity.toFixed(2)})`; lineWidth = 1; showLabel = true;
+    } else {
+      color = 'rgba(255,255,255,0.10)'; lineWidth = 0.8; showLabel = false;
+    }
     const series = chart.addLineSeries({
-      color, lineWidth: isSelected ? 2.5 : 1,
-      priceLineVisible: false, lastValueVisible: isSelected,
+      color, lineWidth,
+      priceLineVisible: false,
+      lastValueVisible: showLabel,
+      title: showLabel && !isSelected ? String(yr) : '',
       crosshairMarkerVisible: isSelected,
     });
     series.setData(sp.map(pt => ({ time: dayToTime(pt.d), value: pt.value })));
