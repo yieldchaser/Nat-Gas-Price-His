@@ -2068,9 +2068,7 @@ function renderSpreadTab() {
             <div class="card-title">Spread Heatmap — Average Calendar Spread (All Years)</div>
             <div id="spread-heatmap" style="overflow-x:auto;"></div>
           </div>
-        </div>
-        <div style="width:340px;flex-shrink:0;">
-          <div class="card" style="padding:0;" id="spread-table"></div>
+          <div class="card" style="margin-top:var(--gap);padding:0;" id="spread-table"></div>
         </div>
       </div>
     `;
@@ -2391,8 +2389,7 @@ function updateSpreadChart() {
   const lastRange = lastMax - lastMin || 1;
   const sortedDesc = [...allLasts].sort((a, b) => b - a);
 
-  const SCROLL_WRAP = inner =>
-    `<div style="overflow-y:auto;max-height:500px;"><div style="overflow-x:auto;">${inner}</div></div>`;
+  const SCROLL_WRAP = inner => `<div style="overflow-x:auto;">${inner}</div>`;
 
   let html = `<div class="card-title" style="padding:12px 16px 8px;">${front}/${back} Spread History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${tableRows.length} years</span></div>`;
   html += SCROLL_WRAP(`<table><thead><tr>
@@ -2656,33 +2653,17 @@ function updateCurveChart() {
   const chartContainer = document.getElementById('curve-chart-container');
   const chart = createManagedChart('curve', 'main', chartContainer);
 
-  // Use a neutral histogram plus a clear primary line for the strip.
-  const colors = {
-    winter: 'rgba(255,255,255,0.85)',
-    summer: 'rgba(194,197,204,0.72)',
-    shoulder: 'rgba(116,120,130,0.58)'
-  };
-  const histSeries = chart.addHistogramSeries({
-    priceLineVisible: false, lastValueVisible: false,
-  });
-  const curveSeriesData = contracts.map((c, i) => ({
-    time: dayToTime(i + 1),
-    value: c.price,
-    color: colors[c.season],
-  }));
-  histSeries.setData(curveSeriesData);
   const lineSeries = chart.addLineSeries({
     color: palette.main,
-    lineWidth: 2.2,
+    lineWidth: 2,
     priceLineVisible: true,
     lastValueVisible: true,
     crosshairMarkerVisible: true,
-    crosshairMarkerRadius: 4,
+    crosshairMarkerRadius: 5,
+    crosshairMarkerBorderColor: 'var(--bg-primary)',
+    crosshairMarkerBorderWidth: 2,
   });
-  lineSeries.setData(contracts.map((contract, index) => ({
-    time: dayToTime(index + 1),
-    value: contract.price,
-  })));
+  lineSeries.setData(contracts.map((c, i) => ({ time: dayToTime(i + 1), value: c.price })));
   const curveLookup = new Map(contracts.map((contract, index) => [timeKey(dayToTime(index + 1)), contract]));
   const curveStats = getSeriesStats(contracts, contract => contract.price);
 
