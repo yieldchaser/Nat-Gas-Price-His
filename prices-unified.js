@@ -579,13 +579,19 @@ function renderPricesTab() {
     container.dataset.built = '1';
     container.innerHTML = `
       <div class="contract-header" id="prices-header">
-        <span class="ticker" id="prices-ticker">--</span>
-        <span class="desc" id="prices-desc">Unified Henry Hub, Dutch TTF, and spot explorer</span>
-        <span class="instrument-stamp"><span class="instrument-dot" id="prices-instrument-dot"></span><span id="prices-instrument-label">Henry Hub</span></span>
-        <span class="price" id="prices-price">--</span>
-        <span class="change" id="prices-change">--</span>
+        <div class="ch-left">
+          <div class="ch-top">
+            <span class="ticker" id="prices-ticker">--</span>
+            <span class="instrument-stamp"><span class="instrument-dot" id="prices-instrument-dot"></span><span id="prices-instrument-label">Henry Hub</span></span>
+          </div>
+          <span class="desc" id="prices-desc">Select an instrument to explore price history</span>
+        </div>
+        <div class="ch-right">
+          <span class="price" id="prices-price">--</span>
+          <span class="change" id="prices-change">--</span>
+        </div>
       </div>
-      <div class="card" style="margin-bottom:var(--gap);"><div id="prices-controls" class="prices-control-grid"></div></div>
+      <div class="card" style="margin-bottom:var(--gap);"><div id="prices-controls" class="ctrl-toolbar"></div></div>
       <div class="flex gap" style="flex-wrap:wrap;">
         <div class="grow" style="min-width:0;">
           <div class="card" style="padding:0;"><div class="chart-wrap" id="prices-chart-container"></div></div>
@@ -653,42 +659,52 @@ function renderPricesControls() {
   const compareYears = years.filter(year => year !== view.year);
 
   controls.innerHTML = `
-    <div class="flex flex-col gap-sm" style="min-width:260px;">
-      <label>Market</label>
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">Market</div>
       <div class="segment-switch" id="prices-instrument-switch">
         ${Object.values(PRICE_INSTRUMENT_META).map(entry => `<button class="segment-btn ${view.instrument === entry.key ? 'active' : ''}" data-instrument="${entry.key}" data-tone="${entry.tone}">${entry.label}</button>`).join('')}
       </div>
     </div>
+    <div class="ctrl-sep"></div>
     ${isSpot ? `
-      <div class="flex flex-col gap-sm">
-        <label>Year</label>
+      <div class="ctrl-group">
+        <div class="ctrl-group-label">Year</div>
         <select id="prices-spot-year">${years.map(year => `<option value="${year}" ${year === view.spotYear ? 'selected' : ''}>${year}</option>`).join('')}</select>
       </div>
-      <div class="flex flex-col gap-sm">
-        <label>Highlight Month</label>
+      <div class="ctrl-group">
+        <div class="ctrl-group-label">Highlight</div>
         <select id="prices-spot-month">
           <option value="">All Months</option>
           ${MONTHS.map(month => `<option value="${month}" ${month === view.spotMonth ? 'selected' : ''}>${month}</option>`).join('')}
         </select>
       </div>
+      <div class="ctrl-sep"></div>
+      <div class="ctrl-group">
+        <div class="ctrl-group-label">Band</div>
+        <span class="instrument-stamp" style="padding-top:2px;"><span class="instrument-dot" style="background:${meta.color};"></span>5Y Seasonal Active</span>
+      </div>
     ` : `
-      <div class="flex flex-col gap-sm">
-        <label>Month</label>
+      <div class="ctrl-group">
+        <div class="ctrl-group-label">Month</div>
         <select id="prices-month">${MONTHS.map(month => `<option value="${month}" ${month === view.month ? 'selected' : ''}>${month}</option>`).join('')}</select>
       </div>
-      <div class="flex flex-col gap-sm">
-        <label>Year</label>
+      <div class="ctrl-group">
+        <div class="ctrl-group-label">Year</div>
         <select id="prices-year">${years.map(year => `<option value="${year}" ${year === view.year ? 'selected' : ''}>${year}</option>`).join('')}</select>
       </div>
+      <div class="ctrl-sep"></div>
+      <div class="ctrl-group">
+        <div class="ctrl-group-label">Options</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="toggle-btn ${view.tradingDays ? 'active' : ''}" data-tone="${meta.tone}" id="prices-mode-toggle">Trading Days</button>
+          <button class="toggle-btn ${view.compare ? 'active' : ''}" data-tone="${meta.tone}" id="prices-compare-toggle" ${compareYears.length ? '' : 'disabled'}>Compare</button>
+          ${view.compare && compareYears.length ? `<select id="prices-compare-year">${compareYears.map(year => `<option value="${year}" ${year === view.compareYear ? 'selected' : ''}>${year}</option>`).join('')}</select>` : ''}
+        </div>
+      </div>
     `}
-    ${!isSpot ? `
-      <button class="toggle-btn ${view.tradingDays ? 'active' : ''}" data-tone="${meta.tone}" id="prices-mode-toggle">Trading Days</button>
-      <button class="toggle-btn ${view.compare ? 'active' : ''}" data-tone="${meta.tone}" id="prices-compare-toggle" ${compareYears.length ? '' : 'disabled'}>Compare Mode</button>
-      ${view.compare && compareYears.length ? `<div class="flex flex-col gap-sm"><label>Compare Year</label><select id="prices-compare-year">${compareYears.map(year => `<option value="${year}" ${year === view.compareYear ? 'selected' : ''}>${year}</option>`).join('')}</select></div>` : ''}
-    ` : ''}
-    <div class="prices-context" style="min-height:40px;">
-      ${isSpot ? `<span class="instrument-stamp"><span class="instrument-dot" style="background:${meta.color};"></span>5Y calendar band enabled</span>` : ''}
-      <span class="instrument-stamp">Use bottom rail for window</span>
+    <div class="ctrl-hint-badge">
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><line x1="1" y1="5.5" x2="10" y2="5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><polyline points="7,3 10,5.5 7,8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="4,3 1,5.5 4,8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Drag rail · set window
     </div>
   `;
 
@@ -1138,7 +1154,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
     ? `${view.spotYear} daily spot history - ${meta.unit}`
     : `${view.month.toUpperCase()} ${view.year} contract - ${meta.unit}${useTradingAxis ? ' - trading-day aligned' : ''}`;
   priceEl.textContent = formatInstrumentValue(view.instrument, currentPoint.p);
-  changeEl.textContent = `${formatPercent(changePct)} from open`;
+  changeEl.innerHTML = `${formatPercent(changePct)} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">from open</span>`;
   changeEl.className = 'change ' + (changePct >= 0 ? 'positive' : 'negative');
 
   const chartContainer = document.getElementById('prices-chart-container');
