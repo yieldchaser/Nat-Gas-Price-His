@@ -2967,77 +2967,43 @@ function renderDailyTab() {
 }
 
 function updateDailyTracker() {
-  // Find current front month contract
   const now = new Date();
-  let frontMonth, frontYear, frontTicker;
+  const data = STATE.liveData['NG=F'] || [];
 
-  // Front month is typically the next month to expire
-  for (let offset = 1; offset <= 3; offset++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    const month = MONTHS[d.getMonth()];
-    const code = MONTH_CODES[month];
-    const yr = d.getFullYear() % 100;
-    const pad = yr < 10 ? '0' + yr : '' + yr;
-    const ticker = `NG${code}${pad}`;
-    const data = getContractData(ticker);
-    if (data.length > 0) {
-      frontMonth = month;
-      frontYear = d.getFullYear();
-      frontTicker = ticker;
-      break;
-    }
-  }
+  document.getElementById('daily-contract').textContent = 'NG=F · Continuous Front Month Contract';
 
-  if (!frontTicker) {
-    // Fallback: use most recent data we have
-    const month = MONTHS[now.getMonth()];
-    const code = MONTH_CODES[month];
-    const yr = now.getFullYear() % 100;
-    const pad = yr < 10 ? '0' + yr : '' + yr;
-    frontTicker = `NG${code}${pad}`;
-    frontMonth = month;
-    frontYear = now.getFullYear();
-  }
-
-  const data = getContractData(frontTicker);
-  document.getElementById('daily-contract').textContent = `${frontTicker} — ${frontMonth} ${frontYear}`;
-
-  if (data.length === 0) {
+  if (!data.length) {
     document.getElementById('daily-price').textContent = 'No data';
+    document.getElementById('daily-change').textContent = '';
+    document.getElementById('daily-table').innerHTML = '<div style="padding:16px;color:var(--text-muted);">Live data not loaded</div>';
     return;
   }
 
   const last = data[data.length - 1];
   const prev = data.length > 1 ? data[data.length - 2] : last;
-  const dayDelta = ((last.p - prev.p) / prev.p * 100);
+  const dayDelta = (last.p - prev.p) / prev.p * 100;
 
   document.getElementById('daily-price').textContent = `$${last.p.toFixed(3)}`;
   const changeEl = document.getElementById('daily-change');
   changeEl.textContent = `${dayDelta >= 0 ? '+' : ''}${dayDelta.toFixed(2)}% day`;
   changeEl.className = 'change ' + (dayDelta >= 0 ? 'positive' : 'negative');
 
-  // Price log table (most recent first) with sticky header
+  // Price log — most recent first
   const reversed = [...data].reverse();
   const allPrices = reversed.map(p => p.p);
-  const pMin = Math.min(...allPrices), pMax = Math.max(...allPrices);
-  const pRange = pMax - pMin || 1;
-  let html = `<div class="card-title" style="padding:12px 16px 8px;">Price Log <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${data.length} sessions</span></div>`;
-  html += `<div style="overflow-y:auto;max-height:580px;"><table><thead><tr>
-    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Date</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Close</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Day Δ%</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">T-Day</th>
-  </tr></thead><tbody>`;
-  reversed.slice(0, 120).forEach((pt, i) => {
+  const pMin = Math.min(...allPrices), pMax = Math.max(...allPrices), pRange = pMax - pMin || 1;
+  const th = label => `<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;${label==='Date'?'text-align:left;':''}">${label}</th>`;
+  let html = `<div class="card-title" style="padding:12px 16px 8px;">Price Log — NG=F <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${data.length} sessions</span></div>`;
+  html += `<div style="overflow-y:auto;max-height:600px;"><table><thead><tr>${th('Date')}${th('Close')}${th('Day Δ%')}</tr></thead><tbody>`;
+  reversed.forEach((pt, i) => {
     const prevPt = i < reversed.length - 1 ? reversed[i + 1] : pt;
-    const delta = ((pt.p - prevPt.p) / prevPt.p * 100);
-    const barW = ((pt.p - pMin) / pRange * 40).toFixed(1);
+    const delta = (pt.p - prevPt.p) / prevPt.p * 100;
+    const barW = ((pt.p - pMin) / pRange * 44).toFixed(1);
     const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`;
     html += `<tr>
       <td style="text-align:left;">${pt.date}</td>
       <td>$${pt.p.toFixed(3)}${bar}</td>
-      <td class="${delta >= 0 ? 'positive' : 'negative'}">${delta !== 0 ? (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%' : '—'}</td>
-      <td style="color:var(--text-muted);">${pt.d}</td>
+      <td class="${delta >= 0 ? 'positive' : 'negative'}">${i === reversed.length-1 ? '—' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%'}</td>
     </tr>`;
   });
   html += '</tbody></table></div>';
