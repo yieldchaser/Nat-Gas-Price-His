@@ -1,0 +1,48 @@
+name: Refresh Spot Prices
+
+on:
+  schedule:
+    # EIA publishes Henry Hub spot data every Wednesday ~1pm ET
+    # Run Wed and Thu at 18:00 UTC (2pm ET) to catch the release
+    - cron: '0 18 * * 3,4'
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install xlrd
+
+      - name: Fetch EIA spot data and rebuild JSON
+        run: |
+          python3 - <<'EOF'
+          import sys, os
+          sys.path.insert(0, '.')
+          from build_data import build_spot_from_eia
+          build_spot_from_eia('data')
+          EOF
+
+      - name: Commit and push if data changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/spot/
+          if git diff --staged --quiet; then
+            echo "No spot data changes — skipping commit"
+          else
+            LAST=$(git diff --staged --stat | tail -1)
+            git commit -m "chore: refresh EIA spot prices $(date -u '+%Y-%m-%d')"
+            git push origin main
+            echo "Pushed updated spot data: $LAST"
+          fi
