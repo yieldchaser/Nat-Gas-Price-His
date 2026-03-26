@@ -280,6 +280,50 @@ tr:hover td { background: var(--bg-card-hover); }
 /* Hide TradingView branding */
 .chart-wrap a, .tv-lightweight-charts a, [class*="apply-common"] a { display: none !important; opacity: 0 !important; pointer-events: none !important; }
 .chart-wrap div[style*="position: absolute"][style*="bottom"] a { display: none !important; }
+.curve-annotation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+}
+.curve-annotation {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.curve-drop-line {
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(255,255,255,0.20), rgba(255,255,255,0.04));
+}
+.curve-drop-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: rgba(245,247,251,0.96);
+  box-shadow: 0 0 0 2px rgba(10,10,15,0.88), 0 0 14px rgba(245,247,251,0.10);
+}
+.curve-point-label {
+  position: absolute;
+  left: 0;
+  top: -8px;
+  transform: translate(-50%, -100%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f5f7fb;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.92), 0 0 10px rgba(0,0,0,0.65);
+}
 .chart-footer {
   margin-top: var(--gap);
   border: 1px solid var(--border);
@@ -2759,6 +2803,120 @@ function formatCurveValue(value) {
   return Number.isFinite(value) ? `$${value.toFixed(3)}` : 'N/A';
 }
 
+function formatCurveAxisValue(value) {
+  return Number.isFinite(value) ? `$${value.toFixed(2)}` : '';
+}
+
+function formatCurvePointLabel(value) {
+  return Number.isFinite(value) ? `$${value.toFixed(2)}` : '';
+}
+
+function teardownCurveAnnotations() {
+  if (STATE._curveAnnotationFrame) {
+    cancelAnimationFrame(STATE._curveAnnotationFrame);
+    STATE._curveAnnotationFrame = null;
+  }
+  if (STATE._curveResizeObserver) {
+    STATE._curveResizeObserver.disconnect();
+    STATE._curveResizeObserver = null;
+  }
+  if (STATE._curveTimeRangeListener && STATE._curveChart) {
+    try {
+      STATE._curveChart.timeScale().unsubscribeVisibleTimeRangeChange(STATE._curveTimeRangeListener);
+    } catch (_) {}
+    STATE._curveTimeRangeListener = null;
+  }
+}
+
+function ensureCurveAnnotationLayer(container) {
+  if (!container) return null;
+  let layer = container.querySelector('.curve-annotation-layer');
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.className = 'curve-annotation-layer';
+    container.appendChild(layer);
+  }
+  return layer;
+}
+
+function bindCurveAnnotations(chart, container) {
+  teardownCurveAnnotations();
+  const rerender = () => scheduleCurveAnnotationRender();
+  STATE._curveTimeRangeListener = rerender;
+  chart.timeScale().subscribeVisibleTimeRangeChange(rerender);
+  if (typeof ResizeObserver === 'function' && container) {
+    const observer = new ResizeObserver(() => scheduleCurveAnnotationRender());
+    observer.observe(container);
+    STATE._curveResizeObserver = observer;
+  }
+}
+
+function scheduleCurveAnnotationRender() {
+  if (STATE._curveAnnotationFrame) cancelAnimationFrame(STATE._curveAnnotationFrame);
+  STATE._curveAnnotationFrame = requestAnimationFrame(() => {
+    STATE._curveAnnotationFrame = null;
+    renderCurveAnnotations();
+  });
+}
+
+function renderCurveAnnotations() {
+  const chart = STATE._curveChart;
+  const series = STATE._curveSeries;
+  const slots = STATE._curveSlots || [];
+  const container = document.getElementById('curve-chart-container');
+  const layer = ensureCurveAnnotationLayer(container);
+  if (!layer) return;
+
+  if (!chart || !series || !slots.length) {
+    layer.innerHTML = '';
+    return;
+  }
+
+  const width = container.clientWidth || 0;
+  const height = container.clientHeight || 0;
+  const bottomInset = Math.max(26, Math.round(height * 0.07));
+  const visiblePoints = slots
+    .filter(slot => Number.isFinite(slot.price))
+    .map(slot => ({
+      slot,
+      x: chart.timeScale().timeToCoordinate(slot.time),
+      y: series.priceToCoordinate(slot.price),
+    }))
+    .filter(point =>
+      Number.isFinite(point.x) &&
+      Number.isFinite(point.y) &&
+      point.x >= -24 &&
+      point.x <= width + 24 &&
+      point.y >= -24 &&
+      point.y <= height + 24
+    );
+
+  if (!visiblePoints.length) {
+    layer.innerHTML = '';
+    return;
+  }
+
+  const spacings = [];
+  for (let i = 1; i < visiblePoints.length; i++) {
+    const gap = visiblePoints[i].x - visiblePoints[i - 1].x;
+    if (gap > 0) spacings.push(gap);
+  }
+  spacings.sort((a, b) => a - b);
+  const medianSpacing = spacings.length ? spacings[Math.floor(spacings.length / 2)] : width;
+  const labelStride = Math.max(1, Math.ceil(38 / Math.max(medianSpacing, 10)));
+  const lastVisibleIndex = visiblePoints.length - 1;
+
+  layer.innerHTML = visiblePoints.map((point, index) => {
+    const dropHeight = Math.max(10, height - point.y - bottomInset);
+    const showLabel = index === 0 || index === lastVisibleIndex || index % labelStride === 0;
+    return `<div class="curve-annotation" style="left:${point.x.toFixed(2)}px;top:${point.y.toFixed(2)}px;">
+      <div class="curve-drop-line" style="height:${dropHeight.toFixed(2)}px;"></div>
+      <div class="curve-drop-dot"></div>
+      ${showLabel ? `<div class="curve-point-label">${formatCurvePointLabel(point.slot.price)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
 function buildForwardCurveData() {
   const baseDate = new Date();
   const rawSlots = [];
@@ -3019,6 +3177,7 @@ function updateCurveChart() {
   const palette = getNeutralChartPalette();
 
   if (!slots.length || !curveData.firstQuoted) {
+    teardownCurveAnnotations();
     document.getElementById('curve-desc').textContent = 'No quoted curve data available';
     document.getElementById('curve-price').textContent = '--';
     document.getElementById('curve-change').textContent = '';
@@ -3031,17 +3190,25 @@ function updateCurveChart() {
 
   // Chart
   const chartContainer = document.getElementById('curve-chart-container');
+  teardownCurveAnnotations();
   const chart = createManagedChart('curve', 'main', chartContainer);
+  chart.applyOptions({
+    rightPriceScale: {
+      scaleMargins: { top: 0.18, bottom: 0.12 },
+    },
+  });
 
   const lineSeries = chart.addLineSeries({
     color: palette.main,
     lineWidth: 2,
-    priceLineVisible: true,
-    lastValueVisible: true,
-    crosshairMarkerVisible: true,
-    crosshairMarkerRadius: 5,
-    crosshairMarkerBorderColor: 'var(--bg-primary)',
-    crosshairMarkerBorderWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+    priceFormat: {
+      type: 'custom',
+      formatter: value => formatCurveAxisValue(value),
+      minMove: 0.001,
+    },
   });
   lineSeries.setData(slots.map(slot => Number.isFinite(slot.price) ? ({ time: slot.time, value: slot.price }) : ({ time: slot.time })));
   const curveLookup = new Map(slots.map(slot => [timeKey(slot.time), slot]));
@@ -3103,6 +3270,8 @@ function updateCurveChart() {
   STATE._curveChart = chart;
   STATE._curveSlots = slots;
   STATE._curveData = curveData;
+  STATE._curveSeries = lineSeries;
+  bindCurveAnnotations(chart, chartContainer);
   if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
   const curveKey = `${slots.length}|${slots[0].ticker}|${slots[slots.length - 1].ticker}`;
   if (STATE._curvePrevKey !== curveKey) {
@@ -3157,6 +3326,7 @@ function syncCurveRangeFooter() {
 
   renderCurveMetrics(curveData, windowContext);
   renderCurveTable(curveData, windowContext);
+  scheduleCurveAnnotationRender();
 }
 
 function onCurveSlider() {
