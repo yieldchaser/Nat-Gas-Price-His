@@ -2046,6 +2046,24 @@ function renderSpreadTab() {
             <div id="spread-legend" style="padding:10px 14px 6px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:5px;"></div>
             <div class="chart-wrap" id="spread-chart-container" style="min-height:350px;height:50vh;"></div>
           </div>
+          <div class="card chart-footer" style="margin-top:var(--gap);">
+            <div class="range-toolbar">
+              <div class="flex flex-col gap-sm">
+                <span class="range-kicker">Window</span>
+                <span class="range-helper" id="spread-range-helper">Full span</span>
+              </div>
+              <div class="range-scale-labels">
+                <span id="spread-range-min-label">--</span>
+                <span id="spread-range-max-label">--</span>
+              </div>
+            </div>
+            <div class="range-input-shell">
+              <div class="range-selection" id="spread-range-selection"></div>
+              <input type="range" id="spread-window-start" min="0" max="0" value="0" aria-label="Spread window start">
+              <input type="range" id="spread-window-end" min="0" max="0" value="0" aria-label="Spread window end">
+            </div>
+            <div class="chart-readout" id="spread-range-readout">Awaiting data</div>
+          </div>
           <div class="card" style="margin-top:var(--gap);">
             <div class="card-title">Spread Heatmap — Average Calendar Spread (All Years)</div>
             <div id="spread-heatmap" style="overflow-x:auto;"></div>
@@ -2059,6 +2077,8 @@ function renderSpreadTab() {
     document.getElementById('spread-front').addEventListener('change', scheduleSpreadChartUpdate);
     document.getElementById('spread-back').addEventListener('change', scheduleSpreadChartUpdate);
     document.getElementById('spread-year').addEventListener('change', scheduleSpreadChartUpdate);
+    document.getElementById('spread-window-start').addEventListener('input', onSpreadSlider);
+    document.getElementById('spread-window-end').addEventListener('input', onSpreadSlider);
     document.getElementById('spread-instrument-switch').addEventListener('click', e => {
       const btn = e.target.closest('.segment-btn');
       if (!btn) return;
@@ -2192,10 +2212,11 @@ function updateSpreadChart() {
   });
   const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
 
-  // Init/reset visible years when pair changes
-  const pairKey = `${front}|${back}`;
+  // Init/reset visible years and range when pair/instrument changes
+  const pairKey = `${instrument}|${front}|${back}`;
   if (!STATE.spreadVisibleYears || STATE.spreadPairKey !== pairKey) {
     STATE.spreadPairKey = pairKey;
+    STATE.spreadView = { rangeStart: 0, rangeEnd: null };
     // Default: selected year + 4 most recent other years
     const defaults = new Set([year]);
     allYearsSorted.filter(y => y !== year).slice(0, 4).forEach(y => defaults.add(y));
@@ -2403,6 +2424,67 @@ function updateSpreadChart() {
   });
   html += `</tbody></table></div>`;
   document.getElementById('spread-table').innerHTML = html;
+
+  // Store refs and sync range footer
+  STATE._spreadChart = chart;
+  STATE._spreadSelectedPoints = allSpreads; // selected year's points
+  syncSpreadRangeFooter();
+}
+
+function syncSpreadRangeFooter() {
+  const points = STATE._spreadSelectedPoints;
+  const chart = STATE._spreadChart;
+  if (!points || !points.length || !chart) return;
+  if (!STATE.spreadView) STATE.spreadView = { rangeStart: 0, rangeEnd: null };
+  const maxIdx = points.length - 1;
+  const view = STATE.spreadView;
+  const start = clamp(Number.isFinite(view.rangeStart) ? view.rangeStart : 0, 0, maxIdx);
+  const end = clamp(view.rangeEnd != null ? view.rangeEnd : maxIdx, 0, maxIdx);
+  view.rangeStart = start; view.rangeEnd = end;
+
+  const startSlider = document.getElementById('spread-window-start');
+  const endSlider   = document.getElementById('spread-window-end');
+  const selection   = document.getElementById('spread-range-selection');
+  const minLabel    = document.getElementById('spread-range-min-label');
+  const maxLabel    = document.getElementById('spread-range-max-label');
+  const helperEl    = document.getElementById('spread-range-helper');
+  const readoutEl   = document.getElementById('spread-range-readout');
+  if (!startSlider) return;
+
+  [startSlider, endSlider].forEach(s => { s.min='0'; s.max=String(maxIdx); s.disabled = maxIdx < 1; });
+  startSlider.value = String(start); endSlider.value = String(end);
+
+  const pct = getRangeSelectionPercent(points.length, start, end);
+  if (selection) { selection.style.left=`${pct.left}%`; selection.style.width=`${pct.width}%`; }
+  if (minLabel) minLabel.textContent = formatRangeEdgeLabel(points[0].date);
+  if (maxLabel) maxLabel.textContent = formatRangeEdgeLabel(points[maxIdx].date);
+
+  const count = end - start + 1;
+  if (helperEl) helperEl.textContent = count >= points.length
+    ? 'Full span across available history'
+    : `${count} days selected · drag handles to move or resize`;
+  if (readoutEl) readoutEl.innerHTML = count >= points.length
+    ? `<span>${formatDisplayDate(points[0].date)}</span><span style="color:var(--text-muted);">to</span><span>${formatDisplayDate(points[maxIdx].date)}</span><span style="color:var(--text-muted);">|</span><span>Full span</span>`
+    : `<span>${formatDisplayDate(points[start].date)}</span><span style="color:var(--text-muted);">to</span><span>${formatDisplayDate(points[end].date)}</span><span style="color:var(--text-muted);">|</span><span>${count} days</span><span style="color:var(--text-muted);">|</span><span>${count}/${points.length} pts</span>`;
+
+  if (start > 0 || end < maxIdx) {
+    chart.timeScale().setVisibleRange({ from: dayToTime(points[start].d), to: dayToTime(points[end].d) });
+  } else {
+    chart.timeScale().fitContent();
+  }
+}
+
+function onSpreadSlider() {
+  const points = STATE._spreadSelectedPoints;
+  const chart  = STATE._spreadChart;
+  if (!points || !chart) return;
+  if (!STATE.spreadView) STATE.spreadView = { rangeStart: 0, rangeEnd: null };
+  const maxIdx = points.length - 1;
+  let start = clamp(parseInt(document.getElementById('spread-window-start').value) || 0, 0, maxIdx);
+  let end   = clamp(parseInt(document.getElementById('spread-window-end').value)   || 0, 0, maxIdx);
+  if (start >= end) { start = Math.max(0, end - 1); document.getElementById('spread-window-start').value = String(start); }
+  STATE.spreadView.rangeStart = start; STATE.spreadView.rangeEnd = end;
+  syncSpreadRangeFooter();
 }
 
 async function buildSpreadHeatmap(force = false) {
@@ -2500,6 +2582,24 @@ function renderCurveTab() {
           <div class="card" style="padding:0;">
             <div class="chart-wrap" id="curve-chart-container" style="height:55vh;"></div>
           </div>
+          <div class="card chart-footer" style="margin-top:var(--gap);">
+            <div class="range-toolbar">
+              <div class="flex flex-col gap-sm">
+                <span class="range-kicker">Window</span>
+                <span class="range-helper" id="curve-range-helper">Full strip</span>
+              </div>
+              <div class="range-scale-labels">
+                <span id="curve-range-min-label">--</span>
+                <span id="curve-range-max-label">--</span>
+              </div>
+            </div>
+            <div class="range-input-shell">
+              <div class="range-selection" id="curve-range-selection"></div>
+              <input type="range" id="curve-window-start" min="0" max="0" value="0" aria-label="Curve window start">
+              <input type="range" id="curve-window-end" min="0" max="0" value="0" aria-label="Curve window end">
+            </div>
+            <div class="chart-readout" id="curve-range-readout">Awaiting data</div>
+          </div>
           <div class="card" style="margin-top:var(--gap);">
             <div class="ctrl-toolbar" id="curve-metrics"></div>
           </div>
@@ -2509,6 +2609,8 @@ function renderCurveTab() {
         </div>
       </div>
     `;
+    document.getElementById('curve-window-start').addEventListener('input', onCurveSlider);
+    document.getElementById('curve-window-end').addEventListener('input', onCurveSlider);
   }
   updateCurveChart();
 }
@@ -2675,6 +2777,71 @@ function updateCurveChart() {
     <div class="ctrl-sep"></div>
     ${chip('W/S Premium', `${premium >= 0 ? '+' : ''}$${premium.toFixed(3)}`, premium >= 0 ? 'var(--positive)' : 'var(--negative)')}
   `;
+
+  // Store refs and sync range footer
+  STATE._curveChart = chart;
+  STATE._curveContracts = contracts;
+  if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
+  // Reset range if number of contracts changed
+  if (STATE._curvePrevLength !== contracts.length) {
+    STATE._curvePrevLength = contracts.length;
+    STATE.curveView = { rangeStart: 0, rangeEnd: null };
+  }
+  syncCurveRangeFooter();
+}
+
+function syncCurveRangeFooter() {
+  const contracts = STATE._curveContracts;
+  const chart = STATE._curveChart;
+  if (!contracts || !contracts.length || !chart) return;
+  if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
+  const maxIdx = contracts.length - 1;
+  const view = STATE.curveView;
+  const start = clamp(Number.isFinite(view.rangeStart) ? view.rangeStart : 0, 0, maxIdx);
+  const end   = clamp(view.rangeEnd != null ? view.rangeEnd : maxIdx, 0, maxIdx);
+  view.rangeStart = start; view.rangeEnd = end;
+
+  const startSlider = document.getElementById('curve-window-start');
+  const endSlider   = document.getElementById('curve-window-end');
+  const selection   = document.getElementById('curve-range-selection');
+  const minLabel    = document.getElementById('curve-range-min-label');
+  const maxLabel    = document.getElementById('curve-range-max-label');
+  const helperEl    = document.getElementById('curve-range-helper');
+  const readoutEl   = document.getElementById('curve-range-readout');
+  if (!startSlider) return;
+
+  [startSlider, endSlider].forEach(s => { s.min='0'; s.max=String(maxIdx); s.disabled = maxIdx < 1; });
+  startSlider.value = String(start); endSlider.value = String(end);
+
+  const pct = getRangeSelectionPercent(contracts.length, start, end);
+  if (selection) { selection.style.left=`${pct.left}%`; selection.style.width=`${pct.width}%`; }
+  if (minLabel) minLabel.textContent = contracts[0].label;
+  if (maxLabel) maxLabel.textContent = contracts[maxIdx].label;
+
+  const count = end - start + 1;
+  if (helperEl) helperEl.textContent = count >= contracts.length
+    ? 'Full strip — all contracts'
+    : `${count} contracts selected · drag handles to move or resize`;
+  if (readoutEl) readoutEl.innerHTML = `<span>${contracts[start].label}</span><span style="color:var(--text-muted);">to</span><span>${contracts[end].label}</span><span style="color:var(--text-muted);">|</span><span>${count} contract${count !== 1 ? 's' : ''}</span>`;
+
+  if (start > 0 || end < maxIdx) {
+    chart.timeScale().setVisibleRange({ from: dayToTime(start + 1), to: dayToTime(end + 1) });
+  } else {
+    chart.timeScale().fitContent();
+  }
+}
+
+function onCurveSlider() {
+  const contracts = STATE._curveContracts;
+  const chart = STATE._curveChart;
+  if (!contracts || !chart) return;
+  if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
+  const maxIdx = contracts.length - 1;
+  let start = clamp(parseInt(document.getElementById('curve-window-start').value) || 0, 0, maxIdx);
+  let end   = clamp(parseInt(document.getElementById('curve-window-end').value)   || 0, 0, maxIdx);
+  if (start >= end) { start = Math.max(0, end - 1); document.getElementById('curve-window-start').value = String(start); }
+  STATE.curveView.rangeStart = start; STATE.curveView.rangeEnd = end;
+  syncCurveRangeFooter();
 }
 </script>
 
