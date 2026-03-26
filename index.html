@@ -952,19 +952,34 @@ function getActiveHHTickers() {
   return tickers;
 }
 
+function getActiveTTFTickers() {
+  // Generate tickers for currently active/forward TTF contracts (24 months forward)
+  const now = new Date();
+  const tickers = [];
+  for (let offset = 0; offset < 24; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const yr = d.getFullYear() % 100;
+    const monthIdx = d.getMonth();
+    const code = MONTH_CODES[MONTHS[monthIdx]];
+    const pad = yr < 10 ? '0' + yr : '' + yr;
+    tickers.push(`TG${code}${pad}.NYM`);
+  }
+  return tickers;
+}
+
 async function loadLiveData() {
   setLoadProgress(50, 'FETCHING LIVE PRICES...');
-  const tickers = getActiveHHTickers();
+  const allTickers = [...getActiveHHTickers(), ...getActiveTTFTickers()];
   // Also fetch front month for nav display
   const frontMonth = fetchYahoo('NG=F');
 
   // Batch fetch in groups of 10 to avoid overwhelming
   const batchSize = 10;
-  for (let i = 0; i < tickers.length; i += batchSize) {
-    const batch = tickers.slice(i, i + batchSize);
+  for (let i = 0; i < allTickers.length; i += batchSize) {
+    const batch = allTickers.slice(i, i + batchSize);
     const results = await Promise.all(batch.map(t => fetchYahoo(t).then(d => [t, d])));
     results.forEach(([t, d]) => { if (d && d.length > 0) STATE.liveData[t] = d; });
-    const pct = 50 + Math.round((i / tickers.length) * 40);
+    const pct = 50 + Math.round((i / allTickers.length) * 40);
     setLoadProgress(pct, `FETCHING CONTRACTS... ${Object.keys(STATE.liveData).length} loaded`);
   }
 
@@ -1123,12 +1138,45 @@ function getContractData(ticker) {
   return hist;
 }
 
-/* ─── Helper: get TTF contract data ─── */
+/* ─── Helper: get TTF contract data (merged historical + live) ─── */
 function getTTFContractData(ticker) {
+  if (STATE.contractCache[ticker]) return STATE.contractCache[ticker];
   const code = ticker.charAt(2);
   const month = CODE_TO_MONTH[code];
-  if (!month || !STATE.ttf[month]) return [];
-  return STATE.ttf[month].contracts[ticker] || [];
+  if (!month) return [];
+
+  let hist = [];
+  if (STATE.ttf[month] && STATE.ttf[month].contracts[ticker]) {
+    hist = STATE.ttf[month].contracts[ticker];
+  }
+
+  // Try live data
+  const liveTicker = ticker + '.NYM';
+  const live = STATE.liveData[liveTicker];
+  if (live && live.length > 0) {
+    if (hist.length === 0) {
+      // Only live data — assign sequential trading day numbers
+      const liveOnly = live.map((pt, i) => ({ d: i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
+      STATE.contractCache[ticker] = liveOnly;
+      return liveOnly;
+    }
+    // Merge: append live points that fall after the last historical date
+    const lastHistPoint = hist[hist.length - 1];
+    const lastHistDate = lastHistPoint && lastHistPoint.date;
+    const newLive = lastHistDate
+      ? live.filter(pt => pt.date > lastHistDate)
+      : live.slice(hist.length);
+    const lastD = lastHistPoint && lastHistPoint.d ? lastHistPoint.d : hist.length;
+    const merged = hist.slice();
+    newLive.forEach((pt, i) => {
+      merged.push({ d: lastD + i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l });
+    });
+    STATE.contractCache[ticker] = merged;
+    return merged;
+  }
+
+  STATE.contractCache[ticker] = hist;
+  return hist;
 }
 
 /* ─── Initialize ─── */
