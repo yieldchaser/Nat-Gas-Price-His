@@ -301,13 +301,20 @@ function computeAxisLabels(filteredData, chartPixelWidth) {
   return out;
 }
 
-function buildSmartAxisFormatter(filteredData, chartPixelWidth, resolvePoint) {
+function buildSmartAxisFormatter(filteredData, chartPixelWidth, useTradingAxis) {
   const labelMap = computeAxisLabels(filteredData, chartPixelWidth);
-  return time => {
-    const point = typeof resolvePoint === 'function' ? resolvePoint(time) : null;
-    const ds = (point && point.date) ? point.date : (typeof time === 'string' ? time : '');
-    return labelMap.get(ds) || '';
-  };
+  if (!useTradingAxis) {
+    return time => labelMap.get(typeof time === 'string' ? time : '') || '';
+  }
+  // In trading-day (Compare) mode the chart X axis uses pseudo-dates from dayToTime(point.d).
+  // Remap labels from real-date keys to their corresponding pseudo-date keys so the
+  // formatter can look up by the time value TradingView actually passes in.
+  const pseudoMap = new Map();
+  for (const pt of filteredData) {
+    const label = labelMap.get(pt.date);
+    if (label) pseudoMap.set(dayToTime(pt.d), label);
+  }
+  return time => pseudoMap.get(typeof time === 'string' ? time : '') || '';
 }
 
 function buildCurveAxisFormatter(resolveContract) {
@@ -448,7 +455,6 @@ function syncPriceViewState() {
   const view = STATE.priceView;
   if (!PRICE_INSTRUMENT_META[view.instrument]) view.instrument = 'hh';
   view.compare = Boolean(view.compare);
-  view.tradingDays = Boolean(view.tradingDays);
   if (!Number.isFinite(view.rangeStart)) view.rangeStart = 0;
   if (view.rangeEnd != null && !Number.isFinite(view.rangeEnd)) view.rangeEnd = null;
 
@@ -696,7 +702,6 @@ function renderPricesControls() {
       <div class="ctrl-group">
         <div class="ctrl-group-label">Options</div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="toggle-btn ${view.tradingDays ? 'active' : ''}" data-tone="${meta.tone}" id="prices-mode-toggle">Trading Days</button>
           <button class="toggle-btn ${view.compare ? 'active' : ''}" data-tone="${meta.tone}" id="prices-compare-toggle" ${compareYears.length ? '' : 'disabled'}>Compare</button>
           ${view.compare && compareYears.length ? `<select id="prices-compare-year">${compareYears.map(year => `<option value="${year}" ${year === view.compareYear ? 'selected' : ''}>${year}</option>`).join('')}</select>` : ''}
         </div>
@@ -747,12 +752,6 @@ function renderPricesControls() {
     renderPricesControls();
     schedulePricesChartUpdate();
   });
-  document.getElementById('prices-mode-toggle').addEventListener('click', () => {
-    STATE.priceView.tradingDays = !STATE.priceView.tradingDays;
-    renderPricesControls();
-    schedulePricesChartUpdate();
-  });
-
   const compareToggle = document.getElementById('prices-compare-toggle');
   if (compareToggle) {
     compareToggle.addEventListener('click', () => {
@@ -1087,7 +1086,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
   const view = STATE.priceView;
   const meta = getPriceInstrumentMeta(view.instrument);
   const isSpot = view.instrument === 'spot';
-  const useTradingAxis = !isSpot && (view.tradingDays || view.compare);
+  const useTradingAxis = !isSpot && view.compare;
   const primary = getPrimaryPriceSeries(view);
   const compare = getComparePriceSeries(view);
   const ticker = primary.ticker;
@@ -1152,7 +1151,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
 
   descEl.textContent = isSpot
     ? `${view.spotYear} daily spot history - ${meta.unit}`
-    : `${view.month.toUpperCase()} ${view.year} contract - ${meta.unit}${useTradingAxis ? ' - trading-day aligned' : ''}`;
+    : `${view.month.toUpperCase()} ${view.year} contract - ${meta.unit}`;
   priceEl.textContent = formatInstrumentValue(view.instrument, currentPoint.p);
   changeEl.innerHTML = `${formatPercent(changePct)} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">from open</span>`;
   changeEl.className = 'change ' + (changePct >= 0 ? 'positive' : 'negative');
@@ -1264,9 +1263,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
   }
 
   const chartPixelWidth = Math.max(100, (chartContainer.clientWidth || 900) - 72);
-  const resolvePointForAxis = time => mainLookup.get(timeKey(time)) || compareLookup.get(timeKey(time)) || highlightLookup.get(timeKey(time));
   applyChartTimeScaleOptions(chart, {
-    formatter: buildSmartAxisFormatter(filteredData, chartPixelWidth, resolvePointForAxis),
+    formatter: buildSmartAxisFormatter(filteredData, chartPixelWidth, useTradingAxis),
     barSpacing: getChartBarSpacing(filteredData.length),
   });
   chart.timeScale().fitContent();
