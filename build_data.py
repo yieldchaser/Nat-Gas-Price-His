@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Convert CSV price data to JSON for the dashboard."""
-import csv, json, os, glob
+import csv, json, os, glob, urllib.request, tempfile
 
 MONTH_CODES = {
     '01': ('Jan', 'F'), '02': ('Feb', 'G'), '03': ('Mar', 'H'),
@@ -98,6 +98,59 @@ def build_ttf_json(base_dir, out_dir):
             json.dump(out, f, separators=(',', ':'))
         print(f"  {out_path}: {len(contracts)} contracts")
 
+EIA_SPOT_URL = 'https://www.eia.gov/dnav/ng/hist_xls/RNGWHHDd.xls'
+
+MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+def build_spot_from_eia(out_dir):
+    """Download EIA Henry Hub daily spot XLS and regenerate spot JSON files."""
+    try:
+        import xlrd
+    except ImportError:
+        raise SystemExit("xlrd not installed — run: pip install xlrd")
+
+    print(f"  Downloading {EIA_SPOT_URL} ...")
+    with tempfile.NamedTemporaryFile(suffix='.xls', delete=False) as tmp:
+        tmp_path = tmp.name
+    urllib.request.urlretrieve(EIA_SPOT_URL, tmp_path)
+
+    wb = xlrd.open_workbook(tmp_path)
+    ws = wb.sheet_by_name('Data 1')
+
+    # month_data[month_name][year] = list of {d, p, date}
+    month_data = {m: {} for m in MONTH_NAMES}
+
+    for r in range(3, ws.nrows):
+        serial = ws.cell(r, 0).value
+        price  = ws.cell(r, 1).value
+        if not isinstance(serial, float) or not isinstance(price, float):
+            continue
+        dt = xlrd.xldate_as_datetime(serial, wb.datemode).date()
+        m_name = MONTH_NAMES[dt.month - 1]
+        yr = str(dt.year)
+        if yr not in month_data[m_name]:
+            month_data[m_name][yr] = []
+        month_data[m_name][yr].append({'p': round(price, 4), 'date': dt.isoformat()})
+
+    os.makedirs(os.path.join(out_dir, 'spot'), exist_ok=True)
+    for m_name, years in month_data.items():
+        # Add sequential d within each year
+        years_out = {}
+        for yr in sorted(years.keys()):
+            years_out[yr] = [{'d': i+1, 'p': e['p'], 'date': e['date']}
+                             for i, e in enumerate(years[yr])]
+        out = {
+            'meta': {'month': m_name, 'unit': 'USD/MMBtu', 'source': 'EIA'},
+            'years': years_out
+        }
+        out_path = os.path.join(out_dir, 'spot', f'spot_{m_name.lower()}.json')
+        with open(out_path, 'w') as f:
+            json.dump(out, f, separators=(',', ':'))
+        total_pts = sum(len(v) for v in years_out.values())
+        print(f"  {out_path}: {len(years_out)} years, {total_pts} data points, last={list(years_out.values())[-1][-1]['date']}")
+
+    os.unlink(tmp_path)
+
 def build_spot_json(base_dir, out_dir):
     """Build spot_jan.json ... spot_dec.json from Spot Price CSVs."""
     month_dir = os.path.join(base_dir, 'Spot Price', 'Monthwise')
@@ -173,8 +226,8 @@ if __name__ == '__main__':
     build_hh_json(base, out)
     print("Building TTF JSON...")
     build_ttf_json(base, out)
-    print("Building Spot JSON...")
-    build_spot_json(base, out)
+    print("Building Spot JSON (from EIA)...")
+    build_spot_from_eia(out)
     print("Building Expiry Prices...")
     build_expiry_prices(base, out)
     print("Done!")
