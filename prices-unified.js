@@ -35,7 +35,6 @@ function buildTimeLookup(points, timeResolver = point => point.date) {
 function getAvailableContractYears(instrument, month) {
   const years = new Set();
   const store = instrument === 'ttf' ? STATE.ttf : STATE.hh;
-  const prefix = instrument === 'ttf' ? 'TG' : 'NG';
 
   if (store[month] && store[month].contracts) {
     Object.keys(store[month].contracts).forEach(ticker => {
@@ -44,13 +43,15 @@ function getAvailableContractYears(instrument, month) {
     });
   }
 
-  if (instrument === 'hh') {
-    Object.keys(STATE.liveData).forEach(ticker => {
-      if (!ticker.startsWith(prefix + MONTH_CODES[month])) return;
-      const yr = parseInt(ticker.slice(3, 5), 10);
-      if (Number.isFinite(yr)) years.add(yr < 50 ? 2000 + yr : 1900 + yr);
-    });
-  }
+  // HH live keys: NGJ26.NYM (prefix NG = 2 chars, yr at [3..5])
+  // TTF live keys: TTFJ26.NYM (prefix TTF = 3 chars, yr at [4..6])
+  const livePrefix = instrument === 'ttf' ? 'TTF' : 'NG';
+  const yrStart = livePrefix.length + 1; // skip prefix + 1 month-code char
+  Object.keys(STATE.liveData).forEach(ticker => {
+    if (!ticker.startsWith(livePrefix + MONTH_CODES[month])) return;
+    const yr = parseInt(ticker.slice(yrStart, yrStart + 2), 10);
+    if (Number.isFinite(yr)) years.add(yr < 50 ? 2000 + yr : 1900 + yr);
+  });
 
   return [...years].sort((a, b) => b - a);
 }
