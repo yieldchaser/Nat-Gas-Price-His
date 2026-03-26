@@ -260,8 +260,7 @@ tr:hover td { background: var(--bg-card-hover); }
 .contract-header .price { font-family: var(--font-mono); font-size: 22px; font-weight: 700; margin-left: auto; }
 .contract-header .change { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
 /* Prices tab two-column header */
-#prices-header { align-items: center; }
-#spread-header { align-items: center; }
+#prices-header, #spread-header, #curve-header, #expiry-header, #daily-header { align-items: center; }
 .ch-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ch-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; margin-left: auto; }
@@ -2353,9 +2352,18 @@ function renderCurveTab() {
   if (!container.dataset.built) {
     container.dataset.built = '1';
     container.innerHTML = `
-      <div class="contract-header">
-        <span class="ticker" style="color:var(--accent-hh);">FORWARD CURVE</span>
-        <span class="desc" id="curve-desc">Live Futures Strip</span>
+      <div class="contract-header" id="curve-header">
+        <div class="ch-left">
+          <div class="ch-top">
+            <span class="ticker" style="color:var(--accent-hh);">FORWARD CURVE</span>
+            <span class="instrument-stamp"><span class="instrument-dot" style="background:var(--accent-hh);border-radius:50%;display:inline-block;width:7px;height:7px;"></span>Henry Hub</span>
+          </div>
+          <span class="desc" id="curve-desc">Live Futures Strip</span>
+        </div>
+        <div class="ch-right">
+          <span class="price" id="curve-price" style="margin-left:0;">--</span>
+          <span class="change" id="curve-change" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
       </div>
       <div class="flex gap" style="flex-wrap:wrap;">
         <div class="grow" style="min-width:0;">
@@ -2363,12 +2371,11 @@ function renderCurveTab() {
             <div class="chart-wrap" id="curve-chart-container" style="height:55vh;"></div>
           </div>
           <div class="card" style="margin-top:var(--gap);">
-            <div class="card-title">Curve Shape Metrics</div>
-            <div class="flex gap wrap" id="curve-metrics" style="font-family:var(--font-mono);font-size:13px;"></div>
+            <div class="ctrl-toolbar" id="curve-metrics"></div>
           </div>
         </div>
         <div style="width:300px;flex-shrink:0;">
-          <div class="card" style="max-height:600px;overflow-y:auto;" id="curve-table"></div>
+          <div class="card" style="padding:0;" id="curve-table"></div>
         </div>
       </div>
     `;
@@ -2483,29 +2490,60 @@ function updateCurveChart() {
     },
   });
 
-  // Table
-  let tableHtml = '<div class="card-title">Contract Prices</div><table><thead><tr><th style="text-align:left;">Contract</th><th>Price</th><th>Season</th></tr></thead><tbody>';
+  // Header price = front month
+  const curveHeaderPrice = document.getElementById('curve-price');
+  const curveHeaderChange = document.getElementById('curve-change');
+  if (curveHeaderPrice) {
+    curveHeaderPrice.textContent = `$${contracts[0].price.toFixed(3)}`;
+    curveHeaderPrice.style.color = 'var(--accent-hh)';
+  }
+  if (curveHeaderChange) curveHeaderChange.textContent = `${contracts[0].label} front month · ${contracts.length} contracts`;
+
+  // Table with sticky header + position bar
+  const prices = contracts.map(c => c.price);
+  const priceMin = Math.min(...prices);
+  const priceMax = Math.max(...prices);
+  const priceRange = priceMax - priceMin || 1;
+  const seasonColor = { winter: '#f5f7fb', summer: '#c5c8cf', shoulder: '#7d818b' };
+
+  let tableHtml = `<div class="card-title" style="padding:12px 16px 8px;">Contract Prices <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${contracts.length} contracts</span></div>`;
+  tableHtml += `<div style="overflow-y:auto;max-height:540px;"><table><thead><tr>
+    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Contract</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Price</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Season</th>
+  </tr></thead><tbody>`;
   contracts.forEach(c => {
-    const seasonLabel = c.season === 'winter' ? '<span style="color:#f5f7fb;">Winter</span>' : c.season === 'summer' ? '<span style="color:#c5c8cf;">Summer</span>' : '<span style="color:#7d818b;">Shoulder</span>';
-    tableHtml += `<tr><td style="text-align:left;">${c.ticker}</td><td>$${c.price.toFixed(3)}</td><td style="text-align:center;">${seasonLabel}</td></tr>`;
+    const barW = ((c.price - priceMin) / priceRange * 40).toFixed(1);
+    const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`;
+    const sLabel = `<span style="color:${seasonColor[c.season]};">${c.season.charAt(0).toUpperCase()+c.season.slice(1)}</span>`;
+    tableHtml += `<tr><td style="text-align:left;">${c.ticker}</td><td>$${c.price.toFixed(3)}${bar}</td><td style="text-align:center;">${sLabel}</td></tr>`;
   });
-  tableHtml += '</tbody></table>';
+  tableHtml += '</tbody></table></div>';
   document.getElementById('curve-table').innerHTML = tableHtml;
 
-  // Metrics
+  // Metrics as KPI chips in ctrl-toolbar
   const winterContracts = contracts.filter(c => c.season === 'winter');
   const summerContracts = contracts.filter(c => c.season === 'summer');
   const winterAvg = winterContracts.length ? winterContracts.reduce((s,c)=>s+c.price,0)/winterContracts.length : 0;
   const summerAvg = summerContracts.length ? summerContracts.reduce((s,c)=>s+c.price,0)/summerContracts.length : 0;
   const premium = winterAvg - summerAvg;
+  const slope = contracts[contracts.length-1].price - contracts[0].price;
+  const slopeLabel = slope >= 0 ? 'Contango' : 'Backwardation';
+  const slopeColor = slope >= 0 ? 'var(--positive)' : 'var(--negative)';
+  const chip = (label, val, color='var(--text-primary)') =>
+    `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color};">${val}</div></div>`;
   document.getElementById('curve-metrics').innerHTML = `
-    <span>Winter Avg: <span style="color:#f5f7fb;">$${winterAvg.toFixed(3)}</span></span>
-    <span style="color:var(--text-muted);">|</span>
-    <span>Summer Avg: <span style="color:#c5c8cf;">$${summerAvg.toFixed(3)}</span></span>
-    <span style="color:var(--text-muted);">|</span>
-    <span>Winter Premium: <span class="${premium >= 0 ? 'positive' : 'negative'}">$${premium.toFixed(3)}</span></span>
-    <span style="color:var(--text-muted);">|</span>
-    <span>Front: $${contracts[0].price.toFixed(3)} | Back: $${contracts[contracts.length-1].price.toFixed(3)}</span>
+    ${chip('Front Month', `$${contracts[0].price.toFixed(3)}`,'var(--accent-hh)')}
+    <div class="ctrl-sep"></div>
+    ${chip('Back Month', `$${contracts[contracts.length-1].price.toFixed(3)}`)}
+    <div class="ctrl-sep"></div>
+    ${chip('Slope', `${slope >= 0 ? '+' : ''}$${slope.toFixed(3)} · ${slopeLabel}`, slopeColor)}
+    <div class="ctrl-sep"></div>
+    ${chip('Winter Avg', `$${winterAvg.toFixed(3)}`,'#f5f7fb')}
+    <div class="ctrl-sep"></div>
+    ${chip('Summer Avg', `$${summerAvg.toFixed(3)}`,'#c5c8cf')}
+    <div class="ctrl-sep"></div>
+    ${chip('W/S Premium', `${premium >= 0 ? '+' : ''}$${premium.toFixed(3)}`, premium >= 0 ? 'var(--positive)' : 'var(--negative)')}
   `;
 }
 </script>
@@ -2519,15 +2557,26 @@ function renderExpiryTab() {
   if (!container.dataset.built) {
     container.dataset.built = '1';
     container.innerHTML = `
-      <div class="contract-header">
-        <span class="ticker" style="color:var(--accent-hh);">EXPIRY SETTLEMENT PRICES</span>
-        <span class="desc">HH Contract Final Settlements — USD/MMBtu</span>
+      <div class="contract-header" id="expiry-header">
+        <div class="ch-left">
+          <div class="ch-top">
+            <span class="ticker" style="color:var(--accent-hh);">EXPIRY SETTLEMENT PRICES</span>
+          </div>
+          <span class="desc">HH Contract Final Settlements — USD/MMBtu</span>
+        </div>
       </div>
-      <div class="flex gap" style="margin-bottom:var(--gap);">
-        <button class="toggle-btn active" data-range="all" onclick="filterExpiry(this)">All Years</button>
-        <button class="toggle-btn" data-range="10" onclick="filterExpiry(this)">Last 10Y</button>
-        <button class="toggle-btn" data-range="5" onclick="filterExpiry(this)">Last 5Y</button>
-        <button class="toggle-btn" data-range="3" onclick="filterExpiry(this)">Last 3Y</button>
+      <div class="card" style="margin-bottom:var(--gap);">
+        <div class="ctrl-toolbar">
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Time Window</div>
+            <div class="segment-switch" id="expiry-range-switch">
+              <button class="segment-btn active" data-range="all" onclick="filterExpiry(this)">All Years</button>
+              <button class="segment-btn" data-range="10" onclick="filterExpiry(this)">10Y</button>
+              <button class="segment-btn" data-range="5" onclick="filterExpiry(this)">5Y</button>
+              <button class="segment-btn" data-range="3" onclick="filterExpiry(this)">3Y</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="card" style="overflow-x:auto;" id="expiry-table-wrap"></div>
     `;
@@ -2536,7 +2585,7 @@ function renderExpiryTab() {
 }
 
 function filterExpiry(btn) {
-  btn.parentElement.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+  btn.parentElement.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   buildExpiryTable(btn.dataset.range);
 }
@@ -2617,25 +2666,23 @@ function renderDailyTab() {
     container.dataset.built = '1';
     container.innerHTML = `
       <div class="contract-header" id="daily-header">
-        <span class="ticker" style="color:var(--accent-hh);">FRONT MONTH TRACKER</span>
-        <span class="desc" id="daily-contract">—</span>
-        <span class="price" id="daily-price">—</span>
-        <span class="change" id="daily-change">—</span>
+        <div class="ch-left">
+          <div class="ch-top">
+            <span class="ticker" style="color:var(--accent-hh);">FRONT MONTH TRACKER</span>
+          </div>
+          <span class="desc" id="daily-contract">—</span>
+        </div>
+        <div class="ch-right">
+          <span class="price" id="daily-price" style="margin-left:0;">—</span>
+          <span class="change" id="daily-change">—</span>
+        </div>
       </div>
       <div class="flex gap" style="flex-wrap:wrap;">
         <div class="grow" style="min-width:0;">
-          <div class="card" style="max-height:600px;overflow-y:auto;" id="daily-table"></div>
+          <div class="card" style="padding:0;" id="daily-table"></div>
         </div>
         <div style="width:320px;flex-shrink:0;">
           <div class="card" id="daily-calendar"></div>
-          <div class="card" style="margin-top:var(--gap);" id="daily-codes">
-            <div class="card-title">Month Codes</div>
-            <div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);line-height:1.8;">
-              F = Jan &nbsp; G = Feb &nbsp; H = Mar &nbsp; J = Apr<br>
-              K = May &nbsp; M = Jun &nbsp; N = Jul &nbsp; Q = Aug<br>
-              U = Sep &nbsp; V = Oct &nbsp; X = Nov &nbsp; Z = Dec
-            </div>
-          </div>
         </div>
       </div>
     `;
@@ -2693,20 +2740,31 @@ function updateDailyTracker() {
   changeEl.textContent = `${dayDelta >= 0 ? '+' : ''}${dayDelta.toFixed(2)}% day`;
   changeEl.className = 'change ' + (dayDelta >= 0 ? 'positive' : 'negative');
 
-  // Price log table (most recent first)
+  // Price log table (most recent first) with sticky header
   const reversed = [...data].reverse();
-  let html = '<div class="card-title">Price Log</div><table><thead><tr><th style="text-align:left;">Date</th><th>Close</th><th>Day Δ%</th><th>T-Day</th></tr></thead><tbody>';
-  reversed.slice(0, 100).forEach((pt, i) => {
+  const allPrices = reversed.map(p => p.p);
+  const pMin = Math.min(...allPrices), pMax = Math.max(...allPrices);
+  const pRange = pMax - pMin || 1;
+  let html = `<div class="card-title" style="padding:12px 16px 8px;">Price Log <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${data.length} sessions</span></div>`;
+  html += `<div style="overflow-y:auto;max-height:580px;"><table><thead><tr>
+    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Date</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Close</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Day Δ%</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">T-Day</th>
+  </tr></thead><tbody>`;
+  reversed.slice(0, 120).forEach((pt, i) => {
     const prevPt = i < reversed.length - 1 ? reversed[i + 1] : pt;
     const delta = ((pt.p - prevPt.p) / prevPt.p * 100);
+    const barW = ((pt.p - pMin) / pRange * 40).toFixed(1);
+    const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`;
     html += `<tr>
       <td style="text-align:left;">${pt.date}</td>
-      <td>$${pt.p.toFixed(3)}</td>
+      <td>$${pt.p.toFixed(3)}${bar}</td>
       <td class="${delta >= 0 ? 'positive' : 'negative'}">${delta !== 0 ? (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%' : '—'}</td>
       <td style="color:var(--text-muted);">${pt.d}</td>
     </tr>`;
   });
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   document.getElementById('daily-table').innerHTML = html;
 
   // Expiry calendar - next 12 contracts
