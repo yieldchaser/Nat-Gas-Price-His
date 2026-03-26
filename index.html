@@ -947,11 +947,15 @@ function buildSpotStatsCache() {
   };
 }
 
+const FORWARD_CURVE_HORIZON = 72;
+const FORWARD_CURVE_FETCH_BUFFER = 3;
+const FORWARD_CURVE_FRESHNESS_DAYS = 10;
+
 function getActiveHHTickers() {
   // Generate tickers for currently active/forward HH contracts
   const now = new Date();
   const tickers = [];
-  for (let offset = 0; offset < 72; offset++) {
+  for (let offset = 0; offset < FORWARD_CURVE_HORIZON + FORWARD_CURVE_FETCH_BUFFER; offset++) {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const yr = d.getFullYear() % 100;
     const monthIdx = d.getMonth();
@@ -2704,6 +2708,257 @@ function scheduleSpreadHeatmap(force = false) {
      TAB 5: FORWARD CURVE
      ═══════════════════════════════════════════════════════════ -->
 <script>
+function getCurveSeason(monthIdx) {
+  if ([10, 11, 0, 1].includes(monthIdx)) return 'winter';
+  if ([4, 5, 6, 7].includes(monthIdx)) return 'summer';
+  return 'shoulder';
+}
+
+function buildCurveSlot(baseDate, offset) {
+  const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + offset, 1);
+  const yr = d.getFullYear();
+  const monthIdx = d.getMonth();
+  const month = MONTHS[monthIdx];
+  const yy = yr % 100;
+  const pad = yy < 10 ? '0' + yy : '' + yy;
+  const ticker = `NG${MONTH_CODES[month]}${pad}`;
+  const data = getContractData(ticker);
+  const last = data.length ? data[data.length - 1] : null;
+
+  return {
+    ticker,
+    month,
+    year: yr,
+    monthIdx,
+    season: getCurveSeason(monthIdx),
+    label: `${month.slice(0, 3)} ${String(yr).slice(2)}`,
+    price: last && Number.isFinite(last.p) ? last.p : null,
+    quoteDate: last && last.date ? last.date : null,
+    pointCount: data.length,
+  };
+}
+
+function isCurveQuoteFresh(slot, latestQuoteStamp) {
+  if (!slot || !slot.quoteDate || !Number.isFinite(slot.price)) return false;
+  if (!latestQuoteStamp) return true;
+  const slotStamp = timeToStamp(slot.quoteDate);
+  if (!slotStamp) return false;
+  return ((latestQuoteStamp - slotStamp) / 86400000) <= FORWARD_CURVE_FRESHNESS_DAYS;
+}
+
+function summarizeCurveLabels(items, limit = 5) {
+  const labels = (items || [])
+    .map(item => typeof item === 'string' ? item : item.label)
+    .filter(Boolean);
+  if (!labels.length) return '';
+  if (labels.length <= limit) return labels.join(', ');
+  return `${labels.slice(0, limit).join(', ')} +${labels.length - limit} more`;
+}
+
+function formatCurveValue(value) {
+  return Number.isFinite(value) ? `$${value.toFixed(3)}` : 'N/A';
+}
+
+function buildForwardCurveData() {
+  const baseDate = new Date();
+  const rawSlots = [];
+  for (let offset = 0; offset < FORWARD_CURVE_HORIZON + FORWARD_CURVE_FETCH_BUFFER; offset++) {
+    rawSlots.push(buildCurveSlot(baseDate, offset));
+  }
+
+  const latestQuoteStamp = rawSlots.reduce((max, slot) => {
+    const stamp = slot.quoteDate && Number.isFinite(slot.price) ? timeToStamp(slot.quoteDate) : 0;
+    return Math.max(max, stamp || 0);
+  }, 0);
+
+  let startIndex = rawSlots.findIndex(slot => isCurveQuoteFresh(slot, latestQuoteStamp));
+  if (startIndex < 0) startIndex = rawSlots.findIndex(slot => Number.isFinite(slot.price));
+  if (startIndex < 0) startIndex = 0;
+
+  const skippedSlots = rawSlots
+    .slice(0, startIndex)
+    .filter(slot => Number.isFinite(slot.price) || slot.quoteDate);
+
+  const slots = rawSlots
+    .slice(startIndex, startIndex + FORWARD_CURVE_HORIZON)
+    .map((slot, index) => Object.assign({}, slot, {
+      index,
+      time: dayToTime(index + 1),
+      missing: !Number.isFinite(slot.price),
+    }));
+
+  const quotedSlots = slots.filter(slot => Number.isFinite(slot.price));
+  const missingSlots = slots.filter(slot => !Number.isFinite(slot.price));
+
+  return {
+    slots,
+    quotedSlots,
+    missingSlots,
+    skippedSlots,
+    latestQuoteDate: latestQuoteStamp ? new Date(latestQuoteStamp).toISOString().slice(0, 10) : '',
+    firstQuoted: quotedSlots[0] || null,
+    lastQuoted: quotedSlots[quotedSlots.length - 1] || null,
+  };
+}
+
+function getCurveWindowContext(slots) {
+  if (!slots || !slots.length) {
+    return {
+      start: 0,
+      end: -1,
+      count: 0,
+      windowSlots: [],
+      quotedSlots: [],
+      missingSlots: [],
+      firstQuoted: null,
+      lastQuoted: null,
+      stats: { min: 0, max: 0, avg: 0, count: 0 },
+      winterAvg: null,
+      summerAvg: null,
+      premium: null,
+      slope: null,
+      coverageText: '0/0',
+    };
+  }
+
+  if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
+  const maxIdx = slots.length - 1;
+  let start = clamp(Number.isFinite(STATE.curveView.rangeStart) ? STATE.curveView.rangeStart : 0, 0, maxIdx);
+  let end = clamp(STATE.curveView.rangeEnd != null ? STATE.curveView.rangeEnd : maxIdx, 0, maxIdx);
+  if (end < start) {
+    const swap = start;
+    start = end;
+    end = swap;
+  }
+  if (start === end && slots.length > 1) {
+    if (end < maxIdx) end += 1;
+    else start = Math.max(0, start - 1);
+  }
+
+  STATE.curveView.rangeStart = start;
+  STATE.curveView.rangeEnd = end;
+
+  const windowSlots = slots.slice(start, end + 1);
+  const quotedSlots = windowSlots.filter(slot => Number.isFinite(slot.price));
+  const missingSlots = windowSlots.filter(slot => !Number.isFinite(slot.price));
+  const firstQuoted = quotedSlots[0] || null;
+  const lastQuoted = quotedSlots[quotedSlots.length - 1] || null;
+  const stats = getSeriesStats(quotedSlots, slot => slot.price);
+  const averageFor = list => list.length ? list.reduce((sum, slot) => sum + slot.price, 0) / list.length : null;
+  const winterAvg = averageFor(quotedSlots.filter(slot => slot.season === 'winter'));
+  const summerAvg = averageFor(quotedSlots.filter(slot => slot.season === 'summer'));
+
+  return {
+    start,
+    end,
+    count: windowSlots.length,
+    windowSlots,
+    quotedSlots,
+    missingSlots,
+    firstQuoted,
+    lastQuoted,
+    stats,
+    winterAvg,
+    summerAvg,
+    premium: winterAvg != null && summerAvg != null ? winterAvg - summerAvg : null,
+    slope: quotedSlots.length >= 2 ? lastQuoted.price - firstQuoted.price : null,
+    coverageText: `${quotedSlots.length}/${windowSlots.length}`,
+  };
+}
+
+function renderCurveMetrics(curveData, windowContext) {
+  const metricsEl = document.getElementById('curve-metrics');
+  if (!metricsEl || !curveData || !windowContext) return;
+
+  const chip = (label, val, color = 'var(--text-primary)') =>
+    `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color};">${val}</div></div>`;
+  const sep = `<div class="ctrl-sep"></div>`;
+  const slopeLabel = windowContext.slope == null
+    ? 'N/A'
+    : `${windowContext.slope >= 0 ? '+' : ''}$${windowContext.slope.toFixed(3)} · ${windowContext.slope >= 0 ? 'Contango' : 'Backwardation'}`;
+  const slopeColor = windowContext.slope == null
+    ? 'var(--text-muted)'
+    : (windowContext.slope >= 0 ? 'var(--positive)' : 'var(--negative)');
+  const coverageColor = windowContext.missingSlots.length ? 'var(--negative)' : 'var(--positive)';
+  const notes = [];
+
+  if (curveData.latestQuoteDate) {
+    notes.push(`Latest quote across strip: ${formatDisplayDate(curveData.latestQuoteDate)}.`);
+  }
+  if (curveData.skippedSlots.length) {
+    notes.push(`Rolled past stale contracts: ${summarizeCurveLabels(curveData.skippedSlots, 3)}.`);
+  }
+  if (windowContext.missingSlots.length) {
+    notes.push(`Missing quotes in window: ${summarizeCurveLabels(windowContext.missingSlots, 6)}.`);
+  }
+
+  metricsEl.innerHTML = [
+    chip('Coverage', `${windowContext.coverageText} quoted`, coverageColor),
+    sep,
+    chip('Front Quote', windowContext.firstQuoted ? `${formatCurveValue(windowContext.firstQuoted.price)} · ${windowContext.firstQuoted.label}` : 'N/A', 'var(--accent-hh)'),
+    sep,
+    chip('Back Quote', windowContext.lastQuoted ? `${formatCurveValue(windowContext.lastQuoted.price)} · ${windowContext.lastQuoted.label}` : 'N/A'),
+    sep,
+    chip('Slope', slopeLabel, slopeColor),
+    sep,
+    chip('Winter Avg', formatCurveValue(windowContext.winterAvg), '#f5f7fb'),
+    sep,
+    chip('Summer Avg', formatCurveValue(windowContext.summerAvg), '#c5c8cf'),
+    sep,
+    chip('W/S Premium', formatCurveValue(windowContext.premium), windowContext.premium == null ? 'var(--text-muted)' : (windowContext.premium >= 0 ? 'var(--positive)' : 'var(--negative)')),
+  ].join('') + (notes.length
+    ? `<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;color:var(--text-muted);">${notes.join(' ')}</div>`
+    : '');
+}
+
+function renderCurveTable(curveData, windowContext) {
+  const tableEl = document.getElementById('curve-table');
+  if (!tableEl || !curveData || !windowContext) return;
+
+  const quotedPrices = curveData.quotedSlots.map(slot => slot.price);
+  const priceMin = quotedPrices.length ? Math.min(...quotedPrices) : 0;
+  const priceMax = quotedPrices.length ? Math.max(...quotedPrices) : 0;
+  const priceRange = (priceMax - priceMin) || 1;
+  const seasonColor = { winter: '#f5f7fb', summer: '#c5c8cf', shoulder: '#7d818b' };
+
+  let tableHtml = `<div class="card-title" style="padding:12px 16px 8px;">Contract Quotes <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${curveData.quotedSlots.length}/${curveData.slots.length} quoted total</span></div>`;
+  tableHtml += `<div style="overflow-x:auto;"><table><thead><tr>
+    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Contract</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Price</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Last Quote</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Season</th>
+  </tr></thead><tbody>`;
+
+  curveData.slots.forEach((slot, index) => {
+    const inWindow = index >= windowContext.start && index <= windowContext.end;
+    const rowStyle = `${inWindow ? 'background:rgba(255,255,255,0.03);' : ''}${slot.missing ? 'opacity:0.72;' : ''}`;
+    const barWidth = Number.isFinite(slot.price) ? ((slot.price - priceMin) / priceRange * 40).toFixed(1) : '0';
+    const bar = Number.isFinite(slot.price)
+      ? `<span style="display:inline-block;width:${barWidth}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`
+      : '';
+    const priceHtml = Number.isFinite(slot.price)
+      ? `$${slot.price.toFixed(3)}${bar}`
+      : `<span style="color:var(--text-muted);">—</span>`;
+    const quoteHtml = slot.quoteDate
+      ? formatDisplayDate(slot.quoteDate)
+      : `<span style="color:var(--negative);">Missing</span>`;
+    const seasonHtml = `<span style="color:${seasonColor[slot.season]};">${slot.season.charAt(0).toUpperCase() + slot.season.slice(1)}</span>`;
+
+    tableHtml += `<tr style="${rowStyle}">
+      <td style="text-align:left;">
+        <div style="font-family:var(--font-mono);color:var(--text-primary);">${slot.ticker}</div>
+        <div style="font-size:11px;color:var(--text-muted);">${slot.label}</div>
+      </td>
+      <td>${priceHtml}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;">${quoteHtml}</td>
+      <td style="text-align:center;">${seasonHtml}</td>
+    </tr>`;
+  });
+
+  tableHtml += '</tbody></table></div>';
+  tableEl.innerHTML = tableHtml;
+}
+
 function renderCurveTab() {
   const container = document.getElementById('tab-curve');
   if (!container.dataset.built) {
@@ -2759,41 +3014,20 @@ function renderCurveTab() {
 }
 
 function updateCurveChart() {
-  // Build curve from most recent data point of each month going forward
-  const now = new Date();
-  const contracts = [];
+  const curveData = buildForwardCurveData();
+  const slots = curveData.slots;
   const palette = getNeutralChartPalette();
 
-  for (let offset = 0; offset < 72; offset++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    const yr = d.getFullYear();
-    const monthIdx = d.getMonth();
-    const month = MONTHS[monthIdx];
-    const code = MONTH_CODES[month];
-    const yy = yr % 100;
-    const pad = yy < 10 ? '0' + yy : '' + yy;
-    const ticker = `NG${code}${pad}`;
-    const data = getContractData(ticker);
-    if (data.length === 0) continue;
-    const last = data[data.length - 1];
-
-    // Season: winter(Nov-Feb), summer(May-Aug), shoulder(Mar,Apr,Sep,Oct)
-    let season = 'shoulder';
-    if ([10, 11, 0, 1].includes(monthIdx)) season = 'winter';
-    if ([4, 5, 6, 7].includes(monthIdx)) season = 'summer';
-
-    contracts.push({
-      ticker, month, year: yr, monthIdx, price: last.p, season,
-      label: `${month.slice(0,3)} ${yr.toString().slice(2)}`,
-    });
-  }
-
-  if (contracts.length === 0) {
-    document.getElementById('curve-desc').textContent = 'No live data available';
+  if (!slots.length || !curveData.firstQuoted) {
+    document.getElementById('curve-desc').textContent = 'No quoted curve data available';
+    document.getElementById('curve-price').textContent = '--';
+    document.getElementById('curve-change').textContent = '';
+    document.getElementById('curve-metrics').innerHTML = `<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted);padding:8px 0;">No forward quotes available for the current strip.</div>`;
+    document.getElementById('curve-table').innerHTML = '';
     return;
   }
 
-  document.getElementById('curve-desc').textContent = `${contracts.length} contracts — ${contracts[0].label} to ${contracts[contracts.length-1].label}`;
+  document.getElementById('curve-desc').textContent = `${slots.length}-month strip — ${slots[0].label} to ${slots[slots.length - 1].label} • ${curveData.quotedSlots.length}/${slots.length} quoted`;
 
   // Chart
   const chartContainer = document.getElementById('curve-chart-container');
@@ -2809,13 +3043,12 @@ function updateCurveChart() {
     crosshairMarkerBorderColor: 'var(--bg-primary)',
     crosshairMarkerBorderWidth: 2,
   });
-  lineSeries.setData(contracts.map((c, i) => ({ time: dayToTime(i + 1), value: c.price })));
-  const curveLookup = new Map(contracts.map((contract, index) => [timeKey(dayToTime(index + 1)), contract]));
-  const curveStats = getSeriesStats(contracts, contract => contract.price);
+  lineSeries.setData(slots.map(slot => Number.isFinite(slot.price) ? ({ time: slot.time, value: slot.price }) : ({ time: slot.time })));
+  const curveLookup = new Map(slots.map(slot => [timeKey(slot.time), slot]));
 
   applyChartTimeScaleOptions(chart, {
     formatter: buildCurveAxisFormatter(time => curveLookup.get(timeKey(time))),
-    barSpacing: contracts.length > 36 ? 8 : 11,
+    barSpacing: slots.length > 36 ? 8 : 11,
   });
   chart.timeScale().fitContent();
   attachChartTooltip({
@@ -2830,13 +3063,19 @@ function updateCurveChart() {
       getPoint: param => curveLookup.get(timeKey(param.time)),
       formatValue: value => `$${value.toFixed(3)}`,
     }],
-    getSubtitle: () => `Henry Hub strip | ${contracts[0].label} to ${contracts[contracts.length - 1].label}`,
+    getSubtitle: () => {
+      const windowContext = STATE._curveWindowContext || getCurveWindowContext(STATE._curveSlots || slots);
+      const slotSet = STATE._curveSlots || slots;
+      if (!windowContext || !windowContext.count) return 'Henry Hub strip';
+      return `Henry Hub strip | ${slotSet[windowContext.start].label} to ${slotSet[windowContext.end].label} • ${windowContext.coverageText} quoted`;
+    },
     getMetrics: () => {
+      const windowContext = STATE._curveWindowContext || getCurveWindowContext(STATE._curveSlots || slots);
       return [
-        { label: 'Max', value: `$${curveStats.max.toFixed(3)}` },
-        { label: 'Min', value: `$${curveStats.min.toFixed(3)}` },
-        { label: 'Front', value: `$${contracts[0].price.toFixed(3)}` },
-        { label: 'Back', value: `$${contracts[contracts.length - 1].price.toFixed(3)}` },
+        { label: 'Max', value: formatCurveValue(windowContext.stats.count ? windowContext.stats.max : null) },
+        { label: 'Min', value: formatCurveValue(windowContext.stats.count ? windowContext.stats.min : null) },
+        { label: 'First', value: windowContext.firstQuoted ? `${formatCurveValue(windowContext.firstQuoted.price)} • ${windowContext.firstQuoted.label}` : 'N/A' },
+        { label: 'Last', value: windowContext.lastQuoted ? `${formatCurveValue(windowContext.lastQuoted.price)} • ${windowContext.lastQuoted.label}` : 'N/A' },
       ];
     },
     getTitle: param => {
@@ -2845,88 +3084,43 @@ function updateCurveChart() {
     },
     getNote: param => {
       const point = curveLookup.get(timeKey(param.time));
-      return point ? `${point.season} contract • ${point.month} ${point.year}` : '';
+      if (!point) return '';
+      if (!point.quoteDate) return `No quote available • ${point.season} contract`;
+      return `${point.season} contract • Quote ${formatDisplayDate(point.quoteDate)}`;
     },
   });
 
-  // Header price = front month
+  // Header price = first quoted prompt
   const curveHeaderPrice = document.getElementById('curve-price');
   const curveHeaderChange = document.getElementById('curve-change');
   if (curveHeaderPrice) {
-    curveHeaderPrice.textContent = `$${contracts[0].price.toFixed(3)}`;
+    curveHeaderPrice.textContent = formatCurveValue(curveData.firstQuoted.price);
     curveHeaderPrice.style.color = 'var(--accent-hh)';
   }
-  if (curveHeaderChange) curveHeaderChange.textContent = `${contracts[0].label} front month · ${contracts.length} contracts`;
-
-  // Table with sticky header + position bar
-  const prices = contracts.map(c => c.price);
-  const priceMin = Math.min(...prices);
-  const priceMax = Math.max(...prices);
-  const priceRange = priceMax - priceMin || 1;
-  const seasonColor = { winter: '#f5f7fb', summer: '#c5c8cf', shoulder: '#7d818b' };
-
-  let tableHtml = `<div class="card-title" style="padding:12px 16px 8px;">Contract Prices <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${contracts.length} contracts</span></div>`;
-  tableHtml += `<div style="overflow-x:auto;"><table><thead><tr>
-    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Contract</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Price</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Season</th>
-  </tr></thead><tbody>`;
-  contracts.forEach(c => {
-    const barW = ((c.price - priceMin) / priceRange * 40).toFixed(1);
-    const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`;
-    const sLabel = `<span style="color:${seasonColor[c.season]};">${c.season.charAt(0).toUpperCase()+c.season.slice(1)}</span>`;
-    tableHtml += `<tr><td style="text-align:left;">${c.ticker}</td><td>$${c.price.toFixed(3)}${bar}</td><td style="text-align:center;">${sLabel}</td></tr>`;
-  });
-  tableHtml += '</tbody></table></div>';
-  document.getElementById('curve-table').innerHTML = tableHtml;
-
-  // Metrics as KPI chips in ctrl-toolbar
-  const winterContracts = contracts.filter(c => c.season === 'winter');
-  const summerContracts = contracts.filter(c => c.season === 'summer');
-  const winterAvg = winterContracts.length ? winterContracts.reduce((s,c)=>s+c.price,0)/winterContracts.length : 0;
-  const summerAvg = summerContracts.length ? summerContracts.reduce((s,c)=>s+c.price,0)/summerContracts.length : 0;
-  const premium = winterAvg - summerAvg;
-  const slope = contracts[contracts.length-1].price - contracts[0].price;
-  const slopeLabel = slope >= 0 ? 'Contango' : 'Backwardation';
-  const slopeColor = slope >= 0 ? 'var(--positive)' : 'var(--negative)';
-  const chip = (label, val, color='var(--text-primary)') =>
-    `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color};">${val}</div></div>`;
-  document.getElementById('curve-metrics').innerHTML = `
-    ${chip('Front Month', `$${contracts[0].price.toFixed(3)}`,'var(--accent-hh)')}
-    <div class="ctrl-sep"></div>
-    ${chip('Back Month', `$${contracts[contracts.length-1].price.toFixed(3)}`)}
-    <div class="ctrl-sep"></div>
-    ${chip('Slope', `${slope >= 0 ? '+' : ''}$${slope.toFixed(3)} · ${slopeLabel}`, slopeColor)}
-    <div class="ctrl-sep"></div>
-    ${chip('Winter Avg', `$${winterAvg.toFixed(3)}`,'#f5f7fb')}
-    <div class="ctrl-sep"></div>
-    ${chip('Summer Avg', `$${summerAvg.toFixed(3)}`,'#c5c8cf')}
-    <div class="ctrl-sep"></div>
-    ${chip('W/S Premium', `${premium >= 0 ? '+' : ''}$${premium.toFixed(3)}`, premium >= 0 ? 'var(--positive)' : 'var(--negative)')}
-  `;
+  if (curveHeaderChange) curveHeaderChange.textContent = `${curveData.firstQuoted.label} prompt month · ${curveData.quotedSlots.length}/${slots.length} quoted`;
 
   // Store refs and sync range footer
   STATE._curveChart = chart;
-  STATE._curveContracts = contracts;
+  STATE._curveSlots = slots;
+  STATE._curveData = curveData;
   if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
-  // Reset range if number of contracts changed
-  if (STATE._curvePrevLength !== contracts.length) {
-    STATE._curvePrevLength = contracts.length;
+  const curveKey = `${slots.length}|${slots[0].ticker}|${slots[slots.length - 1].ticker}`;
+  if (STATE._curvePrevKey !== curveKey) {
+    STATE._curvePrevKey = curveKey;
     STATE.curveView = { rangeStart: 0, rangeEnd: null };
   }
   syncCurveRangeFooter();
 }
 
 function syncCurveRangeFooter() {
-  const contracts = STATE._curveContracts;
+  const curveData = STATE._curveData;
+  const contracts = STATE._curveSlots;
   const chart = STATE._curveChart;
-  if (!contracts || !contracts.length || !chart) return;
-  if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
+  if (!curveData || !contracts || !contracts.length || !chart) return;
+
+  const windowContext = getCurveWindowContext(contracts);
+  STATE._curveWindowContext = windowContext;
   const maxIdx = contracts.length - 1;
-  const view = STATE.curveView;
-  const start = clamp(Number.isFinite(view.rangeStart) ? view.rangeStart : 0, 0, maxIdx);
-  const end   = clamp(view.rangeEnd != null ? view.rangeEnd : maxIdx, 0, maxIdx);
-  view.rangeStart = start; view.rangeEnd = end;
 
   const startSlider = document.getElementById('curve-window-start');
   const endSlider   = document.getElementById('curve-window-end');
@@ -2937,29 +3131,36 @@ function syncCurveRangeFooter() {
   const readoutEl   = document.getElementById('curve-range-readout');
   if (!startSlider) return;
 
-  [startSlider, endSlider].forEach(s => { s.min='0'; s.max=String(maxIdx); s.disabled = maxIdx < 1; });
-  startSlider.value = String(start); endSlider.value = String(end);
+  [startSlider, endSlider].forEach(s => { s.min = '0'; s.max = String(maxIdx); s.disabled = maxIdx < 1; });
+  startSlider.value = String(windowContext.start);
+  endSlider.value = String(windowContext.end);
 
-  const pct = getRangeSelectionPercent(contracts.length, start, end);
+  const pct = getRangeSelectionPercent(contracts.length, windowContext.start, windowContext.end);
   if (selection) { selection.style.left=`${pct.left}%`; selection.style.width=`${pct.width}%`; }
   if (minLabel) minLabel.textContent = contracts[0].label;
   if (maxLabel) maxLabel.textContent = contracts[maxIdx].label;
 
-  const count = end - start + 1;
+  const count = windowContext.count;
   if (helperEl) helperEl.textContent = count >= contracts.length
-    ? 'Full strip — all contracts'
-    : `${count} contracts selected · drag handles to move or resize`;
-  if (readoutEl) readoutEl.innerHTML = `<span>${contracts[start].label}</span><span style="color:var(--text-muted);">to</span><span>${contracts[end].label}</span><span style="color:var(--text-muted);">|</span><span>${count} contract${count !== 1 ? 's' : ''}</span>`;
+    ? `Full strip • ${windowContext.coverageText} quoted`
+    : `${count} months selected • ${windowContext.coverageText} quoted`;
+  if (readoutEl) {
+    const missingCount = windowContext.missingSlots.length;
+    readoutEl.innerHTML = `<span>${contracts[windowContext.start].label}</span><span style="color:var(--text-muted);">to</span><span>${contracts[windowContext.end].label}</span><span style="color:var(--text-muted);">|</span><span>${count} month${count !== 1 ? 's' : ''}</span><span style="color:var(--text-muted);">|</span><span>${windowContext.quotedSlots.length} quoted</span>${missingCount ? `<span style="color:var(--text-muted);">|</span><span>${missingCount} missing</span>` : ''}`;
+  }
 
-  if (start > 0 || end < maxIdx) {
-    chart.timeScale().setVisibleRange({ from: dayToTime(start + 1), to: dayToTime(end + 1) });
+  if (windowContext.start > 0 || windowContext.end < maxIdx) {
+    chart.timeScale().setVisibleRange({ from: dayToTime(windowContext.start + 1), to: dayToTime(windowContext.end + 1) });
   } else {
     chart.timeScale().fitContent();
   }
+
+  renderCurveMetrics(curveData, windowContext);
+  renderCurveTable(curveData, windowContext);
 }
 
 function onCurveSlider() {
-  const contracts = STATE._curveContracts;
+  const contracts = STATE._curveSlots;
   const chart = STATE._curveChart;
   if (!contracts || !chart) return;
   if (!STATE.curveView) STATE.curveView = { rangeStart: 0, rangeEnd: null };
