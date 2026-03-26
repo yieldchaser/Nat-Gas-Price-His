@@ -858,7 +858,7 @@ async function fetchJSON(url) {
 }
 
 async function fetchYahoo(ticker) {
-  const directUrl = `${YAHOO_BASE}${encodeURIComponent(ticker)}?interval=1d&range=max`;
+  const directUrl = `${YAHOO_BASE}${encodeURIComponent(ticker)}?interval=1d&range=2y`;
   const proxyUrl = CORS_PROXY + encodeURIComponent(directUrl);
   try {
     let data = await fetchJSON(proxyUrl);
