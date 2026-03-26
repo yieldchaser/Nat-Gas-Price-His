@@ -664,6 +664,9 @@ const STATE = {
   seasonalCache: {},
   ttfSeasonalCache: {},
   spotSeasonalCache: {},
+  priceSeasonalCache: {},
+  priceTtfSeasonalCache: {},
+  priceSpotSeasonalCache: {},
   contractCache: {},
   spreadCache: {},
   spotStats: { avg: 0, stddev: 0, count: 0 },
@@ -701,6 +704,9 @@ function invalidateDerivedCaches() {
   STATE.contractCache = {};
   STATE.spreadCache = {};
   STATE.spreadHeatmapHtml = '';
+  STATE.priceSeasonalCache = {};
+  STATE.priceTtfSeasonalCache = {};
+  STATE.priceSpotSeasonalCache = {};
 }
 
 function getSeriesStats(points, accessor = pt => pt.p) {
@@ -1198,6 +1204,7 @@ async function init() {
     hideLoading();
     // Fetch live data in background after UI is up
     loadLiveData().then(() => {
+      invalidateDerivedCaches();
       if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
         syncPriceViewState();
         renderPricesControls();

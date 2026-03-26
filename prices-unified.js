@@ -376,12 +376,86 @@ function getComparePriceSeries(view) {
   };
 }
 
+function finalizePriceSeasonalBucket(cache) {
+  Object.keys(cache).forEach(key => {
+    const entry = cache[key];
+    entry.avg = entry.sum / entry.count;
+    if (entry.min === Infinity) entry.min = 0;
+    if (entry.max === -Infinity) entry.max = 0;
+  });
+  return cache;
+}
+
+function getPriceSeasonalRoot(instrument) {
+  if (instrument === 'ttf') {
+    if (!STATE.priceTtfSeasonalCache) STATE.priceTtfSeasonalCache = {};
+    return STATE.priceTtfSeasonalCache;
+  }
+  if (!STATE.priceSeasonalCache) STATE.priceSeasonalCache = {};
+  return STATE.priceSeasonalCache;
+}
+
+function getPriceFuturesSeasonalBucket(instrument, month, anchorYear) {
+  if (!anchorYear || !MONTHS.includes(month)) return {};
+  const root = getPriceSeasonalRoot(instrument);
+  if (!root[month]) root[month] = {};
+  if (root[month][anchorYear]) return root[month][anchorYear];
+
+  const prefix = instrument === 'ttf' ? 'TG' : 'NG';
+  const getSeries = instrument === 'ttf' ? getTTFContractData : getContractData;
+  const cache = {};
+
+  for (let year = anchorYear - 5; year < anchorYear; year++) {
+    const ticker = `${prefix}${MONTH_CODES[month]}${String(year % 100).padStart(2, '0')}`;
+    const data = getSeries(ticker);
+    if (!data.length) continue;
+    data.forEach(point => {
+      if (!Number.isFinite(point.d) || !Number.isFinite(point.p)) return;
+      if (!cache[point.d]) cache[point.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+      cache[point.d].sum += point.p;
+      cache[point.d].count++;
+      cache[point.d].min = Math.min(cache[point.d].min, point.p);
+      cache[point.d].max = Math.max(cache[point.d].max, point.p);
+    });
+  }
+
+  root[month][anchorYear] = finalizePriceSeasonalBucket(cache);
+  return root[month][anchorYear];
+}
+
+function getPriceSpotSeasonalBucket(anchorYear) {
+  if (!anchorYear) return {};
+  if (!STATE.priceSpotSeasonalCache) STATE.priceSpotSeasonalCache = {};
+  if (STATE.priceSpotSeasonalCache[anchorYear]) return STATE.priceSpotSeasonalCache[anchorYear];
+
+  const cache = {};
+  for (let year = anchorYear - 5; year < anchorYear; year++) {
+    MONTHS.forEach(month => {
+      const series = STATE.spot[month] && STATE.spot[month].years && STATE.spot[month].years[String(year)];
+      if (!series) return;
+      series.forEach(point => {
+        if (!point.date || !Number.isFinite(point.p)) return;
+        const key = point.date.slice(5);
+        if (!cache[key]) cache[key] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+        cache[key].sum += point.p;
+        cache[key].count++;
+        cache[key].min = Math.min(cache[key].min, point.p);
+        cache[key].max = Math.max(cache[key].max, point.p);
+      });
+    });
+  }
+
+  STATE.priceSpotSeasonalCache[anchorYear] = finalizePriceSeasonalBucket(cache);
+  return STATE.priceSpotSeasonalCache[anchorYear];
+}
+
 function getSeasonalEntry(view, point) {
   if (!point) return null;
   if (view.instrument === 'spot') {
-    return point.date ? STATE.spotSeasonalCache[point.date.slice(5)] || null : null;
+    const bucket = getPriceSpotSeasonalBucket(view.spotYear);
+    return point.date ? bucket[point.date.slice(5)] || null : null;
   }
-  const cacheBucket = view.instrument === 'ttf' ? STATE.ttfSeasonalCache[view.month] : STATE.seasonalCache[view.month];
+  const cacheBucket = getPriceFuturesSeasonalBucket(view.instrument, view.month, view.year);
   return cacheBucket && cacheBucket[point.d] ? cacheBucket[point.d] : null;
 }
 
@@ -412,15 +486,78 @@ function getChartBarSpacing(length) {
   return 11;
 }
 
-function getTooltipExtrema(point, fallbackStats, seasonalMatch) {
+function getSeasonalRangePosition(value, seasonal) {
+  if (!Number.isFinite(value) || !seasonal) return null;
+  if (!Number.isFinite(seasonal.min) || !Number.isFinite(seasonal.max)) return null;
+  if (seasonal.max === seasonal.min) return { percentile: 50, status: 'flat' };
+
+  const raw = ((value - seasonal.min) / (seasonal.max - seasonal.min)) * 100;
+  let status = 'within';
+  if (value < seasonal.min) status = 'below';
+  else if (value > seasonal.max) status = 'above';
+
+  return {
+    raw,
+    percentile: clamp(Math.round(raw), 0, 100),
+    status,
+  };
+}
+
+function formatOrdinal(value) {
+  if (!Number.isFinite(value)) return '--';
+  const rounded = Math.round(value);
+  const abs = Math.abs(rounded);
+  const mod100 = abs % 100;
+  let suffix = 'th';
+  if (mod100 < 11 || mod100 > 13) {
+    if (abs % 10 === 1) suffix = 'st';
+    else if (abs % 10 === 2) suffix = 'nd';
+    else if (abs % 10 === 3) suffix = 'rd';
+  }
+  return `${rounded}${suffix}`;
+}
+
+function formatPercentileLabel(position, options = {}) {
+  const { compact = false, includeStatus = false } = options;
+  if (!position) return '--';
+
+  const base = compact
+    ? `${formatOrdinal(position.percentile)} pct`
+    : `${formatOrdinal(position.percentile)} percentile`;
+  if (!includeStatus || position.status === 'within' || position.status === 'flat') return base;
+  return `${base} (${position.status === 'above' ? 'above range' : 'below range'})`;
+}
+
+function getTooltipMetricContext(point, fallbackStats, seasonalMatch) {
   const seasonal = seasonalMatch && seasonalMatch.seasonal ? seasonalMatch.seasonal : null;
-  const max = Number.isFinite(point && point.h)
-    ? point.h
-    : (Number.isFinite(seasonal && seasonal.max) ? seasonal.max : fallbackStats.max);
-  const min = Number.isFinite(point && point.l)
-    ? point.l
-    : (Number.isFinite(seasonal && seasonal.min) ? seasonal.min : fallbackStats.min);
-  return { max, min };
+  if (seasonal && Number.isFinite(seasonal.min) && Number.isFinite(seasonal.max) && Number.isFinite(seasonal.avg)) {
+    return {
+      maxLabel: '5Y Max',
+      maxValue: seasonal.max,
+      minLabel: '5Y Min',
+      minValue: seasonal.min,
+      avgLabel: '5Y Avg',
+      avgValue: seasonal.avg,
+    };
+  }
+  if (Number.isFinite(point && point.h) && Number.isFinite(point && point.l)) {
+    return {
+      maxLabel: 'Day High',
+      maxValue: point.h,
+      minLabel: 'Day Low',
+      minValue: point.l,
+      avgLabel: 'Window Avg',
+      avgValue: fallbackStats.avg,
+    };
+  }
+  return {
+    maxLabel: 'Window Max',
+    maxValue: fallbackStats.max,
+    minLabel: 'Window Min',
+    minValue: fallbackStats.min,
+    avgLabel: 'Window Avg',
+    avgValue: fallbackStats.avg,
+  };
 }
 
 function schedulePricesChartUpdate(options = {}) {
@@ -817,7 +954,7 @@ function renderPricesSummaryBar(context) {
   const summaryBar = document.getElementById('prices-summary-bar');
   if (!summaryBar) return;
 
-  const { instrument, fullData, filteredData, stats, currentPoint, seasonal } = context;
+  const { instrument, fullData, filteredData, stats, focusPoint, seasonal } = context;
   const fmt = v => formatInstrumentValue(instrument, v);
 
   // Window-specific change: first → last point in the visible window
@@ -832,17 +969,16 @@ function renderPricesSummaryBar(context) {
     ? stats.max - stats.min : null;
 
   // Seasonal position
-  let seasonalDelta = null, percentile = null;
-  if (seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
-    seasonalDelta = ((currentPoint.p - seasonal.avg) / seasonal.avg) * 100;
-    percentile = seasonal.max !== seasonal.min
-      ? Math.round(((currentPoint.p - seasonal.min) / (seasonal.max - seasonal.min)) * 100)
-      : 50;
+  let seasonalDelta = null;
+  let rangePosition = null;
+  if (focusPoint && seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
+    seasonalDelta = ((focusPoint.p - seasonal.avg) / seasonal.avg) * 100;
+    rangePosition = getSeasonalRangePosition(focusPoint.p, seasonal);
   }
 
   const col = v => v >= 0 ? 'var(--positive)' : 'var(--negative)';
-  const bandColor = percentile != null
-    ? (percentile >= 80 ? 'var(--negative)' : percentile <= 20 ? 'var(--positive)' : 'var(--text-secondary)')
+  const bandColor = rangePosition
+    ? (rangePosition.percentile >= 80 ? 'var(--negative)' : rangePosition.percentile <= 20 ? 'var(--positive)' : 'var(--text-secondary)')
     : 'var(--text-secondary)';
 
   const metrics = [
@@ -862,8 +998,8 @@ function renderPricesSummaryBar(context) {
     seasonalDelta != null
       ? { label: 'vs 5Y AVG', html: `<span style="color:${col(seasonalDelta)};">${formatPercent(seasonalDelta)}</span>` }
       : null,
-    percentile != null
-      ? { label: '5Y BAND', html: `<span style="color:${bandColor};">${percentile}th pct</span>` }
+    rangePosition
+      ? { label: '5Y BAND', html: `<span style="color:${bandColor};">${formatPercentileLabel(rangePosition, { compact: true })}</span>` }
       : null,
   ].filter(Boolean);
 
@@ -894,13 +1030,13 @@ function renderPricesStats(context) {
 
   if (seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
     const seasonalDelta = ((currentPoint.p - seasonal.avg) / seasonal.avg) * 100;
-    const percentile = seasonal.max !== seasonal.min ? Math.round(((currentPoint.p - seasonal.min) / (seasonal.max - seasonal.min)) * 100) : 50;
+    const rangePosition = getSeasonalRangePosition(currentPoint.p, seasonal);
     const statusBlock = instrument === 'hh'
       ? `<div class="stat"><div class="stat-label">Status</div><div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;background:${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'rgba(0,255,136,0.1)' : 'rgba(136,136,170,0.1)'};color:${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'var(--positive)' : 'var(--text-muted)'};">${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'ACTIVE - LIVE DATA' : 'HISTORICAL'}</div></div>`
       : '';
     extraBlock = `
       <div class="stat"><div class="stat-label">vs 5Y Seasonal Avg</div><div style="font-family:var(--font-mono);font-size:14px;" class="${seasonalDelta >= 0 ? 'positive' : 'negative'}">${formatPercent(seasonalDelta)}</div></div>
-      <div class="stat"><div class="stat-label">5Y Range Position</div><div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${percentile}th percentile</div></div>
+      <div class="stat"><div class="stat-label">5Y Range Position</div><div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${formatPercentileLabel(rangePosition, { includeStatus: true })}</div></div>
       <div class="stat"><div class="stat-label">5Y Range</div><div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">${formatInstrumentValue(instrument, seasonal.min)} / ${formatInstrumentValue(instrument, seasonal.max)}</div></div>
       ${statusBlock}
     `;
@@ -988,13 +1124,13 @@ function renderPricesHistoryTable(context) {
 
     tableEl.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <div class="card-title" style="margin-bottom:0;">Same Month Expiry History</div>
+        <div class="card-title" style="margin-bottom:0;">Same Month HH History</div>
         ${badge}
       </div>
       ${subtitle}
       ${SCROLL_WRAP(`<table><thead><tr>
         <th style="text-align:left;">Year</th>
-        <th>Expiry</th>
+        <th>Last Print</th>
         <th>Rank</th>
         <th style="width:52px;"></th>
       </tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No expiry data</td></tr>`}</tbody></table>`)}`;
@@ -1056,14 +1192,15 @@ function renderPricesHistoryTable(context) {
 
   // Spot: monthly breakdown for selected year
   const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-spot);background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.spotYear} · SPOT</span>`;
+  const yearSeries = [];
   const rowData = MONTHS.map(month => {
     const series = STATE.spot[month]?.years?.[String(view.spotYear)];
     if (!series || !series.length) return { month, avg: null, max: null, min: null };
+    yearSeries.push(...series);
     const s = getSeriesStats(series);
     return { month, avg: s.avg, max: s.max, min: s.min };
   });
-  const validAvgs = rowData.map(r => r.avg).filter(v => Number.isFinite(v));
-  const yearAvg = validAvgs.length ? validAvgs.reduce((s, v) => s + v, 0) / validAvgs.length : null;
+  const yearAvg = yearSeries.length ? getSeriesStats(yearSeries).avg : null;
   const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">Monthly breakdown${yearAvg != null ? ` &nbsp;·&nbsp; year avg <span style="color:var(--text-secondary);">${formatInstrumentValue('spot', yearAvg)}</span>` : ''}</div>`;
 
   const rows = rowData.map(r => {
@@ -1152,11 +1289,14 @@ function updatePricesChart({ skipDetails = false } = {}) {
   const visibleWindow = getVisibleWindow(fullData, view);
   const filteredData = visibleWindow.filteredData;
   const currentPoint = fullData[fullData.length - 1];
+  const focusPoint = visibleWindow.endPoint || currentPoint;
   const openPoint = fullData[0];
   const changePct = openPoint && openPoint.p ? ((currentPoint.p - openPoint.p) / openPoint.p) * 100 : 0;
   const fullStats = getSeriesStats(fullData);
   const windowStats = getSeriesStats(filteredData);
   const neutralPalette = getNeutralChartPalette();
+  const currentSeasonalPoint = getSeasonalEntry(view, currentPoint);
+  const focusSeasonalPoint = getSeasonalEntry(view, focusPoint);
 
   descEl.textContent = isSpot
     ? `${view.spotYear} daily spot history - ${meta.unit}`
@@ -1170,7 +1310,6 @@ function updatePricesChart({ skipDetails = false } = {}) {
   const timeResolver = point => useTradingAxis ? dayToTime(point.d) : point.date;
   const mainLookup = buildTimeLookup(filteredData, timeResolver);
 
-  let seasonalPoint = null;
   let seasonalAvgSeries = null;
   let seasonalLookup = new Map();
   const seasonalPalette = getSeasonalPalette(view.instrument);
@@ -1220,7 +1359,6 @@ function updatePricesChart({ skipDetails = false } = {}) {
       crosshairMarkerVisible: false,
     });
     seasonalAvgSeries.setData(avgLine);
-    seasonalPoint = getSeasonalEntry(view, currentPoint);
   }
 
   const mainSeries = chart.addLineSeries({
@@ -1301,14 +1439,11 @@ function updatePricesChart({ skipDetails = false } = {}) {
       const point = mainLookup.get(timeKey(param.time)) || compareLookup.get(timeKey(param.time));
       if (!point) return [];
       const seasonalMatch = seasonalLookup.get(timeKey(param.time));
-      const extrema = getTooltipExtrema(point, windowStats, seasonalMatch);
-      const avgValue = seasonalMatch && seasonalMatch.seasonal && Number.isFinite(seasonalMatch.seasonal.avg)
-        ? seasonalMatch.seasonal.avg
-        : windowStats.avg;
+      const metricContext = getTooltipMetricContext(point, windowStats, seasonalMatch);
       return [
-        { label: 'Max', value: formatInstrumentValue(view.instrument, extrema.max) },
-        { label: 'Min', value: formatInstrumentValue(view.instrument, extrema.min) },
-        { label: seasonalMatch ? '5Y Avg' : 'Window Avg', value: formatInstrumentValue(view.instrument, avgValue) },
+        { label: metricContext.maxLabel, value: formatInstrumentValue(view.instrument, metricContext.maxValue) },
+        { label: metricContext.minLabel, value: formatInstrumentValue(view.instrument, metricContext.minValue) },
+        { label: metricContext.avgLabel, value: formatInstrumentValue(view.instrument, metricContext.avgValue) },
         { label: isSpot ? 'Point' : 'T-Day', value: isSpot ? String(point.d || filteredData.indexOf(point) + 1) : String(point.d || '--') },
       ];
     },
@@ -1336,9 +1471,9 @@ function updatePricesChart({ skipDetails = false } = {}) {
   });
 
   updatePricesRangeFooter(fullData, filteredData);
-  renderPricesSummaryBar({ instrument: view.instrument, fullData, filteredData, changePct, stats: windowStats, currentPoint, seasonal: seasonalPoint });
+  renderPricesSummaryBar({ instrument: view.instrument, fullData, filteredData, changePct, stats: windowStats, focusPoint, seasonal: focusSeasonalPoint });
   if (!skipDetails) {
-    renderPricesStats({ instrument: view.instrument, meta, fullData, changePct, currentPoint, stats: fullStats, ticker, view, seasonal: seasonalPoint });
+    renderPricesStats({ instrument: view.instrument, meta, fullData, changePct, currentPoint, stats: fullStats, ticker, view, seasonal: currentSeasonalPoint });
     renderPricesHistoryTable({ instrument: view.instrument, view });
   }
 }
