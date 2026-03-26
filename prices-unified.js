@@ -967,9 +967,11 @@ function renderPricesHistoryTable(context) {
     });
 
     const validDeltas = rowData.map(r => r.delta).filter(d => Number.isFinite(d));
-    const avgDelta = validDeltas.length ? validDeltas.reduce((s, d) => s + d, 0) / validDeltas.length : null;
+    const upCount = validDeltas.filter(d => d > 0).length;
+    const downCount = validDeltas.filter(d => d < 0).length;
     const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-hh);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · HH</span>`;
-    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${avgDelta != null ? ` &nbsp;·&nbsp; avg yr/yr <span style="color:${avgDelta >= 0 ? 'var(--positive)' : 'var(--negative)'};">${formatPercent(avgDelta)}</span>` : ''}</div>`;
+    const dirStr = validDeltas.length ? ` &nbsp;·&nbsp; <span style="color:var(--positive);">${upCount}↑</span> <span style="color:var(--text-muted);">/</span> <span style="color:var(--negative);">${downCount}↓</span>` : '';
+    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${dirStr}</div>`;
 
     const rows = rowData.map((r, i) => {
       const isNewest = i === 0;
@@ -1013,9 +1015,11 @@ function renderPricesHistoryTable(context) {
     });
 
     const validDeltas = rowData.map(r => r.delta).filter(d => Number.isFinite(d));
-    const avgDelta = validDeltas.length ? validDeltas.reduce((s, d) => s + d, 0) / validDeltas.length : null;
+    const upCount = validDeltas.filter(d => d > 0).length;
+    const downCount = validDeltas.filter(d => d < 0).length;
     const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-ttf);background:rgba(255,140,0,0.08);border:1px solid rgba(255,140,0,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · TTF</span>`;
-    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${avgDelta != null ? ` &nbsp;·&nbsp; avg yr/yr <span style="color:${avgDelta >= 0 ? 'var(--positive)' : 'var(--negative)'};">${formatPercent(avgDelta)}</span>` : ''}</div>`;
+    const dirStr = validDeltas.length ? ` &nbsp;·&nbsp; <span style="color:var(--positive);">${upCount}↑</span> <span style="color:var(--text-muted);">/</span> <span style="color:var(--negative);">${downCount}↓</span>` : '';
+    const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${rowData.length} contracts${dirStr}</div>`;
 
     const rows = rowData.map((r, i) => {
       const isNewest = i === 0;
