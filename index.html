@@ -261,11 +261,14 @@ tr:hover td { background: var(--bg-card-hover); }
 .contract-header .change { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
 /* Prices tab two-column header */
 #prices-header { align-items: center; }
+#spread-header { align-items: center; }
 .ch-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ch-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ch-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; margin-left: auto; }
 #prices-header .price { font-size: 24px; margin-left: 0; }
 #prices-header .change { font-size: 13px; }
+#spread-header .price { font-size: 24px; margin-left: 0; }
+#spread-header .change { font-size: 13px; }
 .positive { color: var(--positive); }
 .negative { color: var(--negative); }
 
@@ -1972,22 +1975,34 @@ function renderSpreadTab() {
   if (!container.dataset.built) {
     container.dataset.built = '1';
     container.innerHTML = `
-      <div class="contract-header">
-        <span class="ticker" style="color:var(--accent-spread);">SPREAD ANALYSIS</span>
-        <span class="desc" id="spread-desc">Calendar Spread</span>
+      <div class="contract-header" id="spread-header">
+        <div class="ch-left">
+          <div class="ch-top">
+            <span class="ticker" style="color:var(--accent-spread);">SPREAD ANALYSIS</span>
+          </div>
+          <span class="desc" id="spread-desc">Calendar Spread</span>
+        </div>
+        <div class="ch-right">
+          <span class="price" id="spread-price">--</span>
+          <span class="change" id="spread-change" style="color:var(--text-muted);font-size:12px;"></span>
+        </div>
       </div>
-      <div class="flex gap" style="margin-bottom:var(--gap);flex-wrap:wrap;align-items:flex-end;">
-        <div class="flex flex-col gap-sm">
-          <label>Front Month</label>
-          <select id="spread-front">${MONTHS.map((m,i)=>`<option value="${m}" ${i===0?'selected':''}>${m}</option>`).join('')}</select>
-        </div>
-        <div class="flex flex-col gap-sm">
-          <label>Back Month</label>
-          <select id="spread-back">${MONTHS.map((m,i)=>`<option value="${m}" ${i===1?'selected':''}>${m}</option>`).join('')}</select>
-        </div>
-        <div class="flex flex-col gap-sm">
-          <label>Year</label>
-          <select id="spread-year"></select>
+      <div class="card" style="margin-bottom:var(--gap);">
+        <div class="ctrl-toolbar">
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Front Leg</div>
+            <select id="spread-front">${MONTHS.map((m,i)=>`<option value="${m}" ${i===0?'selected':''}>${m}</option>`).join('')}</select>
+          </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Back Leg</div>
+            <select id="spread-back">${MONTHS.map((m,i)=>`<option value="${m}" ${i===1?'selected':''}>${m}</option>`).join('')}</select>
+          </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Year</div>
+            <select id="spread-year"></select>
+          </div>
         </div>
       </div>
       <div class="flex gap" style="flex-wrap:wrap;">
@@ -2001,7 +2016,7 @@ function renderSpreadTab() {
           </div>
         </div>
         <div style="width:340px;flex-shrink:0;">
-          <div class="card" style="max-height:500px;overflow-y:auto;" id="spread-table"></div>
+          <div class="card" style="padding:0;" id="spread-table"></div>
         </div>
       </div>
     `;
@@ -2017,18 +2032,25 @@ function renderSpreadTab() {
 function populateSpreadYears() {
   const sel = document.getElementById('spread-year');
   const currentVal = sel.value ? parseInt(sel.value, 10) : null;
-  const years = [];
-  if (STATE.hh['Jan']) {
-    Object.keys(STATE.hh['Jan'].contracts).forEach(t => {
+  const yearSet = new Set();
+  // Scan all HH months from historical data
+  MONTHS.forEach(m => {
+    if (!STATE.hh[m]) return;
+    Object.keys(STATE.hh[m].contracts).forEach(t => {
       const yr = parseInt(t.slice(3));
-      const full = yr < 50 ? 2000 + yr : 1900 + yr;
-      years.push(full);
+      if (Number.isFinite(yr)) yearSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
     });
-  }
-  years.sort((a, b) => b - a);
+  });
+  // Also include live data years
+  Object.keys(STATE.liveData).forEach(t => {
+    if (!t.startsWith('NG')) return;
+    const yr = parseInt(t.slice(3, 5));
+    if (Number.isFinite(yr)) yearSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
+  });
+  const years = [...yearSet].sort((a, b) => b - a);
   sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
   if (years.length) {
-    sel.value = String(currentVal && years.includes(currentVal) ? currentVal : years[0]);
+    sel.value = String(currentVal && yearSet.has(currentVal) ? currentVal : years[0]);
   }
 }
 
@@ -2194,14 +2216,63 @@ function updateSpreadChart() {
     });
   }
 
-  // Table
-  let html = `<div class="card-title">${front}/${back} Spread History</div>
-    <table><thead><tr><th style="text-align:left;">Year</th><th>Last</th><th>Max</th><th>Min</th><th>Avg</th></tr></thead><tbody>`;
-  tableRows.forEach(r => {
+  // Update header price/change
+  const priceEl = document.getElementById('spread-price');
+  const changeEl = document.getElementById('spread-change');
+  if (priceEl) {
+    if (tableRows.length > 0) {
+      const selected = tableRows.find(r => r.yr === year);
+      if (selected) {
+        const sign = selected.last >= 0 ? '+' : '';
+        priceEl.textContent = `${sign}${selected.last.toFixed(3)}`;
+        priceEl.style.color = selected.last >= 0 ? 'var(--positive)' : 'var(--negative)';
+        if (changeEl) changeEl.textContent = `${front} / ${back} · ${year}`;
+      }
+    } else {
+      priceEl.textContent = '--';
+      if (changeEl) changeEl.textContent = '';
+    }
+  }
+
+  // Table with sticky header + rank + position bar
+  const allLasts = tableRows.map(r => r.last).filter(Number.isFinite);
+  const lastMin = allLasts.length ? Math.min(...allLasts) : 0;
+  const lastMax = allLasts.length ? Math.max(...allLasts) : 1;
+  const lastRange = lastMax - lastMin || 1;
+  const sortedDesc = [...allLasts].sort((a, b) => b - a);
+
+  const SCROLL_WRAP = inner =>
+    `<div style="overflow-y:auto;max-height:500px;"><div style="overflow-x:auto;">${inner}</div></div>`;
+
+  let html = `<div class="card-title" style="padding:12px 16px 8px;">${front}/${back} Spread History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${tableRows.length} years</span></div>`;
+  html += SCROLL_WRAP(`<table><thead><tr>
+    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Year</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Last</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Rank</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Max</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Min</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Avg</th>
+  </tr></thead><tbody>`);
+
+  tableRows.sort((a, b) => b.yr - a.yr).forEach(r => {
     const cls = r.last >= 0 ? 'positive' : 'negative';
-    html += `<tr><td style="text-align:left;">${r.yr}</td><td class="${cls}">${r.last.toFixed(3)}</td><td>${r.max.toFixed(3)}</td><td>${r.min.toFixed(3)}</td><td>${r.avg.toFixed(3)}</td></tr>`;
+    const rank = Number.isFinite(r.last) ? sortedDesc.indexOf(r.last) + 1 : null;
+    const rankOf = `#${rank}<span style="color:var(--text-muted);font-size:10px;">/${allLasts.length}</span>`;
+    const barW = ((r.last - lastMin) / lastRange * 44).toFixed(1);
+    const barColor = r.last >= 0 ? 'var(--positive)' : 'var(--negative)';
+    const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:${barColor};border-radius:2px;vertical-align:middle;opacity:0.55;margin-left:4px;"></span>`;
+    const rowStyle = r.yr === year ? 'background:rgba(157,78,221,0.08);font-weight:600;' : '';
+    const sign = r.last >= 0 ? '+' : '';
+    html += `<tr style="${rowStyle}">
+      <td style="text-align:left;">${r.yr}</td>
+      <td class="${cls}">${sign}${r.last.toFixed(3)}${bar}</td>
+      <td style="font-family:var(--font-mono);font-size:11px;">${rank ? rankOf : '—'}</td>
+      <td>${r.max.toFixed(3)}</td>
+      <td>${r.min.toFixed(3)}</td>
+      <td>${r.avg.toFixed(3)}</td>
+    </tr>`;
   });
-  html += `</tbody></table>`;
+  html += `</tbody></table></div>`;
   document.getElementById('spread-table').innerHTML = html;
 }
 
