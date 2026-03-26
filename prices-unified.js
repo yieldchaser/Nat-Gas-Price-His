@@ -384,8 +384,8 @@ function getNeutralChartPalette() {
     contrast: 'rgba(228, 232, 237, 0.76)',
     historical: 'rgba(142, 146, 156, 0.22)',
     zero: 'rgba(255, 255, 255, 0.16)',
-    fillTop: 'rgba(255, 255, 255, 0.20)',
-    fillBottom: 'rgba(255, 255, 255, 0.07)',
+    fillTop: 'rgba(255, 255, 255, 0.26)',
+    fillBottom: 'rgba(255, 255, 255, 0.00)',
     line: 'rgba(255, 255, 255, 0.18)',
     avg: 'rgba(196, 199, 206, 0.62)',
     highlight: 'rgba(255, 255, 255, 0.72)',
@@ -1026,8 +1026,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     upperSeries.setData(bandUpper);
 
     const lowerSeries = chart.addAreaSeries({
-      topColor: 'rgba(0,0,0,0)',
-      bottomColor: 'rgba(0,0,0,0)',
+      topColor: 'rgba(16,17,20,0.78)',
+      bottomColor: 'rgba(16,17,20,0.78)',
       lineColor: 'rgba(255, 255, 255, 0.30)',
       lineWidth: 1.25,
       priceLineVisible: false,
