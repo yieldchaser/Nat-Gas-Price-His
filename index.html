@@ -2012,6 +2012,28 @@ function formatSignedSpread(value, digits = 3) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}`;
 }
 
+function formatSignedPercent(value, digits = 1) {
+  if (!Number.isFinite(value)) return null;
+  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}%`;
+}
+
+function getSpreadRelativePercent(current, reference) {
+  if (!Number.isFinite(current) || !Number.isFinite(reference)) return null;
+  if (Math.abs(reference) < 1e-9) return null;
+  // Spread references can be negative, so use the baseline magnitude to keep
+  // above/below comparisons intuitive instead of flipping sign on negative refs.
+  return ((current - reference) / Math.abs(reference)) * 100;
+}
+
+function getSpreadReferenceAvailabilityMessage(refs, year, instrument) {
+  if (!refs || refs.priorYearsCount > 0) return '';
+  const marketLabel = instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub';
+  if (Number.isFinite(refs.historyStart) && year <= refs.historyStart) {
+    return `No prior ${marketLabel} spread history exists before ${refs.historyStart} for this pair, so reference averages are unavailable.`;
+  }
+  return `No prior same T-Day reference history is available for this pair.`;
+}
+
 function onSpreadPairChange() {
   populateSpreadYears();
   scheduleSpreadChartUpdate(true);
@@ -2235,7 +2257,7 @@ function computeSpread(frontMonth, backMonth, year, instrument = 'hh') {
 
 function getSpreadReferenceMetrics(frontMonth, backMonth, year, instrument, referenceDay) {
   if (!Number.isFinite(referenceDay)) {
-    return { allTime: null, avg5y: null, avg10y: null };
+    return { allTime: null, avg5y: null, avg10y: null, priorYearsCount: 0, historyStart: null, historyEnd: null };
   }
 
   const instrumentStore = instrument === 'ttf' ? STATE.ttf : STATE.hh;
@@ -2248,7 +2270,8 @@ function getSpreadReferenceMetrics(frontMonth, backMonth, year, instrument, refe
     });
   });
 
-  const referenceRows = [...yearSet]
+  const availableYears = [...yearSet].sort((a, b) => a - b);
+  const referenceRows = availableYears
     .filter(yr => yr < year)
     .sort((a, b) => b - a)
     .map(yr => {
@@ -2267,6 +2290,9 @@ function getSpreadReferenceMetrics(frontMonth, backMonth, year, instrument, refe
     allTime: avgFor(referenceRows),
     avg5y: avgFor(referenceRows.filter(row => row.yr >= year - 5)),
     avg10y: avgFor(referenceRows.filter(row => row.yr >= year - 10)),
+    priorYearsCount: referenceRows.length,
+    historyStart: availableYears.length ? availableYears[0] : null,
+    historyEnd: availableYears.length ? availableYears[availableYears.length - 1] : null,
   };
 }
 
@@ -2359,22 +2385,34 @@ function updateSpreadChart() {
     const refs = getSpreadReferenceMetrics(front, back, year, instrument, referenceDay);
     const delta5y = refs.avg5y != null && curLast != null ? curLast - refs.avg5y : null;
     const delta10y = refs.avg10y != null && curLast != null ? curLast - refs.avg10y : null;
+    const pct5y = getSpreadRelativePercent(curLast, refs.avg5y);
+    const pct10y = getSpreadRelativePercent(curLast, refs.avg10y);
+    const refAvailabilityNote = getSpreadReferenceAvailabilityMessage(refs, year, instrument);
     const chip = (label, val, color = 'var(--text-primary)') =>
       `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${color};">${val}</div></div>`;
     const sep = `<div class="ctrl-sep"></div>`;
+    const formatKpiSpread = value => Number.isFinite(value) ? formatSignedSpread(value) : 'N/A';
+    const formatDeltaWithPercent = (delta, pct, color) => {
+      if (!Number.isFinite(delta)) return 'N/A';
+      const pctText = formatSignedPercent(pct);
+      if (!pctText) return formatSignedSpread(delta);
+      return `${formatSignedSpread(delta)} <span style="font-size:12px;color:${color};opacity:0.82;">(${pctText})</span>`;
+    };
     kpiEl.innerHTML = [
       chip('Ref T-Day', referenceDay != null ? String(referenceDay) : '—'),
       sep,
-      chip('All-Time Ref', formatSignedSpread(refs.allTime)),
+      chip('All-Time Ref', formatKpiSpread(refs.allTime)),
       sep,
-      chip('5Y Ref', formatSignedSpread(refs.avg5y)),
+      chip('5Y Ref', formatKpiSpread(refs.avg5y)),
       sep,
-      chip('10Y Ref', formatSignedSpread(refs.avg10y)),
+      chip('10Y Ref', formatKpiSpread(refs.avg10y)),
       sep,
-      chip('Curr - 5Y', formatSignedSpread(delta5y), delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+      chip('Curr - 5Y', formatDeltaWithPercent(delta5y, pct5y, delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'), delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
       sep,
-      chip('Curr - 10Y', formatSignedSpread(delta10y), delta10y != null ? (delta10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
-    ].join('');
+      chip('Curr - 10Y', formatDeltaWithPercent(delta10y, pct10y, delta10y != null ? (delta10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'), delta10y != null ? (delta10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+    ].join('') + (refAvailabilityNote
+      ? `<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;color:var(--text-muted);">${refAvailabilityNote}</div>`
+      : '');
   }
 
   // Year legend chips
