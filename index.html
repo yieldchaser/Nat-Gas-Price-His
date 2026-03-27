@@ -3701,7 +3701,7 @@ function buildExpiryTable(range) {
         if (delta > 0.02)       bg = 'rgba(0,255,136,'  + Math.min(delta * 1.8, 0.55) + ')';
         else if (delta < -0.02) bg = 'rgba(255,68,85,'  + Math.min(Math.abs(delta) * 1.8, 0.55) + ')';
       }
-      html += '<td style="background:' + bg + ';">$' + v.toFixed(3) + '</td>';
+      html += '<td style="background:' + bg + ';cursor:pointer;" onclick="navigateTo(\'prices\',{month:\'' + m + '\',year:\'' + yr + '\'})">$' + v.toFixed(3) + '</td>';
     });
     // YoY column: last vs second-to-last visible year
     const lastYr = years[years.length - 1];
@@ -4263,7 +4263,7 @@ function _renderExpiryCalendar(now) {
     const isPrompt = offset === 1;
     const isClose = daysUntil >= 0 && daysUntil <= 7;
     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:11px;gap:4px;">' +
-      '<span style="color:' + (isPrompt ? 'var(--accent-hh)' : 'var(--text-secondary)') + ';font-weight:' + (isPrompt ? '700' : '400') + ';">' + ticker + '</span>' +
+      '<span style="color:' + (isPrompt ? 'var(--accent-hh)' : 'var(--text-secondary)') + ';font-weight:' + (isPrompt ? '700' : '400') + ';cursor:pointer;" onclick="navigateTo(\'prices\',{month:\'' + month + '\',year:\'' + d.getFullYear() + '\'})" title="View in Prices">' + ticker + '</span>' +
       '<span style="color:var(--text-muted);">' + expiryStr + '</span>' +
       '<span style="color:' + (daysUntil < 0 ? 'var(--text-muted)' : isClose ? 'var(--negative)' : 'var(--text-secondary)') + ';">' + (daysUntil < 0 ? 'expired' : 'in ' + daysUntil + 'd') + '</span>' +
       '</div>';
@@ -4475,6 +4475,44 @@ function _renderAnnualPerformance(data) {
 
   el.innerHTML = html;
 }
+</script>
+
+
+// ─── GLOBAL CROSS-TAB NAVIGATION ─────────────────────────────────────────────
+function navigateTo(tab, params) {
+  params = params || {};
+  // Map tab name to the tab button data-tab attribute
+  const tabMap = {
+    prices: 'prices',
+    spread: 'spread',
+    curve: 'curve',
+    expiry: 'expiry',
+    daily: 'daily',
+  };
+  const tabId = tabMap[tab] || tab;
+
+  // Click the nav tab button to switch tabs (uses existing tab switching logic)
+  const btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+  if (btn) btn.click();
+
+  // After tab renders, apply params
+  requestAnimationFrame(() => {
+    if (tab === 'prices' && params.month && params.year) {
+      // Set market, month, year
+      if (params.market === 'ttf') {
+        const mktBtn = document.querySelector('.segment-btn[data-market="ttf"]');
+        if (mktBtn) mktBtn.click();
+      }
+      const monthSel = document.getElementById('price-month');
+      if (monthSel) { monthSel.value = params.month; monthSel.dispatchEvent(new Event('change')); }
+      const yearSel = document.getElementById('price-year');
+      if (yearSel) { yearSel.value = params.year; yearSel.dispatchEvent(new Event('change')); }
+      // Render
+      if (typeof renderPricesTab === 'function') renderPricesTab(params.market || 'hh', params.month, params.year);
+    }
+  });
+}
+
 </script>
 
 <script>
