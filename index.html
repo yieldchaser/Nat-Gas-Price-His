@@ -5170,7 +5170,7 @@ function renderDailyTab() {
         <div class="card grow" style="min-width:260px;padding:0;">
           <div class="card-title" style="padding:10px 14px 0;">NG vs TTF Spread</div>
           <div id="daily-spread-legend" style="padding:6px 14px 0;display:flex;flex-wrap:wrap;gap:5px;"></div>
-          <div id="daily-spread-chips" style="padding:6px 14px 2px;display:flex;gap:12px;flex-wrap:wrap;"></div>
+          <div id="daily-spread-kpis" class="ctrl-toolbar" style="padding:10px 14px;margin:0 14px 12px;width:calc(100% - 28px);flex-wrap:wrap;gap:8px;border-radius:var(--radius);"></div>
           <div class="chart-wrap" id="daily-spread-chart" style="height:190px;"></div>
           <div class="card chart-footer" style="margin-top:0;border-top:1px solid var(--border);border-left:0;border-right:0;border-bottom:0;border-radius:0;padding:10px 14px;">
             <div class="range-toolbar">
@@ -5624,7 +5624,7 @@ function _syncDailyMainSlider() {
 
 
 function _renderSpreadPanel(ngData) {
-  const chipsEl = document.getElementById('daily-spread-chips');
+  const chipsEl = document.getElementById('daily-spread-kpis');
   const chartEl = document.getElementById('daily-spread-chart');
   if (!chipsEl || !chartEl) return;
 
