@@ -1707,16 +1707,24 @@ function renderHHStats(data, month, year) {
 
   let expiryProgressHtml = '';
   if (isLive && typeof computeNGExpiry === 'function') {
-    const expDate = computeNGExpiry(year, month);
+    const monthIdx = MONTHS.indexOf(month); // convert month name to 0-based index
+    const expDate = computeNGExpiry(year, monthIdx >= 0 ? monthIdx : 0);
     const today = new Date();
     const daysLeft = Math.ceil((expDate - today) / 86400000);
     if (daysLeft > 0) {
-      const pctLeft = Math.max(0, Math.min(100, (daysLeft / 519) * 100)); // Rough estimate
+      const elapsed = data.length;
+      const total = 519;
+      const elapsedPct = Math.min(100, Math.round(elapsed / total * 100));
       expiryProgressHtml = `
         <div class="stat">
           <div class="stat-label">Days to Expiry</div>
           <div class="stat-value" style="color:var(--accent-hh);">${daysLeft} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">days</span></div>
-          <div class="progress-bar" style="margin-top:4px;background:rgba(255,255,255,0.1);"><div class="progress-fill" style="width:${100-pctLeft}%;background:var(--accent-hh);"></div></div>
+          <div class="progress-bar" style="margin-top:4px;background:rgba(255,255,255,0.1);"><div class="progress-fill" style="width:${100-Math.max(0,Math.min(100,(daysLeft/519)*100))}%;background:var(--accent-hh);"></div></div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Trading Days Elapsed</div>
+          <div class="stat-value" style="color:var(--text-primary);">${elapsed} <span style="font-size:13px;color:var(--text-muted);">/ ${total}</span> <span style="font-size:11px;color:var(--accent-hh);font-weight:400;">${elapsedPct}%</span></div>
+          <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${elapsedPct}%;background:var(--accent-hh);"></div></div>
         </div>
       `;
     }
@@ -1725,11 +1733,11 @@ function renderHHStats(data, month, year) {
   statsEl.innerHTML = `
 
     <div class="card-title">Contract Statistics</div>
-    <div class="stat">
+    ${isLive ? '' : `<div class="stat">
       <div class="stat-label">Trading Days</div>
       <div class="stat-value">${data.length} <span style="font-size:13px;color:var(--text-muted)">/ 519</span></div>
       <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${Math.round(data.length/519*100)}%;background:var(--accent-hh);"></div></div>
-    </div>
+    </div>`}
     ${expiryProgressHtml}
     <div class="stat">
       <div class="stat-label">vs 5Y Seasonal Avg</div>
@@ -2812,7 +2820,7 @@ function updateSpreadChart() {
     const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:${barColor};border-radius:2px;vertical-align:middle;opacity:0.55;margin-left:4px;"></span>`;
     const rowStyle = r.yr === year ? 'background:rgba(157,78,221,0.08);font-weight:600;' : '';
     const sign = r.last >= 0 ? '+' : '';
-    html += `<tr style="${rowStyle}">
+    html += `<tr style="${rowStyle}cursor:pointer;" title="View ${front} ${r.yr} in Prices tab" onclick="navigateTo('prices',{month:'${front}',year:'${r.yr}'})">
       <td style="text-align:left;">${r.yr}</td>
       <td class="${cls}">${sign}${r.last.toFixed(3)}${bar}</td>
       <td style="font-family:var(--font-mono);font-size:11px;">${rank ? rankOf : '—'}</td>
@@ -4236,6 +4244,25 @@ function buildExpiryTable(range) {
   });
   html += '</tr>';
 
+  // YoY% row — year-over-year % change of full-year average
+  html += '<tr style="border-top:1px solid var(--border);background:rgba(0,0,0,0.18);"><td style="text-align:left;font-weight:700;color:var(--text-muted);font-size:11px;">YoY%</td>';
+  years.forEach((yr, i) => {
+    const thisAvg = yearAvgs[i];
+    const priorAvg = i > 0 ? yearAvgs[i - 1] : null;
+    const yoyRow = (thisAvg != null && priorAvg != null && priorAvg !== 0)
+      ? (thisAvg - priorAvg) / priorAvg * 100 : null;
+    html += '<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;color:' +
+      (yoyRow == null ? 'var(--text-muted)' : yoyRow >= 0 ? '#00ff88' : '#ff4455') + ';">' +
+      (yoyRow == null ? '\u2014' : (yoyRow >= 0 ? '+' : '') + yoyRow.toFixed(1) + '%') + '</td>';
+  });
+  // YoY% column in the summary columns (YoY of last vs prev yearAvg — same as yoyAvg already computed)
+  html += '<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;font-weight:700;color:' +
+    (yoyAvg == null ? 'var(--text-muted)' : yoyAvg >= 0 ? '#00ff88' : '#ff4455') + ';">' +
+    (yoyAvg == null ? '\u2014' : (yoyAvg >= 0 ? '+' : '') + yoyAvg.toFixed(1) + '%') + '</td>';
+  // Avg columns (blank for YoY row)
+  html += '<td>\u2014</td><td>\u2014</td><td>\u2014</td>';
+  html += '</tr>';
+
   html += '</tbody></table>';
   document.getElementById('expiry-table-wrap').innerHTML = html;
 }
@@ -5021,7 +5048,9 @@ function navigateTo(tab, params) {
       STATE.priceView.instrument = market;
       STATE.priceView.month = params.month;
       STATE.priceView.year = parseInt(params.year, 10) || STATE.priceView.year;
-      resetPriceWindow(STATE.priceView);
+      // Reset view window so chart shows the full contract
+      STATE.priceView.rangeStart = 0;
+      STATE.priceView.rangeEnd = null;
       // Re-render controls and chart
       if (typeof renderPricesControls === 'function') renderPricesControls();
       if (typeof schedulePricesChartUpdate === 'function') schedulePricesChartUpdate();
