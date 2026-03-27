@@ -4588,13 +4588,18 @@ function getTTFSpreadData() {
   });
 
   // Collect all points
-  const pointsByDate = new Map(); // date -> [{ticker, p, deliveryDate}]
+  const pointsByDate = new Map(); // date -> [{p, deliveryDate}]
+  const TTF_TO_USD_MMBTU = 3.412;
+  const FX_EUR_USD = 1.08; // fallback FX
+  const CONVERSION = TTF_TO_USD_MMBTU / FX_EUR_USD;
+
   sortedTickers.forEach((ticker, idx) => {
     const data = typeof getTTFContractData === 'function' ? getTTFContractData(ticker) : [];
     const delivery = tickerMeta[idx].deliveryDate;
     data.forEach(pt => {
       if (!pointsByDate.has(pt.date)) pointsByDate.set(pt.date, []);
-      pointsByDate.get(pt.date).push({ p: pt.p, delivery });
+      // Convert EUR/MWh to USD/MMBtu
+      pointsByDate.get(pt.date).push({ p: +(pt.p * CONVERSION).toFixed(3), delivery });
     });
   });
 
