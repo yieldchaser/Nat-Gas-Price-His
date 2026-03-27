@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -3815,9 +3815,9 @@ function getDailyStats(data) {
   const ytdPct = ytdData.length >= 2
     ? (ytdData[ytdData.length - 1].p - ytdData[0].p) / ytdData[0].p * 100
     : null;
-  const rv21 = computeRealizedVol(data, 21);
-  const rv63 = computeRealizedVol(data, 63);
-  return { high52w, low52w, avg30d, ytdPct, rv21, rv63 };
+  const rv21 = null;
+  const rv63 = null;
+  return { high52w, low52w, avg30d, ytdPct };
 }
 
 function getTTFSpreadData() {
@@ -3892,12 +3892,7 @@ function renderDailyTab() {
         <div class="card" style="min-width:220px;max-width:340px;padding:0;flex-shrink:0;" id="daily-calendar"></div>
       </div>
 
-      <div class="card" style="padding:0;margin-bottom:var(--gap);">
-        <div class="card-title" style="padding:10px 14px 0;">Realized Volatility
-          <span style="font-size:11px;color:var(--text-muted);font-weight:400;"> &mdash; annualized</span>
-        </div>
-        <div class="chart-wrap" id="daily-vol-chart" style="height:190px;"></div>
-      </div>
+
 
       <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
         <div class="card grow" style="min-width:0;padding:0;">
@@ -3950,7 +3945,6 @@ function updateDailyTracker() {
   updateDailyMainChart('1Y');
   _renderSpreadPanel(data);
   _renderExpiryCalendar(now);
-  _renderVolatilityChart(data);
   _renderWeeklyChart(data);
   _renderDailyPriceLog(data);
 }
@@ -3972,8 +3966,6 @@ function _renderDailyStatChips(stats, currentPrice) {
     chip('vs 52W L', pctFrom52l != null ? (parseFloat(pctFrom52l) >= 0 ? '+' : '') + pctFrom52l + '%' : '\u2014', parseFloat(pctFrom52l) >= 0 ? 'var(--positive)' : 'var(--negative)'),
     chip('30D Avg', stats.avg30d ? '$' + stats.avg30d.toFixed(3) : '\u2014', 'var(--text-secondary)'),
     chip('YTD \u0394%', stats.ytdPct != null ? (stats.ytdPct >= 0 ? '+' : '') + stats.ytdPct.toFixed(1) + '%' : '\u2014', stats.ytdPct != null && stats.ytdPct >= 0 ? 'var(--positive)' : 'var(--negative)'),
-    chip('21D RV', stats.rv21 ? stats.rv21.toFixed(1) + '%' : '\u2014', stats.rv21 > 60 ? 'var(--negative)' : stats.rv21 > 35 ? '#ff8c00' : 'var(--text-primary)'),
-    chip('63D RV', stats.rv63 ? stats.rv63.toFixed(1) + '%' : '\u2014', 'var(--text-secondary)'),
   ].join('');
 }
 
@@ -4040,7 +4032,6 @@ function updateDailyMainChart(range) {
       return [
         { label: '52W High', value: stats.high52w ? '$' + stats.high52w.toFixed(3) : '\u2014' },
         { label: '52W Low', value: stats.low52w ? '$' + stats.low52w.toFixed(3) : '\u2014' },
-        { label: '21D RV', value: stats.rv21 ? stats.rv21.toFixed(1) + '%' : '\u2014' },
       ];
     },
   });
@@ -4118,33 +4109,7 @@ function _renderExpiryCalendar(now) {
   el.innerHTML = html;
 }
 
-function _renderVolatilityChart(data) {
-  const el = document.getElementById('daily-vol-chart');
-  if (!el) return;
-  if (data.length < 22) { el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px;">Need 22+ sessions</div>'; return; }
 
-  const rv21Series = [], rv63Series = [];
-  for (let i = 21; i < data.length; i++) {
-    const rv21 = computeRealizedVol(data.slice(0, i + 1), 21);
-    if (rv21 != null) rv21Series.push({ time: data[i].date, value: rv21 });
-    if (i >= 63) {
-      const rv63 = computeRealizedVol(data.slice(0, i + 1), 63);
-      if (rv63 != null) rv63Series.push({ time: data[i].date, value: rv63 });
-    }
-  }
-
-  const chart = createManagedChart('daily', 'vol', el);
-  const s21 = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4,
-    priceFormat: { type: 'custom', formatter: v => v.toFixed(1) + '%', minMove: 0.1 } });
-  s21.setData(rv21Series);
-  if (rv63Series.length) {
-    const s63 = chart.addLineSeries({ color: 'rgba(245,158,11,0.38)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-      priceFormat: { type: 'custom', formatter: v => v.toFixed(1) + '%', minMove: 0.1 } });
-    s63.setData(rv63Series);
-  }
-  applyChartTimeScaleOptions(chart, { formatter: undefined, fixLeftEdge: true, fixRightEdge: true });
-  chart.timeScale().fitContent();
-}
 
 function _renderWeeklyChart(data) {
   const weekly = computeWeeklyChanges(data);

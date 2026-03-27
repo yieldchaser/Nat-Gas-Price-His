@@ -37,7 +37,6 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 - **Main Price Chart**: High-performance NG=F front-month chart with 1M/3M/1Y/All toggles.
 - **Technical Annotations**: Automatic horizontal levels for 52W High, 52W Low, and 30D Moving Average.
 - **NG vs TTF Spread**: Live nominal spread tracking between US and European benchmarks.
-- **Volatility Monitor**: Realized Volatility charts (21-day and 63-day annualized).
 - **Weekly Returns**: Color-coded histogram of weekly performance.
 - **Upcoming Expirations**: CME-rule based calendar with real-time countdown ("Expiring in X days").
 - **Return Distribution**: Statistical frequency plot of historical returns.
