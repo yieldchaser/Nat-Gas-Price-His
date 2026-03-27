@@ -5691,21 +5691,52 @@ function _renderSpreadPanel(ngData) {
   sSeries.setData(spreadSeries);
   applyChartTimeScaleOptions(spreadChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(600 / spreadSeries.length)), fixLeftEdge: true, fixRightEdge: true });
   
-  const legendEl = document.getElementById('daily-spread-legend');
-  if (legendEl) {
-    if (STATE.dailySpreadVisible === undefined) STATE.dailySpreadVisible = true;
-    const on = STATE.dailySpreadVisible;
-    legendEl.innerHTML = `
-      <button class="series-pill ${on ? 'active' : ''}" onclick="toggleDailySpreadSeries()" style="border-color:rgba(167,139,250,0.45);opacity:${on ? '1' : '0.4'};">
-        <span class="swatch" style="background:#a78bfa;"></span>Spread
-      </button>
-    `;
-    sSeries.applyOptions({ visible: on });
-  }
+  const spread52w = spreadSeries.slice(-252);
+  const sHighVal = Math.max(...spread52w.map(s => s.value));
+  const sLowVal = Math.min(...spread52w.map(s => s.value));
+
+  const sHighSeries = spreadChart.addLineSeries({
+    color: '#ff8c00', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
+    axisLabelVisible: true, title: '52W High'
+  });
+  sHighSeries.setData(spreadSeries.map(s => ({ time: s.time, value: sHighVal })));
+
+  const sLowSeries = spreadChart.addLineSeries({
+    color: '#00d4ff', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
+    axisLabelVisible: true, title: '52W Low'
+  });
+  sLowSeries.setData(spreadSeries.map(s => ({ time: s.time, value: sLowVal })));
 
   STATE._dailySpreadChart = spreadChart;
   STATE._dailySpreadData = spreadSeries;
   STATE._dailySpreadSeries = sSeries;
+  STATE._dailySpreadHighSeries = sHighSeries;
+  STATE._dailySpreadLowSeries = sLowSeries;
+  
+  const legendEl = document.getElementById('daily-spread-legend');
+  if (legendEl) {
+    if (STATE.dailySpreadVisible === undefined) STATE.dailySpreadVisible = true;
+    if (STATE.dailySpreadHighVisible === undefined) STATE.dailySpreadHighVisible = true;
+    if (STATE.dailySpreadLowVisible === undefined) STATE.dailySpreadLowVisible = true;
+    const on = STATE.dailySpreadVisible;
+    const onH = STATE.dailySpreadHighVisible;
+    const onL = STATE.dailySpreadLowVisible;
+    
+    legendEl.innerHTML = `
+      <button class="series-pill ${on ? 'active' : ''}" onclick="toggleDailySpreadSeries('main')" style="border-color:rgba(167,139,250,0.45);opacity:${on ? '1' : '0.4'};">
+        <span class="swatch" style="background:#a78bfa;"></span>Spread
+      </button>
+      <button class="series-pill ${onH ? 'active' : ''}" onclick="toggleDailySpreadSeries('high')" style="border-color:rgba(255,140,0,0.45);opacity:${onH ? '1' : '0.4'};">
+        <span class="swatch" style="background:#ff8c00;"></span>52W H
+      </button>
+      <button class="series-pill ${onL ? 'active' : ''}" onclick="toggleDailySpreadSeries('low')" style="border-color:rgba(0,212,255,0.45);opacity:${onL ? '1' : '0.4'};">
+        <span class="swatch" style="background:#00d4ff;"></span>52W L
+      </button>
+    `;
+    sSeries.applyOptions({ visible: on });
+    sHighSeries.applyOptions({ visible: onH });
+    sLowSeries.applyOptions({ visible: onL });
+  }
   
   if (!STATE.dailySpreadView) {
     STATE.dailySpreadView = { rangeStart: 0, rangeEnd: spreadSeries.length - 1 };
@@ -5770,19 +5801,28 @@ function syncDailySpreadRangeFooter() {
   chart.timeScale().setVisibleRange({ from: data[sIdx].time, to: data[eIdx].time });
 }
 
-function toggleDailySpreadSeries() {
-  const series = STATE._dailySpreadSeries;
-  if (!series) return;
+function toggleDailySpreadSeries(type) {
+  if (type === 'high') {
+    STATE.dailySpreadHighVisible = (STATE.dailySpreadHighVisible === undefined) ? false : !STATE.dailySpreadHighVisible;
+    if (STATE._dailySpreadHighSeries) STATE._dailySpreadHighSeries.applyOptions({ visible: STATE.dailySpreadHighVisible });
+  } else if (type === 'low') {
+    STATE.dailySpreadLowVisible = (STATE.dailySpreadLowVisible === undefined) ? false : !STATE.dailySpreadLowVisible;
+    if (STATE._dailySpreadLowSeries) STATE._dailySpreadLowSeries.applyOptions({ visible: STATE.dailySpreadLowVisible });
+  } else {
+    // main
+    STATE.dailySpreadVisible = (STATE.dailySpreadVisible === undefined) ? false : !STATE.dailySpreadVisible;
+    if (STATE._dailySpreadSeries) STATE._dailySpreadSeries.applyOptions({ visible: STATE.dailySpreadVisible });
+  }
   
-  if (STATE.dailySpreadVisible === undefined) STATE.dailySpreadVisible = true;
-  STATE.dailySpreadVisible = !STATE.dailySpreadVisible;
-  
-  series.applyOptions({ visible: STATE.dailySpreadVisible });
-  
-  const pill = document.querySelector('#daily-spread-legend .series-pill');
-  if (pill) {
-    pill.classList.toggle('active', STATE.dailySpreadVisible);
-    pill.style.opacity = STATE.dailySpreadVisible ? '1' : '0.4';
+  const legendEl = document.getElementById('daily-spread-legend');
+  if (legendEl) {
+    const mainOn = STATE.dailySpreadVisible !== false;
+    const highOn = STATE.dailySpreadHighVisible !== false;
+    const lowOn = STATE.dailySpreadLowVisible !== false;
+    const pills = legendEl.querySelectorAll('.series-pill');
+    if (pills[0]) { pills[0].classList.toggle('active', mainOn); pills[0].style.opacity = mainOn ? '1' : '0.4'; }
+    if (pills[1]) { pills[1].classList.toggle('active', highOn); pills[1].style.opacity = highOn ? '1' : '0.4'; }
+    if (pills[2]) { pills[2].classList.toggle('active', lowOn); pills[2].style.opacity = lowOn ? '1' : '0.4'; }
   }
 }
 
