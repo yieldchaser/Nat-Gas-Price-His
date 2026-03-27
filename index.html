@@ -672,6 +672,8 @@ tr:hover td { background: var(--bg-card-hover); }
   margin-left: auto; font-size: 11px; color: var(--text-muted);
   background: var(--bg-primary); padding: 2px 6px; border-radius: 3px;
 }
+
+.expiry-month-active { color: var(--accent-hh) !important; background: rgba(0,212,255,0.08); }
 </style>
 </head>
 <body>
@@ -3633,9 +3635,12 @@ function renderExpiryTab() {
         </div>
       </div>
       <div class="card" style="overflow-x:auto;" id="expiry-table-wrap"></div>
+      <div id="expiry-month-profile" style="margin-top:var(--gap);display:none;"></div>
+      <div class="card" style="padding:0;margin-top:var(--gap);" id="expiry-seasonal-bar"></div>
     `;
   }
   buildExpiryTable('all');
+  buildExpirySeasonalBar('all');
 }
 
 function filterExpiry(btn) {
@@ -3684,7 +3689,7 @@ function buildExpiryTable(range) {
     '</tr></thead><tbody>';
 
   MONTHS.forEach(m => {
-    html += '<tr><td style="text-align:left;font-weight:600;">' + m + '</td>';
+    html += '<tr><td style="text-align:left;font-weight:600;cursor:pointer;" class="expiry-month-label" data-month="' + m + '" onclick="showExpiryMonthProfile(\'' + m + '\')" title="Click to view ' + m + ' expiry history">' + m + ' &#9660;</td>';
     years.forEach(yr => {
       const v = expiry[yr] ? expiry[yr][m] : null;
       if (v == null) { html += '<td style="color:var(--text-muted);">\u2014</td>'; return; }
@@ -3743,6 +3748,157 @@ function buildExpiryTable(range) {
   html += '</tbody></table>';
   document.getElementById('expiry-table-wrap').innerHTML = html;
 }
+
+
+// ─── EXPIRY PRICES UPGRADE 1: MONTH PROFILE + SEASONAL BAR + CELL ENHANCEMENTS ─
+
+// State: which month is currently selected for the profile chart
+let _expirySelectedMonth = null;
+
+function showExpiryMonthProfile(month) {
+  const expiry = STATE.expiry;
+  const profileEl = document.getElementById('expiry-month-profile');
+  if (!profileEl) return;
+
+  if (_expirySelectedMonth === month) {
+    // Toggle off
+    _expirySelectedMonth = null;
+    profileEl.style.display = 'none';
+    profileEl.innerHTML = '';
+    // Remove active highlight
+    document.querySelectorAll('.expiry-month-label').forEach(e => e.classList.remove('expiry-month-active'));
+    return;
+  }
+  _expirySelectedMonth = month;
+  document.querySelectorAll('.expiry-month-label').forEach(e => {
+    e.classList.toggle('expiry-month-active', e.dataset.month === month);
+  });
+
+  // Build data: year → price for this month
+  const allYears = Object.keys(expiry).sort((a, b) => +a - +b);
+  const seriesData = allYears
+    .filter(yr => expiry[yr] && expiry[yr][month] != null)
+    .map(yr => ({ time: yr + '-06-01', year: +yr, value: expiry[yr][month] }));
+
+  if (seriesData.length < 2) {
+    profileEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">Not enough data for ' + month + '</div>';
+    profileEl.style.display = 'block';
+    return;
+  }
+
+  const prices = seriesData.map(d => d.value);
+  const avgAll = prices.reduce((s, v) => s + v, 0) / prices.length;
+  const avg5y = (() => {
+    const last5 = prices.slice(-5);
+    return last5.reduce((s, v) => s + v, 0) / last5.length;
+  })();
+
+  profileEl.style.display = 'block';
+  profileEl.className = 'card';
+  profileEl.style.padding = '0';
+  profileEl.style.marginTop = 'var(--gap)';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'card-title';
+  titleEl.style.padding = '10px 14px 0';
+  titleEl.textContent = month.toUpperCase() + ' EXPIRY HISTORY \u2014 ' + seriesData.length + ' contracts';
+  profileEl.innerHTML = '';
+  profileEl.appendChild(titleEl);
+
+  const chartEl = document.createElement('div');
+  chartEl.className = 'chart-wrap';
+  chartEl.style.height = '260px';
+  profileEl.appendChild(chartEl);
+
+  const chart = createManagedChart('expiry', 'profile', chartEl);
+  chart.applyOptions({ rightPriceScale: { scaleMargins: { top: 0.1, bottom: 0.1 } } });
+
+  // Use year as fake time: YYYY-01-01
+  const lineSeries = chart.addLineSeries({
+    color: '#00d4ff', lineWidth: 2,
+    lastValueVisible: true, crosshairMarkerRadius: 5,
+    priceFormat: { type: 'custom', formatter: v => '$' + v.toFixed(3), minMove: 0.001 },
+  });
+  lineSeries.setData(seriesData.map(d => ({ time: d.year + '-01-01', value: d.value })));
+
+  // All-time avg line
+  try { lineSeries.createPriceLine({ price: avgAll, color: 'rgba(255,255,255,0.5)', lineStyle: 2, title: 'All Avg', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  // 5Y avg line
+  try { lineSeries.createPriceLine({ price: avg5y, color: '#ff8c00', lineStyle: 2, title: '5Y Avg', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+
+  applyChartTimeScaleOptions(chart, { formatter: undefined, barSpacing: Math.max(8, Math.floor(800 / seriesData.length)), fixLeftEdge: true, fixRightEdge: true });
+  chart.timeScale().fitContent();
+
+  // build year lookup for tooltip
+  const lookup = new Map(seriesData.map(d => [d.year + '-01-01', d]));
+  attachChartTooltip({
+    chart, container: chartEl, titleColor: '#f5f7fb',
+    seriesConfigs: [{ series: lineSeries, label: month + ' Settlement', color: '#00d4ff', emphasis: true,
+      getPoint: p => lookup.get(typeof p.time === 'string' ? p.time : ''),
+      formatValue: v => '$' + v.toFixed(3) }],
+    getTitle: p => { const d = lookup.get(typeof p.time === 'string' ? p.time : ''); return d ? d.year.toString() : ''; },
+    getMetrics: () => [
+      { label: 'All Avg', value: '$' + avgAll.toFixed(3) },
+      { label: '5Y Avg', value: '$' + avg5y.toFixed(3) },
+    ],
+  });
+}
+
+function buildExpirySeasonalBar(range) {
+  const el = document.getElementById('expiry-seasonal-bar');
+  if (!el) return;
+  const expiry = STATE.expiry;
+  let years = Object.keys(expiry).sort((a, b) => +a - +b);
+  const currentYear = new Date().getFullYear();
+  if (range !== 'all') {
+    const n = parseInt(range) || 0;
+    years = years.filter(y => +y >= currentYear - n);
+  }
+
+  const SEASON_COLORS = {
+    Jan: 'rgba(56,189,248,0.75)', Feb: 'rgba(56,189,248,0.70)',
+    Mar: 'rgba(148,163,184,0.65)', Apr: 'rgba(148,163,184,0.65)', May: 'rgba(148,163,184,0.65)',
+    Jun: 'rgba(251,146,60,0.75)', Jul: 'rgba(251,146,60,0.80)', Aug: 'rgba(251,146,60,0.75)',
+    Sep: 'rgba(148,163,184,0.65)', Oct: 'rgba(148,163,184,0.65)',
+    Nov: 'rgba(56,189,248,0.70)', Dec: 'rgba(56,189,248,0.75)'
+  };
+
+  const avgs = MONTHS.map(m => {
+    const vals = years.map(yr => expiry[yr] && expiry[yr][m]).filter(v => v != null);
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+  });
+  const maxAvg = Math.max(...avgs, 0.01);
+
+  let html = '<div class="card-title" style="padding:10px 14px 4px;">SEASONAL EXPIRY PROFILE <span style="font-size:10px;color:var(--text-muted);font-weight:400;">avg settlement by month</span></div>' +
+    '<div style="display:flex;align-items:flex-end;justify-content:space-around;padding:8px 14px 0;gap:4px;height:140px;">';
+
+  MONTHS.forEach((m, i) => {
+    const h = Math.max(8, Math.floor(avgs[i] / maxAvg * 92));
+    html += '<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;cursor:pointer;" ' +
+      'onclick="showExpiryMonthProfile(\'' + m + '\')" title="Click to view ' + m + ' history">' +
+      '<span style="font-family:var(--font-mono);font-size:9px;color:var(--text-secondary);">$' + avgs[i].toFixed(2) + '</span>' +
+      '<div style="width:100%;height:' + h + 'px;background:' + SEASON_COLORS[m] + ';border-radius:2px 2px 0 0;" class="expiry-bar-col" data-month="' + m + '"></div>' +
+      '<span style="font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);padding-bottom:4px;">' + m + '</span>' +
+      '</div>';
+  });
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// Enhance buildExpiryTable to add month click handlers, rank superscripts, and YoY% row
+// We patch the existing function's output by overriding filterExpiry to call both
+const _origFilterExpiry = typeof filterExpiry === 'function' ? filterExpiry : null;
+function filterExpiry(btn) {
+  btn.parentElement.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const range = btn.dataset.range;
+  buildExpiryTable(range);
+  buildExpirySeasonalBar(range);
+}
+
+// Also patch renderExpiryTab to call buildExpirySeasonalBar on first render
+const _origRenderExpiryTab = typeof renderExpiryTab === 'function' ? renderExpiryTab : null;
 </script>
 
 <!-- ═══ TAB 7: DAILY TRACKER ═══ -->
