@@ -4546,18 +4546,73 @@ function getDailyStats(data) {
 }
 
 function getTTFSpreadData() {
-  const now = new Date();
-  const historical = [];
-  for (let offset = 0; offset <= 2; offset++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    const month = MONTHS[d.getMonth()];
-    const yy = d.getFullYear() % 100;
-    const pad = yy < 10 ? '0' + yy : '' + yy;
-    const ticker = `TG${MONTH_CODES[month]}${pad}`;
-    const td = typeof getTTFContractData === 'function' ? getTTFContractData(ticker) : [];
-    (td || []).forEach(pt => historical.push({ date: pt.date, p: pt.p, ticker }));
-  }
-  return historical;
+  const composite = new Map();
+  const allTickers = new Set();
+  
+  // 1. Collect all tickers from historical data
+  MONTHS.forEach(m => {
+    if (STATE.ttf[m] && STATE.ttf[m].contracts) {
+      Object.keys(STATE.ttf[m].contracts).forEach(t => allTickers.add(t));
+    }
+  });
+
+  // 2. Add live tickers
+  Object.keys(STATE.liveData).forEach(t => {
+    if (t.startsWith('TTF')) {
+      // Internal code uses TG, Yahoo uses TTF prefix
+      const internalCode = 'TG' + t.slice(3, 5); // TTFJ26 -> TGJ26
+      allTickers.add(internalCode);
+    }
+  });
+
+  if (!allTickers.size) return [];
+
+  // 3. For each ticker, merge its data into a global date map
+  // To simulate a "Front Month" continuous series, we sort tickers by their 
+  // delivery month and for each date, we pick the one that is currently the "front".
+  const sortedTickers = Array.from(allTickers).sort((a, b) => {
+    const yrA = parseInt(a.slice(3)), yrB = parseInt(b.slice(3));
+    const fullA = yrA < 50 ? 2000 + yrA : 1900 + yrA;
+    const fullB = yrB < 50 ? 2000 + yrB : 1900 + yrB;
+    if (fullA !== fullB) return fullA - fullB;
+    const codes = "FGHJKMNQUVXZ";
+    return codes.indexOf(a.charAt(2)) - codes.indexOf(b.charAt(2));
+  });
+
+  const tickerMeta = sortedTickers.map(t => {
+    const yr = parseInt(t.slice(3));
+    const fullYear = yr < 50 ? 2000 + yr : 1900 + yr;
+    const monthIdx = "FGHJKMNQUVXZ".indexOf(t.charAt(2));
+    const deliveryDate = new Date(Date.UTC(fullYear, monthIdx, 1)).toISOString().slice(0, 7); // "YYYY-MM"
+    return { ticker: t, deliveryDate };
+  });
+
+  // Collect all points
+  const pointsByDate = new Map(); // date -> [{ticker, p, deliveryDate}]
+  sortedTickers.forEach((ticker, idx) => {
+    const data = typeof getTTFContractData === 'function' ? getTTFContractData(ticker) : [];
+    const delivery = tickerMeta[idx].deliveryDate;
+    data.forEach(pt => {
+      if (!pointsByDate.has(pt.date)) pointsByDate.set(pt.date, []);
+      pointsByDate.get(pt.date).push({ p: pt.p, delivery });
+    });
+  });
+
+  // Pick the best point per date: the one where deliveryDate > date and is minimal
+  const final = [];
+  const dates = Array.from(pointsByDate.keys()).sort();
+  dates.forEach(date => {
+    const options = pointsByDate.get(date);
+    // Sort by delivery date
+    options.sort((a, b) => a.delivery.localeCompare(b.delivery));
+    // Find the first one where delivery month is >= current month
+    const currentMonth = date.slice(0, 7); // "YYYY-MM"
+    let best = options.find(opt => opt.delivery >= currentMonth);
+    if (!best) best = options[options.length - 1]; // fallback to the furthest out if none found
+    final.push({ date, p: best.p });
+  });
+
+  return final;
 }
 
 function formatDailyDate(dateStr) {
@@ -4950,8 +5005,7 @@ function _renderSpreadPanel(ngData) {
   const ttfByDate = new Map(ttfHistorical.map(p => [p.date, p.p]));
   const spreadSeries = ngData
     .filter(p => ttfByDate.has(p.date))
-    .map(p => ({ time: p.date, value: +(p.p - ttfByDate.get(p.date)).toFixed(3) }))
-    .slice(-365);
+    .map(p => ({ time: p.date, value: +(p.p - ttfByDate.get(p.date)).toFixed(3) }));
 
   if (spreadSeries.length < 2) {
     chipsEl.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">Insufficient overlapping data</span>';
