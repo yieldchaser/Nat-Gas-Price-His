@@ -5519,6 +5519,18 @@ function _renderSpreadPanel(ngData) {
   sSeries.setData(spreadSeries);
   applyChartTimeScaleOptions(spreadChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(600 / spreadSeries.length)), fixLeftEdge: true, fixRightEdge: true });
   
+  const legendEl = document.getElementById('daily-spread-legend');
+  if (legendEl) {
+    if (STATE.dailySpreadVisible === undefined) STATE.dailySpreadVisible = true;
+    const on = STATE.dailySpreadVisible;
+    legendEl.innerHTML = `
+      <button class="series-pill ${on ? 'active' : ''}" onclick="toggleDailySpreadSeries()" style="border-color:rgba(167,139,250,0.45);opacity:${on ? '1' : '0.4'};">
+        <span class="swatch" style="background:#a78bfa;"></span>Spread
+      </button>
+    `;
+    sSeries.applyOptions({ visible: on });
+  }
+
   STATE._dailySpreadChart = spreadChart;
   STATE._dailySpreadData = spreadSeries;
   STATE._dailySpreadSeries = sSeries;
@@ -5584,6 +5596,22 @@ function syncDailySpreadRangeFooter() {
   }
   
   chart.timeScale().setVisibleRange({ from: data[sIdx].time, to: data[eIdx].time });
+}
+
+function toggleDailySpreadSeries() {
+  const series = STATE._dailySpreadSeries;
+  if (!series) return;
+  
+  if (STATE.dailySpreadVisible === undefined) STATE.dailySpreadVisible = true;
+  STATE.dailySpreadVisible = !STATE.dailySpreadVisible;
+  
+  series.applyOptions({ visible: STATE.dailySpreadVisible });
+  
+  const pill = document.querySelector('#daily-spread-legend .series-pill');
+  if (pill) {
+    pill.classList.toggle('active', STATE.dailySpreadVisible);
+    pill.style.opacity = STATE.dailySpreadVisible ? '1' : '0.4';
+  }
 }
 
 function _renderExpiryCalendar(now) {
