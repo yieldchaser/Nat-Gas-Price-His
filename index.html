@@ -2280,6 +2280,17 @@ function renderSpreadTab() {
             </div>
             <div class="chart-readout" id="spread-range-readout">Awaiting data</div>
           </div>
+          <div class="card" style="margin-top:var(--gap);" id="spread-resolution-card">
+            <div class="card-title" style="padding:10px 14px 4px; display:flex; justify-content:space-between; align-items:center;">
+              <span id="spread-resolution-title">Lifecycle Resolution <span style="font-size:10px;color:var(--text-muted);font-weight:400;">(vs Trading Day)</span></span>
+              <div class="segment-switch" id="spread-resolution-mode">
+                <button class="segment-btn active" data-mode="all">All</button>
+                <button class="segment-btn" data-mode="5y">5Y</button>
+                <button class="segment-btn" data-mode="current">Current</button>
+              </div>
+            </div>
+            <div class="chart-wrap" id="spread-resolution-chart" style="height:300px;"></div>
+          </div>
           <div class="card" style="margin-top:var(--gap);">
             <div class="card-title" id="spread-heatmap-title">Spread Heatmap — Average Calendar Spread (Last 5 Years)</div>
             <div id="spread-heatmap" style="overflow-x:auto;"></div>
@@ -2307,6 +2318,8 @@ function renderSpreadTab() {
   populateSpreadYears();
   scheduleSpreadChartUpdate(true);
   scheduleSpreadHeatmap(true);
+  renderSpreadResolutionChart();
+  initSpreadResolutionEvents();
 }
 
 function getSpreadInstrument() {
@@ -2822,6 +2835,136 @@ async function buildSpreadHeatmap(force = false) {
   html += '</tbody></table>';
   STATE.spreadHeatmapHtml = html;
   heatmapEl.innerHTML = html;
+}
+
+
+// ─── SPREADS UPGRADE 11: LIFECYCLE RESOLUTION CHART ───────────────────────
+let _resolutionMode = 'all';
+
+function renderSpreadResolutionChart() {
+  const container = document.getElementById('spread-resolution-chart');
+  if (!container) return;
+
+  const front = document.getElementById('spread-front').value;
+  const back = document.getElementById('spread-back').value;
+  const year = parseInt(document.getElementById('spread-year').value);
+  if (!year) return;
+  const instrument = getSpreadInstrument();
+
+  const chart = createManagedChart('spread', 'resolution', container);
+  const palette = getNeutralChartPalette();
+
+  // Draw zero line
+  const zeroLine = chart.addLineSeries({
+    color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
+  });
+  zeroLine.setData([{ time:-519, value:0 }, { time:0, value:0 }]); // Arbitrary range
+
+  // Gather years based on mode
+  const currentYear = new Date().getFullYear();
+  const allYearsSet = new Set();
+  const store = instrument === 'ttf' ? STATE.ttf : STATE.hh;
+  [front, back].forEach(month => {
+    if (!store[month]) return;
+    Object.keys(store[month].contracts).forEach(t => {
+      const yr = parseInt(t.slice(3));
+      allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
+    });
+  });
+  const livePrefix = instrument === 'ttf' ? 'TTF' : 'NG';
+  Object.keys(STATE.liveData).forEach(t => {
+    if (!t.startsWith(livePrefix)) return;
+    const yrStart = livePrefix.length + 1;
+    const yr = parseInt(t.slice(yrStart, yrStart + 2));
+    if (Number.isFinite(yr)) allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
+  });
+  
+  let yearsToPlot = [...allYearsSet].sort((a, b) => a - b);
+  if (_resolutionMode === '5y') {
+    yearsToPlot = yearsToPlot.filter(y => y > currentYear - 5 && y <= currentYear);
+  } else if (_resolutionMode === 'current') {
+    yearsToPlot = [year];
+  }
+
+  const seriesConfigs = [];
+  const lookups = new Map();
+
+  // Draw oldest first
+  yearsToPlot.forEach(yr => {
+    const spreadResult = computeSpread(front, back, yr, instrument);
+    const sp = spreadResult.points;
+    if (sp.length === 0) return;
+
+    const isSelected = yr === year;
+    const color = isSelected ? '#ffffff' : getSpreadYearColor(yr);
+    const lineWidth = isSelected ? 2.5 : (_resolutionMode === 'all' ? 1.2 : 1.5);
+    const series = chart.addLineSeries({
+      color, lineWidth,
+      priceLineVisible: false, lastValueVisible: isSelected,
+      crosshairMarkerVisible: isSelected || _resolutionMode !== 'all',
+      priceFormat: { type: 'custom', formatter: v => formatSignedSpread(v, 3), minMove: 0.001 }
+    });
+    
+    // Convert date string into a fake time for lightweight-charts alignment on T-Day.
+    // Instead of time, we'll plot using T-Day index as X, mapped to a fake time block so LW charts accepts it.
+    // T-Day is 1 to 519. We can use Year 2000 as a base year.
+    // Day 1 => 2000-01-01
+    const dataToPlot = [];
+    const localLookup = new Map();
+    sp.forEach(pt => {
+      // Use Day to create a synthetic date mapping.
+      // E.g. T-Day 1 -> 1 days from Jan 1 2000
+      const d = pt.d;
+      const baseMs = new Date("2000-01-01T00:00:00Z").getTime();
+      const fakeTimeStr = new Date(baseMs + d * 86400000).toISOString().split('T')[0];
+      dataToPlot.push({ time: fakeTimeStr, value: pt.value });
+      localLookup.set(fakeTimeStr, pt);
+    });
+    series.setData(dataToPlot);
+    
+    seriesConfigs.push({
+      series, label: `${yr}`, color, emphasis: isSelected,
+      getPoint: p => localLookup.get(typeof p.time === 'string' ? p.time : ''),
+      formatValue: v => formatSignedSpread(v, 3)
+    });
+    lookups.set(yr, localLookup);
+  });
+  
+  applyChartTimeScaleOptions(chart, {
+    formatter: time => {
+      // Convert time back to T-Day
+      const d = (new Date(time).getTime() - new Date("2000-01-01T00:00:00Z").getTime()) / 86400000;
+      return `T-${519 - Math.round(d)}`;
+    },
+    barSpacing: 2
+  });
+  chart.timeScale().fitContent();
+
+  if (seriesConfigs.length) {
+    attachChartTooltip({
+      chart, container, titleColor: '#f5f7fb',
+      seriesConfigs: seriesConfigs.reverse(), // Put newest/selected at top
+      getTitle: p => {
+        const d = (new Date(p.time).getTime() - new Date("2000-01-01T00:00:00Z").getTime()) / 86400000;
+        return `T-${519 - Math.round(d)}`;
+      },
+      getMetrics: p => []
+    });
+  }
+}
+
+function initSpreadResolutionEvents() {
+  const container = document.getElementById('tab-spread');
+  if (!container) return;
+  container.addEventListener('click', e => {
+    const btn = e.target.closest('#spread-resolution-mode .segment-btn');
+    if (!btn) return;
+    document.querySelectorAll('#spread-resolution-mode .segment-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    _resolutionMode = btn.dataset.mode;
+    renderSpreadResolutionChart();
+  });
 }
 
 function scheduleSpreadHeatmap(force = false) {
