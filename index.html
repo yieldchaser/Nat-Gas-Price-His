@@ -1072,7 +1072,7 @@ function getActiveHHTickers() {
   // Generate tickers for currently active/forward HH contracts
   const now = new Date();
   const tickers = [];
-  for (let offset = 0; offset < FORWARD_CURVE_HORIZON + FORWARD_CURVE_FETCH_BUFFER; offset++) {
+  for (let offset = 0; offset < 72; offset++) {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const yr = d.getFullYear() % 100;
     const monthIdx = d.getMonth();
@@ -1088,7 +1088,7 @@ function getActiveTTFTickers() {
   // (internal historical format uses TG prefix, but Yahoo uses TTF prefix)
   const now = new Date();
   const tickers = [];
-  for (let offset = 0; offset < 7; offset++) {
+  for (let offset = 0; offset < 36; offset++) {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const yr = d.getFullYear() % 100;
     const monthIdx = d.getMonth();
@@ -1102,8 +1102,8 @@ function getActiveTTFTickers() {
 async function loadLiveData() {
   setLoadProgress(50, 'FETCHING LIVE PRICES...');
   
-  const hhTickers = getActiveHHTickers().slice(0, 6);
-  const ttfTickers = getActiveTTFTickers().slice(0, 4);
+  const hhTickers = getActiveHHTickers();
+  const ttfTickers = getActiveTTFTickers();
   const allTickers = [...hhTickers, ...ttfTickers];
 
   // Fetch front month with '2y' for current daily density
@@ -1111,14 +1111,34 @@ async function loadLiveData() {
   const frontMonthRecent = fetchYahoo('NG=F', '2y');
   const eurusdRecent = fetchYahoo('EURUSD=X', '1mo');
 
-  const batchSize = 10;
+  const batchSize = 8;
+  STATE.hhLiveCount = 0;
+  STATE.ttfLiveCount = 0;
+  
+  const updateStatus = () => {
+    const curveHeaderChange = document.getElementById('curve-change');
+    if (curveHeaderChange) curveHeaderChange.innerHTML = getForwardCurveStatusHtml();
+  };
+
   for (let i = 0; i < allTickers.length; i += batchSize) {
     const batch = allTickers.slice(i, i + batchSize);
     const results = await Promise.all(batch.map(t => fetchYahoo(t).then(d => [t, d])));
-    results.forEach(([t, d]) => { if (d && d.length > 0) STATE.liveData[t] = d; });
+    results.forEach(([t, d]) => { 
+      if (d && d.length > 0) {
+        STATE.liveData[t] = d;
+        if (t.startsWith('NG')) STATE.hhLiveCount++;
+        else if (t.startsWith('TTF')) STATE.ttfLiveCount++;
+      }
+    });
+    
+    // Update UI real-time after each batch
+    updateStatus();
+    
     const pct = 50 + Math.round((i / allTickers.length) * 40);
-    setLoadProgress(pct, `FETCHING CONTRACTS... ${Object.keys(STATE.liveData).length} loaded`);
+    setLoadProgress(pct, `FETCHING CONTRACTS... ${STATE.hhLiveCount + STATE.ttfLiveCount} loaded`);
+    if (i + batchSize < allTickers.length) await new Promise(res => setTimeout(res, 300));
   }
+  updateStatus();
 
   // Merge dense historical database with live Yahoo data (Yahoo overwrites on overlap)
   const [fmRec, fxRec] = await Promise.all([frontMonthRecent, eurusdRecent]);
@@ -2490,7 +2510,26 @@ function renderSpreadTab() {
                 <button class="segment-btn" data-mode="current">Current</button>
               </div>
             </div>
+            <div id="spread-resolution-legend" style="padding:10px 14px 6px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid var(--border);"></div>
             <div class="chart-wrap" id="spread-resolution-chart" style="height:300px;"></div>
+            <div class="card chart-footer" style="margin-top:0;border-top:1px solid var(--border);padding:10px 14px;">
+              <div class="range-toolbar">
+                <div class="flex flex-col gap-sm">
+                  <span class="range-kicker">T-Day Range</span>
+                  <span class="range-helper" id="resolution-range-helper">Full lifecycle</span>
+                </div>
+                <div class="range-scale-labels">
+                  <span id="resolution-range-min-label">T-518</span>
+                  <span id="resolution-range-max-label">T-0</span>
+                </div>
+              </div>
+              <div class="range-input-shell" style="margin:10px 0;">
+                <div class="range-selection" id="resolution-range-selection"></div>
+                <input type="range" id="resolution-window-start" min="0" max="519" value="0" aria-label="Resolution window start">
+                <input type="range" id="resolution-window-end" min="0" max="519" value="519" aria-label="Resolution window end">
+              </div>
+              <div class="chart-readout" id="resolution-range-readout">Full span</div>
+            </div>
           </div>
           <div class="card" style="margin-top:var(--gap);">
             <div class="card-title" id="spread-heatmap-title">Spread Heatmap — Average Calendar Spread (Last 5 Years)</div>
@@ -3136,7 +3175,26 @@ function renderSpreadResolutionChart() {
     if (Number.isFinite(yr)) allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
   });
   
-  let yearsToPlot = [...allYearsSet].sort((a, b) => a - b);
+  const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
+  STATE._resolutionAvailableYears = allYearsSorted.filter(y => computeSpread(front, back, y, instrument).points.length > 0);
+
+  // Init/reset pinned years on pair change
+  const pairKey = `${instrument}|${front}|${back}`;
+  if (STATE.resolutionPairKey !== pairKey) {
+    STATE.resolutionPairKey = pairKey;
+    const defaults = new Set();
+    STATE._resolutionAvailableYears.filter(y => y < currentYear).slice(0, 4).forEach(y => defaults.add(y));
+    STATE.resolutionPinnedYears = defaults;
+    STATE.resolutionView = { rangeStart: 1, rangeEnd: 519 };
+  }
+  
+  STATE.resolutionVisibleYears = new Set(STATE.resolutionPinnedYears || []);
+  STATE.resolutionVisibleYears.add(year);
+  STATE.resolutionSeriesMap = new Map();
+  STATE._resolutionChart = chart;
+
+  let yearsToPlot = [...STATE._resolutionAvailableYears].sort((a, b) => a - b);
+  // Filtering mode (All/5Y/Current) still restricts what's added to chart initially
   if (_resolutionMode === '5y') {
     yearsToPlot = yearsToPlot.filter(y => y > currentYear - 5 && y <= currentYear);
   } else if (_resolutionMode === 'current') {
@@ -3144,7 +3202,6 @@ function renderSpreadResolutionChart() {
   }
 
   const seriesConfigs = [];
-  const lookups = new Map();
 
   // Draw oldest first
   yearsToPlot.forEach(yr => {
@@ -3153,24 +3210,20 @@ function renderSpreadResolutionChart() {
     if (sp.length === 0) return;
 
     const isSelected = yr === year;
+    const visible = STATE.resolutionVisibleYears.has(yr);
     const color = isSelected ? '#ffffff' : getSpreadYearColor(yr);
     const lineWidth = isSelected ? 2.5 : (_resolutionMode === 'all' ? 1.2 : 1.5);
     const series = chart.addLineSeries({
       color, lineWidth,
       priceLineVisible: false, lastValueVisible: isSelected,
       crosshairMarkerVisible: isSelected || _resolutionMode !== 'all',
+      visible,
       priceFormat: { type: 'custom', formatter: v => formatSignedSpread(v, 3), minMove: 0.001 }
     });
     
-    // Convert date string into a fake time for lightweight-charts alignment on T-Day.
-    // Instead of time, we'll plot using T-Day index as X, mapped to a fake time block so LW charts accepts it.
-    // T-Day is 1 to 519. We can use Year 2000 as a base year.
-    // Day 1 => 2000-01-01
     const dataToPlot = [];
     const localLookup = new Map();
     sp.forEach(pt => {
-      // Use Day to create a synthetic date mapping.
-      // E.g. T-Day 1 -> 1 days from Jan 1 2000
       const d = pt.d;
       const baseMs = new Date("2000-01-01T00:00:00Z").getTime();
       const fakeTimeStr = new Date(baseMs + d * 86400000).toISOString().split('T')[0];
@@ -3178,14 +3231,39 @@ function renderSpreadResolutionChart() {
       localLookup.set(fakeTimeStr, pt);
     });
     series.setData(dataToPlot);
+    STATE.resolutionSeriesMap.set(yr, series);
     
     seriesConfigs.push({
       series, label: `${yr}`, color, emphasis: isSelected,
       getPoint: p => localLookup.get(typeof p.time === 'string' ? p.time : ''),
       formatValue: v => formatSignedSpread(v, 3)
     });
-    lookups.set(yr, localLookup);
   });
+
+  // Render Legend
+  const legendEl = document.getElementById('spread-resolution-legend');
+  if (legendEl) {
+    const yearsInChart = yearsToPlot.sort((a, b) => b - a);
+    legendEl.innerHTML = yearsInChart.map(yr => {
+      const on = STATE.resolutionVisibleYears.has(yr);
+      const isSelected = yr === year;
+      const color = isSelected ? '#ffffff' : getSpreadYearColor(yr);
+      return `<span data-resolution-yr="${yr}" onclick="toggleResolutionYear(${yr})" style="
+        display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:4px;
+        border:1px solid ${on ? color : 'rgba(255,255,255,0.15)'};
+        background:${on ? color + '22' : 'transparent'};
+        opacity:${on ? '1' : '0.28'};
+        cursor:pointer;font-family:var(--font-mono);font-size:11px;
+        color:${color};font-weight:${isSelected ? '700' : '400'};
+        transition:opacity 0.15s,background 0.15s;
+        ${isSelected ? 'box-shadow:0 0 0 1px '+color+';' : ''}
+      "><span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>${yr}</span>`;
+    }).join('') + `
+      <div style="flex-grow:1;"></div>
+      <span onclick="toggleAllResolutionYears(true)" style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">ALL</span>
+      <span onclick="toggleAllResolutionYears(false)" style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">NONE</span>
+    `;
+  }
   
   applyChartTimeScaleOptions(chart, {
     formatter: time => {
@@ -3208,19 +3286,143 @@ function renderSpreadResolutionChart() {
       getMetrics: p => []
     });
   }
+  syncResolutionRangeFooter();
+}
+
+function onResolutionSlider() {
+  const chart = STATE._resolutionChart;
+  if (!chart) return;
+  if (!STATE.resolutionView) STATE.resolutionView = { rangeStart: 1, rangeEnd: 519 };
+  let start = parseInt(document.getElementById('resolution-window-start').value) || 1;
+  let end   = parseInt(document.getElementById('resolution-window-end').value) || 519;
+  if (start >= end) { start = Math.max(1, end - 1); document.getElementById('resolution-window-start').value = String(start); }
+  STATE.resolutionView.rangeStart = start;
+  STATE.resolutionView.rangeEnd = end;
+  syncResolutionRangeFooter();
+}
+
+function syncResolutionRangeFooter() {
+  const chart = STATE._resolutionChart;
+  if (!chart) return;
+  if (!STATE.resolutionView) STATE.resolutionView = { rangeStart: 1, rangeEnd: 519 };
+  const view = STATE.resolutionView;
+  
+  const startSlider = document.getElementById('resolution-window-start');
+  const endSlider   = document.getElementById('resolution-window-end');
+  const selection   = document.getElementById('resolution-range-selection');
+  const readout     = document.getElementById('resolution-range-readout');
+  const helper      = document.getElementById('resolution-range-helper');
+
+  if (!startSlider) return;
+
+  const start = view.rangeStart;
+  const end = view.rangeEnd;
+  
+  const pctStart = ((start - 1) / 518) * 100;
+  const pctEnd = ((end - 1) / 518) * 100;
+  if (selection) {
+    selection.style.left = `${pctStart}%`;
+    selection.style.width = `${pctEnd - pctStart}%`;
+  }
+  
+  const count = end - start + 1;
+  if (readout) {
+    readout.innerHTML = `<span>T-${519 - start}</span> <span style="color:var(--text-muted);">to</span> <span>T-${519 - end}</span> <span style="color:var(--text-muted);">|</span> <span>${count} days</span>`;
+  }
+  if (helper) {
+    helper.textContent = count >= 519 ? 'Full lifecycle' : `${count} days selected`;
+  }
+  
+  if (start > 1 || end < 519) {
+    chart.timeScale().setVisibleRange({ from: dayToTime(start), to: dayToTime(end) });
+  } else {
+    chart.timeScale().fitContent();
+  }
+}
+
+function toggleResolutionYear(yr) {
+  yr = parseInt(yr);
+  const yearSelect = document.getElementById('spread-year');
+  const selectedYear = parseInt(yearSelect?.value, 10);
+  
+  if (yr === selectedYear) return;
+  
+  if (!STATE.resolutionPinnedYears) STATE.resolutionPinnedYears = new Set();
+  if (STATE.resolutionPinnedYears.has(yr)) {
+    STATE.resolutionPinnedYears.delete(yr);
+  } else {
+    STATE.resolutionPinnedYears.add(yr);
+  }
+  
+  if (!STATE.resolutionVisibleYears) STATE.resolutionVisibleYears = new Set();
+  STATE.resolutionVisibleYears = new Set(STATE.resolutionPinnedYears);
+  STATE.resolutionVisibleYears.add(selectedYear);
+  
+  const on = STATE.resolutionPinnedYears.has(yr);
+  const series = STATE.resolutionSeriesMap && STATE.resolutionSeriesMap.get(yr);
+  if (series) series.applyOptions({ visible: on });
+  
+  const chip = document.querySelector(`[data-resolution-yr="${yr}"]`);
+  if (chip) {
+    const color = getSpreadYearColor(yr);
+    chip.style.opacity = on ? '1' : '0.28';
+    chip.style.background = on ? `${color}22` : 'transparent';
+    chip.style.border = `1px solid ${on ? color : 'rgba(255,255,255,0.15)'}`;
+  }
+}
+
+function toggleAllResolutionYears(on) {
+  const yearSelect = document.getElementById('spread-year');
+  const selectedYear = parseInt(yearSelect?.value, 10);
+  
+  if (!STATE.resolutionPinnedYears) STATE.resolutionPinnedYears = new Set();
+  
+  if (on) {
+    (STATE._resolutionAvailableYears || []).forEach(y => {
+      if (y !== selectedYear) STATE.resolutionPinnedYears.add(y);
+    });
+  } else {
+    STATE.resolutionPinnedYears.clear();
+  }
+  
+  renderSpreadResolutionChart();
 }
 
 function initSpreadResolutionEvents() {
   const container = document.getElementById('tab-spread');
   if (!container) return;
-  container.addEventListener('click', e => {
-    const btn = e.target.closest('#spread-resolution-mode .segment-btn');
-    if (!btn) return;
-    document.querySelectorAll('#spread-resolution-mode .segment-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    _resolutionMode = btn.dataset.mode;
-    renderSpreadResolutionChart();
-  });
+  
+  const resMode = document.getElementById('spread-resolution-mode');
+  if (resMode) {
+    resMode.addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#spread-resolution-mode .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _resolutionMode = btn.dataset.mode;
+      
+      // Auto-zoom slider on presets
+      if (_resolutionMode === 'current') {
+        const year = parseInt(document.getElementById('spread-year').value);
+        const instrument = getSpreadInstrument();
+        const front = document.getElementById('spread-front').value;
+        const back = document.getElementById('spread-back').value;
+        const sp = computeSpread(front, back, year, instrument).points;
+        if (sp.length) {
+          STATE.resolutionView = { rangeStart: sp[0].d, rangeEnd: sp[sp.length - 1].d };
+        }
+      } else {
+        STATE.resolutionView = { rangeStart: 1, rangeEnd: 519 };
+      }
+      
+      renderSpreadResolutionChart();
+    });
+  }
+
+  const startSlider = document.getElementById('resolution-window-start');
+  const endSlider = document.getElementById('resolution-window-end');
+  if (startSlider) startSlider.addEventListener('input', onResolutionSlider);
+  if (endSlider) endSlider.addEventListener('input', onResolutionSlider);
 }
 
 function scheduleSpreadHeatmap(force = false) {
@@ -3251,6 +3453,17 @@ function scheduleSpreadHeatmap(force = false) {
      TAB 5: FORWARD CURVE
      ═══════════════════════════════════════════════════════════ -->
 <script>
+function getForwardCurveStatusHtml() {
+  const hhLive = STATE.hhLiveCount || 0;
+  const ttfLive = STATE.ttfLiveCount || 0;
+  const totalLive = hhLive + ttfLive;
+  let html = `HH: ${hhLive}/72 · TTF: ${ttfLive}/36 quoted`;
+  if (totalLive < 20 && totalLive > 0) {
+    html = `<span style="color:var(--warning);font-weight:700;">\u26A0 PARTIAL DATA</span> \u2014 ` + html;
+  }
+  return html;
+}
+
 function getCurveSeason(monthIdx) {
   if ([10, 11, 0, 1].includes(monthIdx)) return 'winter';
   if ([4, 5, 6, 7].includes(monthIdx)) return 'summer';
@@ -3266,7 +3479,27 @@ function buildCurveSlot(baseDate, offset, instrument = 'hh') {
   const pad = yy < 10 ? '0' + yy : '' + yy;
   const prefix = instrument === 'ttf' ? 'TG' : 'NG';
   const ticker = `${prefix}${MONTH_CODES[month]}${pad}`;
-  const data = instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker);
+  
+  // Robust Priority chain: 
+  // 1. Live Yahoo fetch
+  const liveTicker = instrument === 'ttf' ? 'TTF' + ticker.slice(2) + '.NYM' : ticker + '.NYM';
+  const liveDataExists = STATE.liveData[liveTicker] && STATE.liveData[liveTicker].length > 0;
+  
+  // 2. Historical local data
+  const histData = (instrument === 'ttf' ? STATE.ttf : STATE.hh)[month]?.contracts?.[ticker];
+  const histDataExists = histData && histData.length > 0;
+
+  let source = 'missing';
+  let data = [];
+  
+  if (liveDataExists) {
+    source = 'live';
+    data = instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker);
+  } else if (histDataExists) {
+    source = 'historical';
+    data = histData;
+  }
+
   const last = data.length ? data[data.length - 1] : null;
 
   return {
@@ -3279,6 +3512,7 @@ function buildCurveSlot(baseDate, offset, instrument = 'hh') {
     price: last && Number.isFinite(last.p) ? last.p : null,
     quoteDate: last && last.date ? last.date : null,
     pointCount: data.length,
+    source, // 'live', 'historical', or 'missing'
   };
 }
 
@@ -4108,7 +4342,10 @@ function updateCurveChart() {
     curveHeaderPrice.textContent = `${meta.currency}${curveData.firstQuoted.price.toFixed(3)}`;
     curveHeaderPrice.style.color = meta.color;
   }
-  if (curveHeaderChange) curveHeaderChange.textContent = `${curveData.firstQuoted.label} prompt month · ${curveData.quotedSlots.length}/${slots.length} quoted`;
+  if (curveHeaderChange) {
+    const promptMonth = curveData.firstQuoted ? `${curveData.firstQuoted.label} prompt month · ` : '';
+    curveHeaderChange.innerHTML = `${promptMonth}${getForwardCurveStatusHtml()}`;
+  }
 
   // Store refs and sync range footer
   STATE._curveChart = chart;

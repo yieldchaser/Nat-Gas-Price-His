@@ -22,10 +22,12 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 - **Term Structure**: Forward curve visualization from historical closing prices.
 
 ### 4. Forward Curve (Live)
-- **Interactive Curve**: Real-time strip view of the next 48+ months of delivery.
-- **Interpolation vs Quotes**: Visual distinction between live-quoted contracts and interpolated monthly slots.
-- **Sentiment Badges**: Automatic detection of Contango/Backwardation regimes.
-- **Quote Table**: Granular list of every contract month, its price, and expiry code.
+- **Interactive Curve**: Real-time strip view of the next 72 months (Henry Hub) and 36 months (Dutch TTF) of delivery.
+- **Cal Strip Averages**: Cal 2026/2027, Summer/Winter strip averages with Avg Price, vs Front, and Structure (Contango/Back) columns.
+- **Compare Curve**: Overlay the active curve against 1 Week, 1 Month, 3 Months, or 1 Year ago using dashed reference lines.
+- **Fallback Logic**: Robust priority chain (Live -> Historical -> Missing) ensures visual continuity during Yahoo Finance throttling.
+- **Status Dashboard**: Real-time `HH: X/72 · TTF: Y/36` quoted counter with a `🟡 PARTIAL DATA` badge for low-coverage events.
+- **Quote Table**: Granular list of every contract month; click any row to navigate directly to the Prices tab for that contract.
 
 ### 5. Expiry Settlement Prices
 - **Settlement Matrix**: Monthly final settlement prices spanning 20+ years.
@@ -40,25 +42,19 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 ### 6. Spreads
 - **AT-Snapshot Columns**: AT-519, AT-PENULT, AT-90D, AT-10D columns in the spread history table capture spread value at key lifecycle milestones.
 - **Summary Stats Row**: All-time avg and Last 5Y avg for each column at the bottom of the spread table.
-- **Lifecycle Resolution Chart**: Spread value vs. trading day chart for all years, with All / Last 5Y / Current Year toggle.
+- **Lifecycle Resolution Chart**: Multi-year spread vs. trading day comparison with **interactive year pills (HH 37yr / TTF 9yr)** and a custom **T-Day range slider (T-518 to T-0)**.
 
-### 7. Forward Curve (Live)
-- **Interactive Curve**: Real-time strip view of the next 48+ months of delivery.
-- **Cal Strip Averages**: Cal 2026/2027, Summer/Winter strip averages with Avg Price, vs Front, and Structure (Contango/Back) columns.
-- **Compare Curve**: Dropdown to overlay the curve from 1 Week Ago, 1 Month Ago, 3 Months Ago, or 1 Year Ago as a dashed line.
-- **Contract Table Navigation**: Click any contract row to jump to the Prices tab with that contract loaded.
-
-### 8. Daily Tracker & Data Roadmap (v2.0 Updates)
-- **High-Fidelity History**: Built from a 9,000+ session continuous `NG=F` foundation (1990–2026) derived from local raw contract database.
-- **Zero-Lag Seeding**: STATE.liveData['NG=F'] is pre-seeded with historical data on first paint, ensuring zero-latency initial rendering.
-- **Resilient Data Engine**:
+### 7. Daily Tracker & Data Engine (v2.0)
+- **High-Fidelity History**: Built from a 9,000+ session continuous `NG=F` foundation (1990–2026).
+- **Zero-Lag Seeding**: STATE.liveData['NG=F'] is pre-seeded with historical data on first paint.
+- **Resilient Data Architecture**:
   - **Proxy Rotation**: Automatic failover across multiple CORS proxies (`corsproxy.io`, `allorigins`, `codetabs`).
-  - **Retry Logic**: 3-layer fetch attempts with exponential backoff to bypass Yahoo Finance throttling.
-  - **Graceful Fallback**: Active **🟡 STALE** detection that falls back to historical records when live APIs are unavailable.
+  - **Retry Logic**: 3-layer fetch attempts with exponential backoff.
+  - **Staggered Batching**: Throttling-resistant fetching of 100+ tickers in 8-contract batches with 300ms staggers.
+  - **Graceful Fallback**: Active **🟡 STALE** detection and **🟡 PARTIAL DATA** badges when API availability is compromised.
 - **Institutional Analytics**:
   - **Pill-Toggle Series**: Toggleable overlays for `52W High`, `52W Low`, and `360D Average`.
-  - **NG vs TTF Spread (Dynamic FX)**: Real-time nominal spread using live **EURUSD=X** conversion (EUR/MWh to USD/MMBtu).
-  - **Spread KPIs**: Performance cards for Current, 52W Range, and YTD Δ%.
+  - **NG vs TTF Spread (Dynamic FX)**: Real-time nominal spread using live **EURUSD=X** conversion.
   - **Extended Ranges**: Fully synchronized presets for `1M`, `3M`, `1Y`, `2Y`, `3Y`, `5Y`, `10Y`, and `ALL`.
 
 ### 9. Prices Tab
