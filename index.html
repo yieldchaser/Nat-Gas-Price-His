@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -933,7 +933,7 @@ async function fetchJSON(url) {
 
 async function fetchYahoo(ticker, range) {
   const r = range || '2y';
-  const directUrl = `\\?interval=1d&range=\`;
+  const directUrl = `${YAHOO_BASE}${ticker}?interval=1d&range=${r}`;
   const proxyUrl = CORS_PROXY + encodeURIComponent(directUrl);
   try {
     let data = await fetchJSON(proxyUrl);
