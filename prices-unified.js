@@ -327,17 +327,25 @@ function buildCurveAxisFormatter(resolveContract) {
 
 function applyChartTimeScaleOptions(chart, options = {}) {
   if (!chart) return;
-  const { formatter, barSpacing = 9 } = options;
+  const {
+    formatter,
+    barSpacing = 9,
+    minBarSpacing = 0.45,
+    rightOffset = 0,
+    fixLeftEdge = true,
+    fixRightEdge = true,
+    lockVisibleTimeRangeOnResize = true,
+  } = options;
   chart.timeScale().applyOptions({
     borderColor: '#2b2b31',
     timeVisible: false,
     secondsVisible: false,
-    rightOffset: 0,
+    rightOffset,
     barSpacing,
-    minBarSpacing: 0.45,
-    fixLeftEdge: true,
-    fixRightEdge: true,
-    lockVisibleTimeRangeOnResize: true,
+    minBarSpacing,
+    fixLeftEdge,
+    fixRightEdge,
+    lockVisibleTimeRangeOnResize,
     shiftVisibleRangeOnNewBar: false,
     tickMarkFormatter: formatter,
   });

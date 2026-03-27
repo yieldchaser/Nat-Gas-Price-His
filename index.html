@@ -1266,6 +1266,7 @@ async function init() {
     await buildTTFSeasonalCache();
     buildSpotSeasonalCache();
     setLoadProgress(95, 'BUILDING INTERFACE...');
+    setActiveTab(STATE.activeTab);
     await renderTab(STATE.activeTab);
     setLoadProgress(100, 'READY');
     STATE.loaded = true;
@@ -3026,6 +3027,61 @@ function renderCurveAnnotations() {
   }).join('');
 }
 
+function buildCurveAnchorData(slots) {
+  if (!Array.isArray(slots) || !slots.length) return [];
+  const nextFinite = new Array(slots.length).fill(null);
+  let carryForward = null;
+  for (let index = slots.length - 1; index >= 0; index--) {
+    if (Number.isFinite(slots[index].price)) carryForward = slots[index].price;
+    nextFinite[index] = carryForward;
+  }
+
+  let carryBack = null;
+  return slots.map((slot, index) => {
+    if (Number.isFinite(slot.price)) carryBack = slot.price;
+    const anchorValue = Number.isFinite(slot.price) ? slot.price : (carryBack ?? nextFinite[index]);
+    return Number.isFinite(anchorValue)
+      ? { time: slot.time, value: anchorValue }
+      : null;
+  }).filter(Boolean);
+}
+
+function applyCurveVisibleWindow(chart, slots, start, end) {
+  if (!chart || !Array.isArray(slots) || !slots.length) return;
+  const maxIdx = slots.length - 1;
+  const isFullWindow = start <= 0 && end >= maxIdx;
+  if (isFullWindow) {
+    chart.timeScale().fitContent();
+    return;
+  }
+
+  // The curve uses evenly spaced synthetic contract slots, so a logical range
+  // is more stable than a time-based range when the window starts/ends on
+  // whitespace months.
+  const logicalPadding = 0.45;
+  const from = Math.max(-0.5, start - logicalPadding);
+  const to = Math.min(maxIdx + 0.5, end + logicalPadding);
+  if (typeof chart.timeScale().setVisibleLogicalRange === 'function') {
+    chart.timeScale().setVisibleLogicalRange({ from, to });
+    return;
+  }
+
+  chart.timeScale().setVisibleRange({
+    from: slots[start].time,
+    to: slots[end].time,
+  });
+}
+
+function syncCurveVisibleWindow(chart, slots, start, end) {
+  if (!chart || !Array.isArray(slots) || !slots.length) return;
+  applyCurveVisibleWindow(chart, slots, start, end);
+  if (STATE._curveVisibleWindowFrame) cancelAnimationFrame(STATE._curveVisibleWindowFrame);
+  STATE._curveVisibleWindowFrame = requestAnimationFrame(() => {
+    STATE._curveVisibleWindowFrame = null;
+    applyCurveVisibleWindow(chart, slots, start, end);
+  });
+}
+
 function buildForwardCurveData() {
   const baseDate = new Date();
   const rawSlots = [];
@@ -3320,11 +3376,21 @@ function updateCurveChart() {
     },
   });
   lineSeries.setData(slots.map(slot => Number.isFinite(slot.price) ? ({ time: slot.time, value: slot.price }) : ({ time: slot.time })));
+  const anchorSeries = chart.addLineSeries({
+    color: 'rgba(0,0,0,0)',
+    lineWidth: 1,
+    priceLineVisible: false,
+    lastValueVisible: false,
+    crosshairMarkerVisible: false,
+  });
+  anchorSeries.setData(buildCurveAnchorData(slots));
   const curveLookup = new Map(slots.map(slot => [timeKey(slot.time), slot]));
 
   applyChartTimeScaleOptions(chart, {
     formatter: buildCurveAxisFormatter(time => curveLookup.get(timeKey(time))),
     barSpacing: slots.length > 36 ? 8 : 11,
+    fixLeftEdge: false,
+    fixRightEdge: false,
   });
   chart.timeScale().fitContent();
   attachChartTooltip({
@@ -3427,11 +3493,7 @@ function syncCurveRangeFooter() {
     readoutEl.innerHTML = `<span>${contracts[windowContext.start].label}</span><span style="color:var(--text-muted);">to</span><span>${contracts[windowContext.end].label}</span><span style="color:var(--text-muted);">|</span><span>${count} month${count !== 1 ? 's' : ''}</span><span style="color:var(--text-muted);">|</span><span>${windowContext.quotedSlots.length} quoted</span>${missingCount ? `<span style="color:var(--text-muted);">|</span><span>${missingCount} missing</span>` : ''}`;
   }
 
-  if (windowContext.start > 0 || windowContext.end < maxIdx) {
-    chart.timeScale().setVisibleRange({ from: dayToTime(windowContext.start + 1), to: dayToTime(windowContext.end + 1) });
-  } else {
-    chart.timeScale().fitContent();
-  }
+  syncCurveVisibleWindow(chart, contracts, windowContext.start, windowContext.end);
 
   renderCurveMetrics(curveData, windowContext);
   renderCurveTable(curveData, windowContext);
