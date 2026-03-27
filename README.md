@@ -56,6 +56,10 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
   - **Pill-Toggle Series**: Toggleable overlays for `52W High`, `52W Low`, and `360D Average`.
   - **NG vs TTF Spread (Dynamic FX)**: Real-time nominal spread using live **EURUSD=X** conversion.
   - **Extended Ranges**: Fully synchronized presets for `1M`, `3M`, `1Y`, `2Y`, `3Y`, `5Y`, `10Y`, and `ALL`.
+- **Recent Stability & UI Fixes**:
+  - **Weekly % Change Chart**: Resolved a crash on slider/preset interaction by ensuring `STATE.dailyWeeklyView` is correctly initialized.
+  - **NG vs TTF Spread KPIs**: Corrected container targeting to ensure KPI cards are visible in the Daily Tracker tab using a new `#daily-spread-kpis` element.
+  - **Spread Chart Reference Lines**: Added toggleable dashed lines for 52W High and 52W Low of the spread value, with dedicated legend pills.
 
 ### 8. Data Reliability & Caching
 To resolve "blank-on-refresh" issues, the dashboard implements a `localStorage` caching layer:
