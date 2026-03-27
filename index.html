@@ -748,6 +748,7 @@ const STATE = {
   seasonalCache: {},
   ttfSeasonalCache: {},
   spotSeasonalCache: {},
+  eurusd: 1.08, // fallback
   priceSeasonalCache: {},
   priceTtfSeasonalCache: {},
   priceSpotSeasonalCache: {},
@@ -1073,15 +1074,10 @@ function getActiveTTFTickers() {
 
 async function loadLiveData() {
   setLoadProgress(50, 'FETCHING LIVE PRICES...');
-  // Only fetch names for next 4-6 months to avoid 404s on far-dated illiquid contracts
-  // getActiveHHTickers already appends .NYM at line 1049
-  const hhTickers = getActiveHHTickers().slice(0, 6);
-  const ttfTickers = getActiveTTFTickers().slice(0, 4);
-  const allTickers = [...hhTickers, ...ttfTickers];
-
   // Fetch front month with '2y' for current daily density
   // We use our own data/ng_continuous.json as the baseline for history
   const frontMonthRecent = fetchYahoo('NG=F', '2y');
+  const eurusdRecent = fetchYahoo('EURUSD=X', '1mo');
 
   const batchSize = 10;
   for (let i = 0; i < allTickers.length; i += batchSize) {
@@ -1093,7 +1089,12 @@ async function loadLiveData() {
   }
 
   // Merge dense historical database with live Yahoo data (Yahoo overwrites on overlap)
-  const [fmRec] = await Promise.all([frontMonthRecent]);
+  const [fmRec, fxRec] = await Promise.all([frontMonthRecent, eurusdRecent]);
+  
+  // Update live FX rate
+  if (fxRec && fxRec.length > 0) {
+    STATE.eurusd = fxRec[fxRec.length - 1].p;
+  }
   let fm = STATE._ngContinuous || [];
   if (fmRec && fmRec.length > 0) {
     const recMap = new Map(fmRec.map(p => [p.date, p]));
@@ -4595,7 +4596,7 @@ function getTTFSpreadData() {
   // Collect all points
   const pointsByDate = new Map(); // date -> [{p, deliveryDate}]
   const TTF_TO_USD_MMBTU = 3.412;
-  const FX_EUR_USD = 1.08; // fallback FX
+  const FX_EUR_USD = STATE.eurusd || 1.08; // dynamic with fallback
   const CONVERSION = TTF_TO_USD_MMBTU / FX_EUR_USD;
 
   sortedTickers.forEach((ticker, idx) => {
