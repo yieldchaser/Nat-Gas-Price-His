@@ -1287,8 +1287,17 @@ async function init() {
         scheduleSpreadHeatmap(true);
       } else if (STATE.activeTab === 'curve' && STATE.renderedTabs.curve) {
         updateCurveChart();
-      } else if (STATE.activeTab === 'daily' && STATE.renderedTabs.daily) {
-        updateDailyTracker();
+      }
+      // Always refresh the daily tab when live data arrives — its charts
+      // (monthly seasonality, weekly, annual) depend on STATE.liveData['NG=F']
+      // which is empty during the initial tab render.
+      if (STATE.renderedTabs.daily) {
+        if (STATE.activeTab === 'daily') {
+          updateDailyTracker();
+        } else {
+          // Reset so the next visit triggers a full re-render with live data
+          STATE.renderedTabs.daily = false;
+        }
       }
     });
   } catch (e) {
@@ -2587,9 +2596,9 @@ function updateSpreadChart() {
   const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
 
   // Init/reset visible years and range when pair/instrument changes
+  const currentYear = new Date().getFullYear();
   const pairKey = `${instrument}|${front}|${back}`;
   if (!STATE.spreadPinnedYears) {
-    const currentYear = new Date().getFullYear();
     const defaults = new Set();
     const historicalDefaults = allYearsSorted
       .filter(y => y < currentYear)
@@ -3012,7 +3021,10 @@ function renderSpreadResolutionChart() {
     color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
   });
-  zeroLine.setData([{ time:-519, value:0 }, { time:0, value:0 }]); // Arbitrary range
+  const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
+  const _zeroStart = new Date(_zeroBase + 1 * 86400000).toISOString().split('T')[0];
+  const _zeroEnd   = new Date(_zeroBase + 519 * 86400000).toISOString().split('T')[0];
+  zeroLine.setData([{ time: _zeroStart, value: 0 }, { time: _zeroEnd, value: 0 }]);
 
   // Gather years based on mode
   const currentYear = new Date().getFullYear();
@@ -5022,7 +5034,7 @@ function _renderAnnualPerformance(data) {
 }
 </script>
 
-
+<script>
 // ─── GLOBAL CROSS-TAB NAVIGATION ─────────────────────────────────────────────
 function navigateTo(tab, params) {
   params = params || {};
