@@ -852,6 +852,14 @@ function renderPricesControls() {
           ${view.compare && compareYears.length ? `<select id="prices-compare-year">${compareYears.map(year => `<option value="${year}" ${year === view.compareYear ? 'selected' : ''}>${year}</option>`).join('')}</select>` : ''}
         </div>
       </div>
+      <div class="ctrl-sep"></div>
+      <div class="ctrl-group">
+        <div class="ctrl-group-label">X-Axis</div>
+        <div class="segment-switch" id="prices-axis-mode-switch">
+          <button class="segment-btn ${!view.tradingDays ? 'active' : ''}" data-axismode="cal" data-tone="${meta.tone}">Cal Date</button>
+          <button class="segment-btn ${view.tradingDays ? 'active' : ''}" data-axismode="tday" data-tone="${meta.tone}">T-Day</button>
+        </div>
+      </div>
     `}
     <div class="ctrl-hint-badge">
       <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><line x1="1" y1="5.5" x2="10" y2="5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><polyline points="7,3 10,5.5 7,8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><polyline points="4,3 1,5.5 4,8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -913,6 +921,19 @@ function renderPricesControls() {
   if (compareSelect) {
     compareSelect.addEventListener('change', event => {
       STATE.priceView.compareYear = parseInt(event.target.value, 10) || null;
+      schedulePricesChartUpdate();
+    });
+  }
+
+  const axisModeSwitch = document.getElementById('prices-axis-mode-switch');
+  if (axisModeSwitch) {
+    axisModeSwitch.addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn[data-axismode]');
+      if (!btn) return;
+      const newMode = btn.dataset.axismode === 'tday';
+      if (STATE.priceView.tradingDays === newMode) return;
+      STATE.priceView.tradingDays = newMode;
+      renderPricesControls();
       schedulePricesChartUpdate();
     });
   }
@@ -1121,9 +1142,11 @@ function renderPricesHistoryTable(context) {
     const rows = rowData.map((r, i) => {
       const isNewest = i === 0;
       const rowBg = isNewest ? 'background:rgba(255,255,255,0.03);' : '';
-      const dot = isNewest ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-hh);margin-right:5px;vertical-align:middle;"></span>` : '';
-      return `<tr style="${rowBg}">
-        <td style="text-align:left;color:${isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
+      const isActive = String(r.year) === String(view.year);
+      const activeBg = isActive ? 'background:rgba(0,212,255,0.12);outline:1px solid rgba(0,212,255,0.3);' : rowBg;
+      const dot = isActive ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-hh);margin-right:5px;vertical-align:middle;"></span>` : '';
+      return `<tr style="${activeBg}cursor:pointer;" title="Load ${r.year} contract" onclick="(function(){STATE.priceView.month='${view.month}';STATE.priceView.year=${r.year};STATE.priceView.instrument='hh';resetPriceWindow(STATE.priceView);renderPricesControls();schedulePricesChartUpdate();})()">
+        <td style="text-align:left;color:${isActive ? 'var(--accent-hh)' : isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
         <td>${formatInstrumentValue('hh', r.price)}</td>
         <td style="color:var(--text-secondary);font-size:12px;">${r.rank != null ? `#${r.rank}` : '--'}</td>
         <td style="padding:6px 10px 6px 4px;">${posBar(r.price)}</td>
@@ -1146,7 +1169,7 @@ function renderPricesHistoryTable(context) {
   }
 
   if (instrument === 'ttf') {
-    const years = getAvailableContractYears('ttf', view.month).slice(0, 12);
+    const years = getAvailableContractYears('ttf', view.month);
     const rowData = [];
     years.forEach(year => {
       const data = getTTFContractData(getPriceTicker('ttf', view.month, year));
@@ -1173,10 +1196,11 @@ function renderPricesHistoryTable(context) {
 
     const rows = rowData.map((r, i) => {
       const isNewest = i === 0;
-      const rowBg = isNewest ? 'background:rgba(255,255,255,0.03);' : '';
-      const dot = isNewest ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-ttf);margin-right:5px;vertical-align:middle;"></span>` : '';
-      return `<tr style="${rowBg}">
-        <td style="text-align:left;color:${isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
+      const isActive = String(r.year) === String(view.year);
+      const activeBg = isActive ? 'background:rgba(255,140,0,0.12);outline:1px solid rgba(255,140,0,0.3);' : (isNewest ? 'background:rgba(255,255,255,0.03);' : '');
+      const dot = isActive ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-ttf);margin-right:5px;vertical-align:middle;"></span>` : '';
+      return `<tr style="${activeBg}cursor:pointer;" title="Load ${r.year} contract" onclick="(function(){STATE.priceView.month='${view.month}';STATE.priceView.year=${r.year};STATE.priceView.instrument='ttf';resetPriceWindow(STATE.priceView);renderPricesControls();schedulePricesChartUpdate();})()">
+        <td style="text-align:left;color:${isActive ? 'var(--accent-ttf)' : isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
         <td>${formatInstrumentValue('ttf', r.price)}</td>
         <td style="color:var(--text-secondary);font-size:12px;">${r.rank != null ? `#${r.rank}` : '--'}</td>
         <td style="padding:6px 10px 6px 4px;">${posBar(r.price)}</td>
@@ -1240,7 +1264,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
   const view = STATE.priceView;
   const meta = getPriceInstrumentMeta(view.instrument);
   const isSpot = view.instrument === 'spot';
-  const useTradingAxis = !isSpot && view.compare;
+  const useTradingAxis = !isSpot && (view.compare || view.tradingDays);
   const primary = getPrimaryPriceSeries(view);
   const compare = getComparePriceSeries(view);
   const ticker = primary.ticker;
