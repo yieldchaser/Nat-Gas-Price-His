@@ -2855,15 +2855,16 @@ function getCurveSeason(monthIdx) {
   return 'shoulder';
 }
 
-function buildCurveSlot(baseDate, offset) {
+function buildCurveSlot(baseDate, offset, instrument = 'hh') {
   const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + offset, 1);
   const yr = d.getFullYear();
   const monthIdx = d.getMonth();
   const month = MONTHS[monthIdx];
   const yy = yr % 100;
   const pad = yy < 10 ? '0' + yy : '' + yy;
-  const ticker = `NG${MONTH_CODES[month]}${pad}`;
-  const data = getContractData(ticker);
+  const prefix = instrument === 'ttf' ? 'TG' : 'NG';
+  const ticker = `${prefix}${MONTH_CODES[month]}${pad}`;
+  const data = instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker);
   const last = data.length ? data[data.length - 1] : null;
 
   return {
@@ -3028,12 +3029,29 @@ function renderCurveAnnotations() {
   const labelStride = Math.max(1, Math.ceil(38 / Math.max(medianSpacing, 10)));
   const lastVisibleIndex = visiblePoints.length - 1;
 
+  let lastLabelX = -1000;
+  const LABEL_MIN_DISTANCE = 50;
+
   layer.innerHTML = visiblePoints.map((point, index) => {
     const dropHeight = Math.max(10, height - point.y - bottomInset);
-    const showLabel = index === 0
-      || index === lastVisibleIndex
-      || isCurveTurningPoint(visiblePoints, index)
-      || index % labelStride === 0;
+    const isTurning = isCurveTurningPoint(visiblePoints, index);
+    
+    // Logic: 
+    // 1. Always show first and last.
+    // 2. Show turning points if they aren't too close to the previous label.
+    // 3. Show stride points if they aren't too close to the previous label.
+    let showLabel = index === 0 || index === lastVisibleIndex;
+    
+    if (!showLabel && (isTurning || index % labelStride === 0)) {
+      if (Math.abs(point.x - lastLabelX) > LABEL_MIN_DISTANCE) {
+        showLabel = true;
+      }
+    }
+
+    if (showLabel) {
+      lastLabelX = point.x;
+    }
+
     return `<div class="curve-annotation" style="left:${point.x.toFixed(2)}px;top:${point.y.toFixed(2)}px;">
       <div class="curve-drop-line" style="height:${dropHeight.toFixed(2)}px;"></div>
       <div class="curve-drop-dot"></div>
@@ -3098,10 +3116,11 @@ function syncCurveVisibleWindow(chart, slots, start, end) {
 }
 
 function buildForwardCurveData() {
+  const instrument = getCurveInstrument();
   const baseDate = new Date();
   const rawSlots = [];
   for (let offset = 0; offset < FORWARD_CURVE_HORIZON + FORWARD_CURVE_FETCH_BUFFER; offset++) {
-    rawSlots.push(buildCurveSlot(baseDate, offset));
+    rawSlots.push(buildCurveSlot(baseDate, offset, instrument));
   }
 
   const latestQuoteStamp = rawSlots.reduce((max, slot) => {
@@ -3208,12 +3227,16 @@ function renderCurveMetrics(curveData, windowContext) {
   const metricsEl = document.getElementById('curve-metrics');
   if (!metricsEl || !curveData || !windowContext) return;
 
+  const instrument = getCurveInstrument();
+  const meta = getPriceInstrumentMeta(instrument);
+  const fmt = val => Number.isFinite(val) ? `${meta.currency}${val.toFixed(3)}` : 'N/A';
+  
   const chip = (label, val, color = 'var(--text-primary)') =>
     `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color};">${val}</div></div>`;
   const sep = `<div class="ctrl-sep"></div>`;
   const slopeLabel = windowContext.slope == null
     ? 'N/A'
-    : `${windowContext.slope >= 0 ? '+' : ''}$${windowContext.slope.toFixed(3)} · ${windowContext.slope >= 0 ? 'Contango' : 'Backwardation'}`;
+    : `${windowContext.slope >= 0 ? '+' : ''}${fmt(windowContext.slope)} · ${windowContext.slope >= 0 ? 'Contango' : 'Backwardation'}`;
   const slopeColor = windowContext.slope == null
     ? 'var(--text-muted)'
     : (windowContext.slope >= 0 ? 'var(--positive)' : 'var(--negative)');
@@ -3233,17 +3256,17 @@ function renderCurveMetrics(curveData, windowContext) {
   metricsEl.innerHTML = [
     chip('Coverage', `${windowContext.coverageText} quoted`, coverageColor),
     sep,
-    chip('Front Quote', windowContext.firstQuoted ? `${formatCurveValue(windowContext.firstQuoted.price)} · ${windowContext.firstQuoted.label}` : 'N/A', 'var(--accent-hh)'),
+    chip('Front Quote', windowContext.firstQuoted ? `${fmt(windowContext.firstQuoted.price)} · ${windowContext.firstQuoted.label}` : 'N/A', meta.color),
     sep,
-    chip('Back Quote', windowContext.lastQuoted ? `${formatCurveValue(windowContext.lastQuoted.price)} · ${windowContext.lastQuoted.label}` : 'N/A'),
+    chip('Back Quote', windowContext.lastQuoted ? `${fmt(windowContext.lastQuoted.price)} · ${windowContext.lastQuoted.label}` : 'N/A'),
     sep,
     chip('Slope', slopeLabel, slopeColor),
     sep,
-    chip('Winter Avg', formatCurveValue(windowContext.winterAvg), '#f5f7fb'),
+    chip('Winter Avg', fmt(windowContext.winterAvg), '#f5f7fb'),
     sep,
-    chip('Summer Avg', formatCurveValue(windowContext.summerAvg), '#c5c8cf'),
+    chip('Summer Avg', fmt(windowContext.summerAvg), '#c5c8cf'),
     sep,
-    chip('W/S Premium', formatCurveValue(windowContext.premium), windowContext.premium == null ? 'var(--text-muted)' : (windowContext.premium >= 0 ? 'var(--positive)' : 'var(--negative)')),
+    chip('W/S Premium', fmt(windowContext.premium), windowContext.premium == null ? 'var(--text-muted)' : (windowContext.premium >= 0 ? 'var(--positive)' : 'var(--negative)')),
   ].join('') + (notes.length
     ? `<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;color:var(--text-muted);">${notes.join(' ')}</div>`
     : '');
@@ -3253,6 +3276,8 @@ function renderCurveTable(curveData, windowContext) {
   const tableEl = document.getElementById('curve-table');
   if (!tableEl || !curveData || !windowContext) return;
 
+  const instrument = getCurveInstrument();
+  const meta = getPriceInstrumentMeta(instrument);
   const quotedPrices = curveData.quotedSlots.map(slot => slot.price);
   const priceMin = quotedPrices.length ? Math.min(...quotedPrices) : 0;
   const priceMax = quotedPrices.length ? Math.max(...quotedPrices) : 0;
@@ -3272,10 +3297,10 @@ function renderCurveTable(curveData, windowContext) {
     const rowStyle = `${inWindow ? 'background:rgba(255,255,255,0.03);' : ''}${slot.missing ? 'opacity:0.72;' : ''}`;
     const barWidth = Number.isFinite(slot.price) ? ((slot.price - priceMin) / priceRange * 40).toFixed(1) : '0';
     const bar = Number.isFinite(slot.price)
-      ? `<span style="display:inline-block;width:${barWidth}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`
+      ? `<span style="display:inline-block;width:${barWidth}px;height:3px;background:${meta.color};border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`
       : '';
     const priceHtml = Number.isFinite(slot.price)
-      ? `$${slot.price.toFixed(3)}${bar}`
+      ? `${meta.currency}${slot.price.toFixed(3)}${bar}`
       : `<span style="color:var(--text-muted);">—</span>`;
     const quoteHtml = slot.quoteDate
       ? formatDisplayDate(slot.quoteDate)
@@ -3305,14 +3330,34 @@ function renderCurveTab() {
       <div class="contract-header" id="curve-header">
         <div class="ch-left">
           <div class="ch-top">
-            <span class="ticker" style="color:var(--accent-hh);">FORWARD CURVE</span>
-            <span class="instrument-stamp"><span class="instrument-dot" style="background:var(--accent-hh);border-radius:50%;display:inline-block;width:7px;height:7px;"></span>Henry Hub</span>
+            <span class="ticker" id="curve-ticker" style="color:var(--accent-hh);">FORWARD CURVE</span>
+            <span class="instrument-stamp"><span class="instrument-dot" id="curve-dot" style="background:var(--accent-hh);border-radius:50%;display:inline-block;width:7px;height:7px;"></span><span id="curve-instrument-label">Henry Hub</span></span>
           </div>
           <span class="desc" id="curve-desc">Live Futures Strip</span>
         </div>
         <div class="ch-right">
           <span class="price" id="curve-price" style="margin-left:0;">--</span>
           <span class="change" id="curve-change" style="font-size:12px;color:var(--text-muted);"></span>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:var(--gap);">
+        <div class="ctrl-toolbar">
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Market</div>
+            <div class="segment-switch" id="curve-instrument-switch">
+              <button class="segment-btn active" data-tone="hh" data-val="hh">Henry Hub</button>
+              <button class="segment-btn" data-tone="ttf" data-val="ttf">Dutch TTF</button>
+            </div>
+          </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Horizon</div>
+            <div class="segment-switch" id="curve-horizon-switch">
+              <button class="segment-btn" data-val="12">12M</button>
+              <button class="segment-btn" data-val="24">24M</button>
+              <button class="segment-btn active" data-val="72">Full Strip (72M)</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="flex gap" style="flex-wrap:wrap;">
@@ -3347,13 +3392,37 @@ function renderCurveTab() {
     `;
     document.getElementById('curve-window-start').addEventListener('input', onCurveSlider);
     document.getElementById('curve-window-end').addEventListener('input', onCurveSlider);
+    document.getElementById('curve-instrument-switch').addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#curve-instrument-switch .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      delete STATE.curveView; // reset view on switch
+      updateCurveChart();
+    });
+    document.getElementById('curve-horizon-switch').addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#curve-horizon-switch .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const h = parseInt(btn.dataset.val);
+      STATE.curveView = { rangeStart: 0, rangeEnd: h - 1 };
+      updateCurveChart();
+    });
   }
   updateCurveChart();
+}
+
+function getCurveInstrument() {
+  const btn = document.querySelector('#curve-instrument-switch .segment-btn.active');
+  return btn ? btn.dataset.val : 'hh';
 }
 
 function updateCurveChart() {
   const curveData = buildForwardCurveData();
   const slots = curveData.slots;
+  const instrument = getCurveInstrument();
+  const meta = getPriceInstrumentMeta(instrument);
   const palette = getNeutralChartPalette();
 
   if (!slots.length || !curveData.firstQuoted) {
@@ -3361,10 +3430,15 @@ function updateCurveChart() {
     document.getElementById('curve-desc').textContent = 'No quoted curve data available';
     document.getElementById('curve-price').textContent = '--';
     document.getElementById('curve-change').textContent = '';
-    document.getElementById('curve-metrics').innerHTML = `<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted);padding:8px 0;">No forward quotes available for the current strip.</div>`;
+    document.getElementById('curve-metrics').innerHTML = `<div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);padding:8px 0;">No forward quotes available for the current strip.</div>`;
     document.getElementById('curve-table').innerHTML = '';
     return;
   }
+
+  // Update header text/colors
+  document.getElementById('curve-ticker').style.color = meta.color;
+  document.getElementById('curve-dot').style.background = meta.color;
+  document.getElementById('curve-instrument-label').textContent = meta.label;
 
   document.getElementById('curve-desc').textContent = `${slots.length}-month strip — ${slots[0].label} to ${slots[slots.length - 1].label} • ${curveData.quotedSlots.length}/${slots.length} quoted`;
 
@@ -3379,7 +3453,7 @@ function updateCurveChart() {
   });
 
   const lineSeries = chart.addLineSeries({
-    color: palette.main,
+    color: meta.color,
     lineWidth: 2,
     priceLineVisible: false,
     lastValueVisible: false,
@@ -3414,25 +3488,25 @@ function updateCurveChart() {
     titleColor: '#f5f7fb',
     seriesConfigs: [{
       series: lineSeries,
-      label: 'HH curve',
-      color: palette.main,
+      label: `${meta.prefix} curve`,
+      color: meta.color,
       emphasis: true,
       getPoint: param => curveLookup.get(timeKey(param.time)),
-      formatValue: value => `$${value.toFixed(3)}`,
+      formatValue: value => `${meta.currency}${value.toFixed(3)}`,
     }],
     getSubtitle: () => {
       const windowContext = STATE._curveWindowContext || getCurveWindowContext(STATE._curveSlots || slots);
-      const slotSet = STATE._curveSlots || slots;
-      if (!windowContext || !windowContext.count) return 'Henry Hub strip';
-      return `Henry Hub strip | ${slotSet[windowContext.start].label} to ${slotSet[windowContext.end].label} • ${windowContext.coverageText} quoted`;
+      if (!windowContext || !windowContext.count) return `${meta.label} strip`;
+      return `${meta.label} strip • Window Slope: ${windowContext.slope >= 0 ? '+' : ''}${meta.currency}${windowContext.slope != null ? windowContext.slope.toFixed(3) : 'N/A'}`;
     },
     getMetrics: () => {
       const windowContext = STATE._curveWindowContext || getCurveWindowContext(STATE._curveSlots || slots);
+      const fmt = val => Number.isFinite(val) ? `${meta.currency}${val.toFixed(3)}` : 'N/A';
       return [
-        { label: 'Max', value: formatCurveValue(windowContext.stats.count ? windowContext.stats.max : null) },
-        { label: 'Min', value: formatCurveValue(windowContext.stats.count ? windowContext.stats.min : null) },
-        { label: 'First', value: windowContext.firstQuoted ? `${formatCurveValue(windowContext.firstQuoted.price)} • ${windowContext.firstQuoted.label}` : 'N/A' },
-        { label: 'Last', value: windowContext.lastQuoted ? `${formatCurveValue(windowContext.lastQuoted.price)} • ${windowContext.lastQuoted.label}` : 'N/A' },
+        { label: 'Max', value: fmt(windowContext.stats.count ? windowContext.stats.max : null) },
+        { label: 'Min', value: fmt(windowContext.stats.count ? windowContext.stats.min : null) },
+        { label: 'First', value: windowContext.firstQuoted ? `${fmt(windowContext.firstQuoted.price)} • ${windowContext.firstQuoted.label}` : 'N/A' },
+        { label: 'Last', value: windowContext.lastQuoted ? `${fmt(windowContext.lastQuoted.price)} • ${windowContext.lastQuoted.label}` : 'N/A' },
       ];
     },
     getTitle: param => {
@@ -3451,8 +3525,8 @@ function updateCurveChart() {
   const curveHeaderPrice = document.getElementById('curve-price');
   const curveHeaderChange = document.getElementById('curve-change');
   if (curveHeaderPrice) {
-    curveHeaderPrice.textContent = formatCurveValue(curveData.firstQuoted.price);
-    curveHeaderPrice.style.color = 'var(--accent-hh)';
+    curveHeaderPrice.textContent = `${meta.currency}${curveData.firstQuoted.price.toFixed(3)}`;
+    curveHeaderPrice.style.color = meta.color;
   }
   if (curveHeaderChange) curveHeaderChange.textContent = `${curveData.firstQuoted.label} prompt month · ${curveData.quotedSlots.length}/${slots.length} quoted`;
 
