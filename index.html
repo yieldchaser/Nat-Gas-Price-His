@@ -2127,41 +2127,48 @@ function syncSpreadHeatmapTitle() {
   titleEl.textContent = `Spread Heatmap — Average Calendar Spread (Last 5 Years · ${instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub'})`;
 }
 
+function clearSpreadPins() {
+  STATE.spreadPinnedYears = new Set();
+  const yearSelect = document.getElementById('spread-year');
+  const selectedYear = parseInt(yearSelect?.value, 10);
+  if (Number.isFinite(selectedYear)) {
+    STATE.spreadVisibleYears = new Set([selectedYear]);
+  }
+  scheduleSpreadChartUpdate(true);
+}
+
 function toggleSpreadYear(yr) {
   yr = parseInt(yr);
   const yearSelect = document.getElementById('spread-year');
   const selectedYear = parseInt(yearSelect?.value, 10);
+  
   if (yr === selectedYear) {
-    const visibleOthers = [...(STATE.spreadVisibleYears || new Set())]
-      .filter(value => Number.isFinite(value) && value !== selectedYear)
-      .sort((a, b) => b - a);
-    const optionFallback = yearSelect
-      ? [...yearSelect.options]
-          .map(option => parseInt(option.value, 10))
-          .find(value => Number.isFinite(value) && value !== selectedYear)
-      : null;
-    const fallbackYear = visibleOthers[0] ?? optionFallback;
-    if (!Number.isFinite(fallbackYear) || !yearSelect) return;
-    yearSelect.value = String(fallbackYear);
-    yearSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    // If the user clicks the selected year, we treat it as an attempt to focus 
+    // but we don't allow "unpinning" it because it's the primary series.
     return;
   }
+  
   if (!STATE.spreadPinnedYears) STATE.spreadPinnedYears = new Set();
   if (STATE.spreadPinnedYears.has(yr)) {
     STATE.spreadPinnedYears.delete(yr);
   } else {
     STATE.spreadPinnedYears.add(yr);
   }
+  
   if (!STATE.spreadVisibleYears) STATE.spreadVisibleYears = new Set();
   STATE.spreadVisibleYears = new Set(STATE.spreadPinnedYears);
   STATE.spreadVisibleYears.add(selectedYear);
+  
   const on = STATE.spreadPinnedYears.has(yr);
   const series = STATE.spreadSeriesMap && STATE.spreadSeriesMap.get(yr);
   if (series) series.applyOptions({ visible: on });
+  
   const chip = document.querySelector(`[data-spread-yr="${yr}"]`);
   if (chip) {
+    const color = getSpreadYearColor(yr);
     chip.style.opacity = on ? '1' : '0.28';
-    chip.style.background = on ? `${getSpreadYearColor(yr)}22` : 'transparent';
+    chip.style.background = on ? `${color}22` : 'transparent';
+    chip.style.border = `1px solid ${on ? color : 'rgba(255,255,255,0.15)'}`;
   }
 }
 
@@ -2332,7 +2339,9 @@ function populateSpreadYears() {
     .filter(y => computeSpread(front, back, y, instrument).points.length > 0);
   sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
   if (years.length) {
-    sel.value = String(currentVal && years.includes(currentVal) ? currentVal : years[0]);
+    const currentYear = new Date().getFullYear();
+    const fallback = years.includes(currentYear) ? currentYear : years[0];
+    sel.value = String(currentVal && years.includes(currentVal) ? currentVal : fallback);
   }
 }
 
@@ -2462,13 +2471,19 @@ function updateSpreadChart() {
 
   // Init/reset visible years and range when pair/instrument changes
   const pairKey = `${instrument}|${front}|${back}`;
-  if (!STATE.spreadPinnedYears || STATE.spreadPairKey !== pairKey) {
+  if (!STATE.spreadPinnedYears) {
+    const currentYear = new Date().getFullYear();
+    const defaults = new Set();
+    const historicalDefaults = allYearsSorted
+      .filter(y => y < currentYear)
+      .slice(0, 4);
+    historicalDefaults.forEach(y => defaults.add(y));
+    STATE.spreadPinnedYears = defaults;
+  }
+
+  if (STATE.spreadPairKey !== pairKey) {
     STATE.spreadPairKey = pairKey;
     STATE.spreadView = { rangeStart: 0, rangeEnd: null };
-    // Default: selected year + 4 most recent other years
-    const defaults = new Set();
-    allYearsSorted.filter(y => y !== year).slice(0, 4).forEach(y => defaults.add(y));
-    STATE.spreadPinnedYears = defaults;
   }
   STATE.spreadVisibleYears = new Set(STATE.spreadPinnedYears || []);
   STATE.spreadVisibleYears.add(year);
