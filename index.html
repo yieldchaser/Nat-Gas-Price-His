@@ -987,15 +987,19 @@ async function loadHistoricalData() {
   const ttfPromises = monthNames.map(m => fetchJSON(`data/ttf/ttf_${m}.json`));
   const spotPromises = monthNames.map(m => fetchJSON(`data/spot/spot_${m}.json`));
   const expiryPromise = fetchJSON('data/expiry_prices.json');
+  const ngContPromise = fetchJSON('data/ng_continuous.json');
 
-  const [hhResults, ttfResults, spotResults, expiryData] = await Promise.all([
+  const [hhResults, ttfResults, spotResults, expiryData, ngContData] = await Promise.all([
     Promise.all(hhPromises),
     Promise.all(ttfPromises),
     Promise.all(spotPromises),
     expiryPromise,
+    ngContPromise,
   ]);
 
   setLoadProgress(40, 'PROCESSING DATA...');
+
+  if (ngContData) STATE._ngContinuous = ngContData;
 
   MONTHS.forEach((m, i) => {
     if (hhResults[i]) STATE.hh[m] = hhResults[i];
@@ -1075,8 +1079,8 @@ async function loadLiveData() {
   const ttfTickers = getActiveTTFTickers().slice(0, 4);
   const allTickers = [...hhTickers, ...ttfTickers];
 
-  // Fetch front month with 'max' for history AND '2y' for daily density
-  const frontMonthMax = fetchYahoo('NG=F', 'max');
+  // Fetch front month with '2y' for current daily density
+  // We use our own data/ng_continuous.json as the baseline for history
   const frontMonthRecent = fetchYahoo('NG=F', '2y');
 
   const batchSize = 10;
@@ -1088,13 +1092,14 @@ async function loadLiveData() {
     setLoadProgress(pct, `FETCHING CONTRACTS... ${Object.keys(STATE.liveData).length} loaded`);
   }
 
-  // Merge sparse historical data with dense recent data
-  const [fmMax, fmRec] = await Promise.all([frontMonthMax, frontMonthRecent]);
-  let fm = fmMax || [];
+  // Merge dense historical database with live Yahoo data (Yahoo overwrites on overlap)
+  const [fmRec] = await Promise.all([frontMonthRecent]);
+  let fm = STATE._ngContinuous || [];
   if (fmRec && fmRec.length > 0) {
     const recMap = new Map(fmRec.map(p => [p.date, p]));
-    const maxFiltered = (fmMax || []).filter(p => !recMap.has(p.date));
-    fm = [...maxFiltered, ...fmRec].sort((a, b) => a.date.localeCompare(b.date));
+    // Remove dates from base that are covered by Yahoo's better recent density
+    const baseFiltered = fm.filter(p => !recMap.has(p.date));
+    fm = [...baseFiltered, ...fmRec].sort((a, b) => a.date.localeCompare(b.date));
   }
 
   if (fm && fm.length > 0) {
@@ -4886,9 +4891,6 @@ function updateDailyMainChart(range) {
   });
   
   // UNIFIED ZOOM LOGIC: Use setVisibleRange instead of data filtering
-  const disclaimerId = 'daily-main-disclaimer';
-  let disclaimer = document.getElementById(disclaimerId);
-
   if (range && range !== 'ALL') {
     const months = range === '1M' ? 1 : range === '3M' ? 3 : range === '6M' ? 6 :
                    range === '1Y' ? 12 : range === '2Y' ? 24 : range === '3Y' ? 36 :
@@ -4898,18 +4900,8 @@ function updateDailyMainChart(range) {
     try {
       chart.timeScale().setVisibleRange({ from: cutoffStr, to: data[data.length-1].date });
     } catch(e) { chart.timeScale().fitContent(); }
-    if (disclaimer) disclaimer.style.display = 'none';
   } else {
     chart.timeScale().fitContent();
-    if (!disclaimer) {
-      disclaimer = document.createElement('div');
-      disclaimer.id = disclaimerId;
-      disclaimer.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:5;background:rgba(0,0,0,0.4);padding:2px 8px;border-radius:10px;font-size:10px;color:rgba(255,255,255,0.5);pointer-events:none;';
-      disclaimer.textContent = 'Pre-2020 data: weekly sampling';
-      chartContainer.style.position = 'relative';
-      chartContainer.appendChild(disclaimer);
-    }
-    disclaimer.style.display = 'block';
   }
 
   // Store for slider sync — defer one animation frame so the chart viewport

@@ -219,6 +219,51 @@ def build_expiry_prices(base_dir, out_dir):
         json.dump(expiry, f, separators=(',', ':'), sort_keys=True)
     print(f"  {out_path}: {len(expiry)} years")
 
+def build_ng_continuous(base_dir, out_dir):
+    """Build a continuous NG=F front-month series from individual contracts."""
+    year_dir = os.path.join(base_dir, 'Henry Hub', 'Yearwise')
+    # all_data[date] = list of (delivery_date, price)
+    all_data = {}
+    
+    # Month codes to delivery month index
+    DELIVERY_MAP = {v[1]: int(k) for k, v in MONTH_CODES.items()}
+
+    print("  Scanning Yearwise CSVs for continuous NG series...")
+    years = [d for d in os.listdir(year_dir) if os.path.isdir(os.path.join(year_dir, d))]
+    for yr_folder in sorted(years):
+        folder_path = os.path.join(year_dir, yr_folder)
+        for csv_file in os.listdir(folder_path):
+            if not csv_file.endswith('.csv'): continue
+            name = csv_file.replace('.csv', '')
+            # ngf19 -> month=F, yr=19
+            m_code = name[2:3].upper()
+            yr_short = name[3:]
+            if m_code not in DELIVERY_MAP: continue
+            
+            m_idx = DELIVERY_MAP[m_code]
+            yr_full = int(yr_short) + (2000 if int(yr_short) < 50 else 1900)
+            delivery_date = f"{yr_full}-{m_idx:02d}-01"
+            
+            rows = read_csv(os.path.join(folder_path, csv_file))
+            for r in rows:
+                dt = r['date']
+                if dt not in all_data:
+                    all_data[dt] = []
+                all_data[dt].append({'delivery': delivery_date, 'p': r['p']})
+
+    # For each date, pick the contract with the earliest delivery date
+    continuous = []
+    for dt in sorted(all_data.keys()):
+        # Sort by delivery date ascending
+        pts = sorted(all_data[dt], key=lambda x: x['delivery'])
+        # Pick the one with the earliest delivery
+        continuous.append({'date': dt, 'p': pts[0]['p']})
+
+    out_path = os.path.join(out_dir, 'ng_continuous.json')
+    with open(out_path, 'w') as f:
+        json.dump(continuous, f, separators=(',', ':'))
+    print(f"  {out_path}: {len(continuous)} data points, range {continuous[0]['date']} to {continuous[-1]['date']}")
+
 if __name__ == '__main__':
     base = 'Cleaned_Database'
     out = 'data'
@@ -230,4 +275,6 @@ if __name__ == '__main__':
     build_spot_from_eia(out)
     print("Building Expiry Prices...")
     build_expiry_prices(base, out)
+    print("Building Continuous NG History...")
+    build_ng_continuous(base, out)
     print("Done!")
