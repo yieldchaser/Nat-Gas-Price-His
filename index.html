@@ -674,6 +674,26 @@ tr:hover td { background: var(--bg-card-hover); }
 }
 
 .expiry-month-active { color: var(--accent-hh) !important; background: rgba(0,212,255,0.08); }
+
+/* ═══════════════════════════════════════════════════════════
+   CHART RANGE CONTROLS (zoom buttons + slider)
+   ═══════════════════════════════════════════════════════════ */
+.chart-range-controls { display:flex; align-items:center; gap:8px; padding:6px 14px 8px; flex-wrap:wrap; }
+.zoom-btn { background:#1e1e2e; border:1px solid #2e2e3e; color:#888; padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:var(--font-mono); transition:all 0.15s ease; }
+.zoom-btn:hover { border-color:#3e3e5e; color:#bbb; }
+.zoom-btn.active { background:rgba(0,212,255,0.13); border-color:#00d4ff; color:#00d4ff; }
+.chart-range-slider { flex:1; min-width:80px; accent-color:#00d4ff; height:4px; cursor:pointer; }
+
+/* ═══════════════════════════════════════════════════════════
+   SERIES TOGGLE BAR
+   ═══════════════════════════════════════════════════════════ */
+.series-toggle-bar { display:flex; flex-wrap:wrap; gap:6px; padding:6px 14px 8px; }
+.series-pill { display:inline-flex; align-items:center; gap:5px; background:#1e1e2e; border:1px solid #2e2e3e; color:#888; padding:3px 10px; border-radius:12px; cursor:pointer; font-size:11px; font-family:var(--font-mono); transition:all 0.15s ease; }
+.series-pill:hover { border-color:#3e3e5e; color:#bbb; }
+.series-pill.active { border-color:rgba(0,212,255,0.34); color:#ccc; background:#1e1e2e; }
+.series-pill .swatch { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.series-pill.all-btn, .series-pill.none-btn { background:#111; color:#888; }
+.series-pill.all-btn:hover, .series-pill.none-btn:hover { color:#ccc; }
 </style>
 </head>
 <body>
@@ -4568,6 +4588,9 @@ function renderDailyTab() {
           </div>
         </div>
         <div class="chart-wrap" id="daily-main-chart" style="height:360px;"></div>
+        <div class="chart-range-controls" id="daily-main-range-controls">
+          <input type="range" class="chart-range-slider" id="daily-main-slider" min="0" max="100" value="100" style="flex:1;min-width:80px;">
+        </div>
       </div>
 
       <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
@@ -4606,6 +4629,7 @@ function renderDailyTab() {
       btn.classList.add('active');
       updateDailyMainChart(btn.dataset.range);
     });
+    _initDailyMainSlider();
   }
   updateDailyTracker();
 }
@@ -4713,6 +4737,11 @@ function updateDailyMainChart(range) {
   applyChartTimeScaleOptions(chart, { formatter: undefined, barSpacing: Math.max(2.5, Math.min(12, Math.floor(900 / filtered.length))), fixLeftEdge: true, fixRightEdge: true });
   chart.timeScale().fitContent();
 
+  // Store for slider sync
+  STATE._dailyMainChart = chart;
+  STATE._dailyMainAllData = data;
+  _syncDailyMainSlider(filtered);
+
   const dataLookup = new Map(filtered.map(p => [p.date, p]));
   attachChartTooltip({
     chart, container: chartContainer, titleColor: '#f5f7fb',
@@ -4727,6 +4756,39 @@ function updateDailyMainChart(range) {
         { label: '52W Low', value: stats.low52w ? '$' + stats.low52w.toFixed(3) : '\u2014' },
       ];
     },
+  });
+}
+
+// ─── DAILY MAIN CHART SLIDER ─────────────────────────────────────────────────
+function _syncDailyMainSlider(filteredData) {
+  const slider = document.getElementById('daily-main-slider');
+  if (!slider || !filteredData || !filteredData.length) return;
+  const allData = STATE._dailyMainAllData || filteredData;
+  if (!allData.length) return;
+  // Compute slider position: where does filteredData[0] sit within allData?
+  const firstDate = filteredData[0].date;
+  const idx = allData.findIndex(p => p.date >= firstDate);
+  const startPct = allData.length > 1 ? Math.round((idx / (allData.length - 1)) * 100) : 0;
+  slider.value = String(startPct);
+}
+
+function _initDailyMainSlider() {
+  const slider = document.getElementById('daily-main-slider');
+  if (!slider || slider.dataset.bound) return;
+  slider.dataset.bound = '1';
+  slider.addEventListener('input', () => {
+    const chart = STATE._dailyMainChart;
+    const allData = STATE._dailyMainAllData;
+    if (!chart || !allData || allData.length < 2) return;
+    const pct = parseInt(slider.value, 10) / 100;
+    const idx = Math.round(pct * (allData.length - 1));
+    const fromDate = allData[idx].date;
+    const toDate = allData[allData.length - 1].date;
+    try {
+      chart.timeScale().setVisibleRange({ from: fromDate, to: toDate });
+    } catch (_) {}
+    // Deactivate zoom buttons when slider is dragged manually
+    document.querySelectorAll('#daily-range-switch .segment-btn').forEach(b => b.classList.remove('active'));
   });
 }
 
