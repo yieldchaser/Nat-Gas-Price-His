@@ -3320,6 +3320,98 @@ function renderCurveTable(curveData, windowContext) {
   tableEl.innerHTML = tableHtml;
 }
 
+
+// ─── FORWARD CURVE UPGRADE 3: CAL STRIP AVERAGES ─────────────────────────────
+function renderCurveStrips(curveData) {
+  const containerEl = document.getElementById('curve-strips');
+  if (!containerEl || !curveData || !curveData.slots.length) return;
+
+  const currentYear = new Date().getFullYear();
+  const frontPrice = curveData.quotedSlots.length ? curveData.quotedSlots[0].price : null;
+  const strips = [];
+
+  // Group by year
+  const byYear = {};
+  curveData.slots.forEach(slot => {
+    if (!byYear[slot.year]) byYear[slot.year] = [];
+    byYear[slot.year].push(slot);
+  });
+
+  const getAvg = slots => {
+    const quoted = slots.filter(s => s.isQuote && Number.isFinite(s.price));
+    if (quoted.length === 0) return { avg: null, missing: slots.length };
+    const sum = quoted.reduce((s, slot) => s + slot.price, 0);
+    return { avg: sum / quoted.length, missing: slots.length - quoted.length, total: slots.length, quoted: quoted.length };
+  };
+
+  const getStruct = avg => {
+    if (avg == null || frontPrice == null) return '—';
+    const diff = avg - frontPrice;
+    if (Math.abs(diff) < 0.005) return '—';
+    return diff > 0 ? '<span style="color:var(--positive);">Contango</span>' : '<span style="color:var(--negative);">Back</span>';
+  };
+
+  // Build Cal Strips
+  Object.keys(byYear).sort().forEach(yr => {
+    const year = parseInt(yr);
+    if (year < currentYear) return;
+    const slots = byYear[yr];
+    if (slots.length < 1) return;
+    
+    // Cal strip (Jan-Dec) -> wait, maybe some early months have expired, but if they are in the curve they are active
+    const stat = getAvg(slots);
+    strips.push({ label: 'Cal ' + year, desc: 'Jan–Dec', stat });
+
+    // Summer strip (Apr-Oct)
+    const summerSlots = slots.filter(s => s.monthIdx >= 3 && s.monthIdx <= 9);
+    if (summerSlots.length > 0) {
+      strips.push({ label: 'Summer ' + String(year).slice(2), desc: 'Apr–Oct', stat: getAvg(summerSlots) });
+    }
+
+    // Winter strip (Nov-Mar) -> Nov/Dec of this year + Jan/Feb/Mar of NEXT year
+    if (byYear[year + 1]) {
+      const winterSlots = [
+        ...slots.filter(s => s.monthIdx === 10 || s.monthIdx === 11),
+        ...byYear[year + 1].filter(s => s.monthIdx >= 0 && s.monthIdx <= 2)
+      ];
+      if (winterSlots.length > 0) {
+        strips.push({ label: 'Winter ' + String(year).slice(2) + '/' + String(year+1).slice(2), desc: 'Nov–Mar', stat: getAvg(winterSlots) });
+      }
+    }
+  });
+
+  if (strips.length === 0) {
+    containerEl.innerHTML = '';
+    return;
+  }
+
+  const th = label => '<th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">' + label + '</th>';
+  let html = '<div class="card-title" style="padding:12px 16px 8px;">Strip Averages</div>';
+  html += '<div style="overflow-x:auto;"><table><thead><tr>' +
+    th('Strip') + th('Contracts') + th('Avg Price') + th('vs Front') + th('Structure') +
+    '</tr></thead><tbody>';
+
+  strips.forEach(strip => {
+    const s = strip.stat;
+    const avgStr = s.avg == null ? '—' : '$' + s.avg.toFixed(3);
+    const missingStr = s.missing > 0 ? ' <span style="font-size:10px;color:var(--negative);">' + s.quoted + '/' + s.total + ' quoted</span>' : '';
+    const vsFront = (s.avg != null && frontPrice != null) ? s.avg - frontPrice : null;
+    const vsFrontStr = vsFront == null ? '—' : (vsFront > 0 ? '+$' : '-$') + Math.abs(vsFront).toFixed(3);
+    const vsFrontColor = vsFront == null ? '' : (vsFront > 0 ? 'color:var(--positive);' : 'color:var(--negative);');
+    
+    html += '<tr>' +
+      '<td style="text-align:left;font-weight:600;">' + strip.label + '</td>' +
+      '<td style="text-align:left;color:var(--text-muted);">' + strip.desc + missingStr + '</td>' +
+      '<td style="text-align:left;font-family:var(--font-mono);">' + avgStr + '</td>' +
+      '<td style="text-align:left;font-family:var(--font-mono);' + vsFrontColor + '">' + vsFrontStr + '</td>' +
+      '<td style="text-align:left;">' + getStruct(s.avg) + '</td>' +
+      '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  containerEl.innerHTML = html;
+}
+
 function renderCurveTab() {
   const container = document.getElementById('tab-curve');
   if (!container.dataset.built) {
@@ -3587,6 +3679,7 @@ function syncCurveRangeFooter() {
 
   renderCurveMetrics(curveData, windowContext);
   renderCurveTable(curveData, windowContext);
+  renderCurveStrips(curveData);
   scheduleCurveAnnotationRender();
 }
 
