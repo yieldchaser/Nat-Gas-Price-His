@@ -4933,20 +4933,44 @@ function _renderMonthlySeasonality(data) {
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const monthReturns = Array.from({length:12}, () => []);
   const monthYearCounts = Array.from({length:12}, () => ({ pos: 0, total: 0 }));
-  const yearlyMonthData = new Map();
 
+  // Build a map of (year, month) -> { last close price } using correct field: pt.close ?? pt.p
+  // Yahoo data uses pt.p for close price; fall back to pt.close if present
+  const getClose = pt => (pt.close != null ? pt.close : pt.p);
+
+  const yearlyMonthData = new Map();
   data.forEach(pt => {
+    const close = getClose(pt);
+    if (close == null || close <= 0) return;
     const d = new Date(pt.date + 'T00:00:00Z');
-    const mo = d.getUTCMonth();
+    const mo = d.getUTCMonth();   // 0 = Jan … 11 = Dec
     const yr = d.getUTCFullYear();
-    const key = `${yr}-${mo}`;
-    if (!yearlyMonthData.has(key)) yearlyMonthData.set(key, { month: mo, year: yr, first: pt.p, last: pt.p });
-    else yearlyMonthData.get(key).last = pt.p;
+    const key = `${yr}-${String(mo).padStart(2,'0')}`;
+    if (!yearlyMonthData.has(key)) {
+      yearlyMonthData.set(key, { month: mo, year: yr, firstClose: close, lastClose: close });
+    } else {
+      yearlyMonthData.get(key).lastClose = close;
+    }
   });
 
-  for (const [, v] of yearlyMonthData) {
-    if (v.first <= 0) continue;
-    const ret = (v.last - v.first) / v.first * 100;
+  // Sort entries chronologically so we can look up the previous month's last close
+  const entries = [...yearlyMonthData.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  for (let i = 1; i < entries.length; i++) {
+    const [, v] = entries[i];
+    const [, prev] = entries[i - 1];
+
+    // Only use the previous month's last close as the baseline if it is the
+    // immediately preceding calendar month (handles year boundaries correctly)
+    const prevDate = new Date(Date.UTC(prev.year, prev.month, 1));
+    const currDate = new Date(Date.UTC(v.year, v.month, 1));
+    const diffMs = currDate - prevDate;
+    const diffMonths = Math.round(diffMs / (1000 * 60 * 60 * 24 * 30));
+    if (diffMonths !== 1) continue;   // skip gaps (e.g. missing months in data)
+
+    if (prev.lastClose <= 0) continue;
+    // Month-over-month return: this month's last close vs previous month's last close
+    const ret = (v.lastClose - prev.lastClose) / prev.lastClose * 100;
     monthReturns[v.month].push(ret);
     monthYearCounts[v.month].total++;
     if (ret >= 0) monthYearCounts[v.month].pos++;
@@ -4955,6 +4979,10 @@ function _renderMonthlySeasonality(data) {
   const avgs = monthReturns.map(rets => rets.length ? rets.reduce((s, r) => s + r, 0) / rets.length : 0);
   const maxAbs = Math.max(...avgs.map(Math.abs), 0.01);
 
+  // X-axis labels: use month names directly (Jan … Dec).
+  // Fixed reference dates "2024-MM-15" are used as time tokens for any
+  // LightweightCharts series if this chart is later ported; for the current
+  // pure-CSS rendering the MONTH_NAMES array is the authoritative label.
   let html = '<div class="card-title" style="padding:10px 14px 4px;">AVERAGE MONTHLY RETURN \u2014 NG=F <span style="font-size:10px;color:var(--text-muted);font-weight:400;">full history</span></div>' +
     '<div style="display:flex;align-items:flex-end;justify-content:space-around;padding:8px 14px 0;gap:4px;height:140px;">';
 
@@ -4963,8 +4991,10 @@ function _renderMonthlySeasonality(data) {
     const isPos = avg >= 0;
     const barH = Math.max(4, Math.floor(pct * 80));
     const { pos, total } = monthYearCounts[i];
-    html += '<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;" title="' + MONTH_NAMES[i] + ': ' + pos + ' of ' + total + ' years positive">' +
-      '<span style="font-family:var(--font-mono);font-size:9px;color:' + (isPos ? 'var(--positive)' : 'var(--negative)') + ';">' + (isPos ? '+' : '') + avg.toFixed(1) + '%</span>' +
+    // Use toFixed(2) so values like +0.049% are not rounded down to "+0.0%"
+    const label = (isPos ? '+' : '') + avg.toFixed(2) + '%';
+    html += '<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;" title="' + MONTH_NAMES[i] + ': ' + pos + ' of ' + total + ' months positive">' +
+      '<span style="font-family:var(--font-mono);font-size:9px;color:' + (isPos ? 'var(--positive)' : 'var(--negative)') + ';">' + label + '</span>' +
       '<div style="width:100%;display:flex;flex-direction:column;justify-content:' + (isPos ? 'flex-end' : 'flex-start') + ';height:84px;">' +
         '<div style="width:100%;height:' + barH + 'px;background:' + (isPos ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)') + ';border-radius:2px;"></div>' +
       '</div>' +
