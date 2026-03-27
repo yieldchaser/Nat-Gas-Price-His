@@ -3012,7 +3012,10 @@ function renderSpreadResolutionChart() {
     color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
   });
-  zeroLine.setData([{ time:-519, value:0 }, { time:0, value:0 }]); // Arbitrary range
+  const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
+  const _zeroStart = new Date(_zeroBase + 1 * 86400000).toISOString().split('T')[0];
+  const _zeroEnd   = new Date(_zeroBase + 519 * 86400000).toISOString().split('T')[0];
+  zeroLine.setData([{ time: _zeroStart, value: 0 }, { time: _zeroEnd, value: 0 }]);
 
   // Gather years based on mode
   const currentYear = new Date().getFullYear();
