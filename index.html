@@ -1354,6 +1354,7 @@ function getTTFContractData(ticker) {
 async function init() {
   try {
     await loadHistoricalData();
+    if (STATE._ngContinuous) STATE.liveData['NG=F'] = STATE._ngContinuous;
     buildSpotStatsCache();
     await buildSeasonalCache();
     await buildTTFSeasonalCache();
