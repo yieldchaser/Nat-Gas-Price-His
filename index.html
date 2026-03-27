@@ -2128,8 +2128,21 @@ function syncSpreadHeatmapTitle() {
 
 function toggleSpreadYear(yr) {
   yr = parseInt(yr);
-  const selectedYear = parseInt(document.getElementById('spread-year')?.value, 10);
+  const yearSelect = document.getElementById('spread-year');
+  const selectedYear = parseInt(yearSelect?.value, 10);
   if (yr === selectedYear) {
+    const visibleOthers = [...(STATE.spreadVisibleYears || new Set())]
+      .filter(value => Number.isFinite(value) && value !== selectedYear)
+      .sort((a, b) => b - a);
+    const optionFallback = yearSelect
+      ? [...yearSelect.options]
+          .map(option => parseInt(option.value, 10))
+          .find(value => Number.isFinite(value) && value !== selectedYear)
+      : null;
+    const fallbackYear = visibleOthers[0] ?? optionFallback;
+    if (!Number.isFinite(fallbackYear) || !yearSelect) return;
+    yearSelect.value = String(fallbackYear);
+    yearSelect.dispatchEvent(new Event('change', { bubbles: true }));
     return;
   }
   if (!STATE.spreadPinnedYears) STATE.spreadPinnedYears = new Set();
