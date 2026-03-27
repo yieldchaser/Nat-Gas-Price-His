@@ -3692,6 +3692,17 @@ function renderCurveTab() {
               <button class="segment-btn active" data-val="72">Full Strip (72M)</button>
             </div>
           </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
+            <div class="ctrl-group-label" style="color:var(--accent-hh);">Compare</div>
+            <select id="curve-compare" style="background:var(--bg-body);">
+              <option value="none" selected>Current</option>
+              <option value="1w">vs 1 Week Ago</option>
+              <option value="1m">vs 1 Month Ago</option>
+              <option value="3m">vs 3 Months Ago</option>
+              <option value="1y">vs 1 Year Ago</option>
+            </select>
+          </div>
         </div>
       </div>
       <div class="flex gap" style="flex-wrap:wrap;">
@@ -3725,6 +3736,7 @@ function renderCurveTab() {
       </div>
     `;
     document.getElementById('curve-window-start').addEventListener('input', onCurveSlider);
+    document.getElementById('curve-compare').addEventListener('change', updateCurveChart);
     document.getElementById('curve-window-end').addEventListener('input', onCurveSlider);
     document.getElementById('curve-instrument-switch').addEventListener('click', e => {
       const btn = e.target.closest('.segment-btn');
@@ -3747,6 +3759,39 @@ function renderCurveTab() {
     });
   }
   updateCurveChart();
+}
+
+
+function buildCurveHistoricalData(slots, period) {
+  const instrument = getCurveInstrument();
+  const meta = getPriceInstrumentMeta(instrument);
+  const now = new Date();
+  let targetDate;
+  if (period === '1w') targetDate = new Date(now.setDate(now.getDate() - 7));
+  else if (period === '1m') targetDate = new Date(now.setMonth(now.getMonth() - 1));
+  else if (period === '3m') targetDate = new Date(now.setMonth(now.getMonth() - 3));
+  else if (period === '1y') targetDate = new Date(now.setFullYear(now.getFullYear() - 1));
+  else return [];
+  
+  const targetStr = targetDate.toISOString().slice(0, 10);
+  
+  return slots.map(slot => {
+    const data = instrument === 'ttf' ? getTTFContractData(slot.ticker) : getContractData(slot.ticker);
+    if (!data || data.length === 0) return { time: slot.time };
+    
+    let closest = null;
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (data[i].date <= targetStr) {
+        closest = data[i];
+        break;
+      }
+    }
+    
+    if (closest && Number.isFinite(closest.p)) {
+      return { time: slot.time, value: closest.p };
+    }
+    return { time: slot.time };
+  });
 }
 
 function getCurveInstrument() {
@@ -3804,11 +3849,30 @@ function updateCurveChart() {
   const anchorSeries = chart.addLineSeries({
     color: 'rgba(0,0,0,0)',
     lineWidth: 1,
-    priceLineVisible: false,
-    lastValueVisible: false,
-    crosshairMarkerVisible: false,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   });
   anchorSeries.setData(buildCurveAnchorData(slots));
+
+  const comparePeriod = document.getElementById('curve-compare') ? document.getElementById('curve-compare').value : 'none';
+  let histLookup = new Map();
+  if (comparePeriod !== 'none') {
+    const histData = buildCurveHistoricalData(slots, comparePeriod);
+    if (histData.length) {
+      const histSeries = chart.addLineSeries({
+        color: 'rgba(255, 255, 255, 0.45)',
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+      histSeries.setData(histData);
+      histData.forEach(pt => histLookup.set(timeKey(pt.time), pt));
+      STATE._curveHistSeries = histSeries;
+      STATE._curveHistData = histData;
+    }
+  } else {
+    STATE._curveHistSeries = null;
+    STATE._curveHistData = null;
+  }
   const curveLookup = new Map(slots.map(slot => [timeKey(slot.time), slot]));
 
   applyChartTimeScaleOptions(chart, {
@@ -3836,15 +3900,27 @@ function updateCurveChart() {
       if (!windowContext || !windowContext.count) return `${meta.label} strip`;
       return `${meta.label} strip • Window Slope: ${windowContext.slope >= 0 ? '+' : ''}${meta.currency}${windowContext.slope != null ? windowContext.slope.toFixed(3) : 'N/A'}`;
     },
-    getMetrics: () => {
+    getMetrics: (param) => {
       const windowContext = STATE._curveWindowContext || getCurveWindowContext(STATE._curveSlots || slots);
       const fmt = val => Number.isFinite(val) ? `${meta.currency}${val.toFixed(3)}` : 'N/A';
-      return [
+      const m = [
         { label: 'Max', value: fmt(windowContext.stats.count ? windowContext.stats.max : null) },
         { label: 'Min', value: fmt(windowContext.stats.count ? windowContext.stats.min : null) },
-        { label: 'First', value: windowContext.firstQuoted ? `${fmt(windowContext.firstQuoted.price)} • ${windowContext.firstQuoted.label}` : 'N/A' },
-        { label: 'Last', value: windowContext.lastQuoted ? `${fmt(windowContext.lastQuoted.price)} • ${windowContext.lastQuoted.label}` : 'N/A' },
       ];
+      
+      const point = curveLookup.get(timeKey(param.time));
+      const histPt = histLookup.get(timeKey(param.time));
+      if (point && histPt && histPt.value != null && point.price != null) {
+        const diff = point.price - histPt.value;
+        const comparePeriod = document.getElementById('curve-compare') ? document.getElementById('curve-compare').value : 'none';
+        const lblMap = { '1w':'1W Ago', '1m':'1M Ago', '3m':'3M Ago', '1y':'1Y Ago' };
+        m.push({ label: lblMap[comparePeriod] || 'History', value: fmt(histPt.value) });
+        m.push({ label: 'Shift', value: `<span style="color:${diff >= 0 ? 'var(--positive)' : 'var(--negative)'};">${diff >= 0 ? '+' : ''}${fmt(diff)}</span>` });
+      } else {
+        m.push({ label: 'First', value: windowContext.firstQuoted ? `${fmt(windowContext.firstQuoted.price)} • ${windowContext.firstQuoted.label}` : 'N/A' });
+        m.push({ label: 'Last', value: windowContext.lastQuoted ? `${fmt(windowContext.lastQuoted.price)} • ${windowContext.lastQuoted.label}` : 'N/A' });
+      }
+      return m;
     },
     getTitle: param => {
       const point = curveLookup.get(timeKey(param.time));
