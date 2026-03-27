@@ -4953,16 +4953,41 @@ function _renderSpreadPanel(ngData) {
     .map(p => ({ time: p.date, value: +(p.p - ttfByDate.get(p.date)).toFixed(3) }))
     .slice(-365);
 
-  const ngLast = ngData[ngData.length - 1].p;
-  const ttfLast = ttfByDate.get(ngData[ngData.length - 1].date);
-  const spread = ttfLast != null ? ngLast - ttfLast : null;
-  const spreadColor = spread != null && spread >= 0 ? 'var(--positive)' : 'var(--negative)';
+  if (spreadSeries.length < 2) {
+    chipsEl.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">Insufficient overlapping data</span>';
+    chartEl.innerHTML = '';
+    return;
+  }
 
-  chipsEl.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12px;">' +
-    '<span style="color:var(--text-muted);">NG: <strong style="color:var(--accent-hh);">$' + ngLast.toFixed(3) + '</strong></span>' +
-    (ttfLast != null ? '<span style="color:var(--text-muted);">TTF: <strong style="color:#ff8c00;">' + ttfLast.toFixed(3) + '</strong></span>' : '') +
-    (spread != null ? '<span style="font-weight:700;color:' + spreadColor + ';">Spread: ' + (spread >= 0 ? '+' : '') + spread.toFixed(3) + '</span>' : '') +
+  const currentSpread = spreadSeries[spreadSeries.length - 1].value;
+  const spreadPrices = spreadSeries.map(s => s.value);
+  const highSpread = Math.max(...spreadPrices);
+  const lowSpread = Math.min(...spreadPrices);
+  const avgSpread = spreadPrices.reduce((s, v) => s + v, 0) / spreadPrices.length;
+  
+  const now = new Date();
+  const yearStart = `${now.getFullYear()}-01-01`;
+  const ytdSeries = spreadSeries.filter(s => s.time >= yearStart);
+  const ytdDelta = ytdSeries.length >= 2 
+    ? (currentSpread - ytdSeries[0].value) 
+    : null;
+
+  const chip = (label, value, color) =>
+    '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:110px;flex:1;">' +
+    '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">' + label + '</div>' +
+    '<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + value + '</div>' +
     '</div>';
+
+  const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(3);
+  const spreadColor = currentSpread >= 0 ? 'var(--positive)' : 'var(--negative)';
+
+  chipsEl.innerHTML = [
+    chip('Current Spread', fmt(currentSpread), spreadColor),
+    chip('52W High', fmt(highSpread), '#ff8c00'),
+    chip('52W Low', fmt(lowSpread), '#00d4ff'),
+    chip('Avg Spread', fmt(avgSpread), 'var(--text-secondary)'),
+    chip('YTD \u0394', ytdDelta !== null ? fmt(ytdDelta) : '\u2014', (ytdDelta || 0) >= 0 ? 'var(--positive)' : 'var(--negative)'),
+  ].join('');
 
   if (spreadSeries.length < 2) {
     chartEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px;">Insufficient overlapping data</div>';
