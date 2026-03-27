@@ -4602,9 +4602,14 @@ function renderDailyTab() {
           </div>
         </div>
         <div class="chart-wrap" id="daily-main-chart" style="height:360px;"></div>
-        <div class="chart-range-controls" id="daily-main-range-controls">
-          <input type="range" class="chart-range-slider" id="daily-main-slider" min="0" max="100" value="100" style="flex:1;min-width:80px;">
+        <div class="chart-range-controls" id="daily-main-range-controls" style="padding-top:10px;">
+          <div class="range-input-shell" style="height:20px;flex:1;">
+            <div class="range-selection" id="daily-main-range-selection"></div>
+            <input type="range" id="daily-main-slider-start" min="0" max="100" value="0" aria-label="Range start">
+            <input type="range" id="daily-main-slider-end" min="0" max="100" value="100" aria-label="Range end">
+          </div>
         </div>
+        <div class="chart-readout" id="daily-range-readout" style="margin-top:8px;font-size:11px;color:var(--text-muted);text-align:center;"></div>
       </div>
 
       <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
@@ -4743,7 +4748,19 @@ function updateDailyMainChart(range) {
     try { areaSeries.createPriceLine({ price: stats.avg30d, color: 'rgba(167,139,250,0.7)', lineStyle: 1, title: '30D Avg', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
   }
 
-  applyChartTimeScaleOptions(chart, { formatter: undefined, barSpacing: 6, fixLeftEdge: true, fixRightEdge: true });
+  applyChartTimeScaleOptions(chart, {
+    formatter: undefined, // default for general date
+    barSpacing: 6,
+    fixLeftEdge: true,
+    fixRightEdge: true,
+    tickMarkFormatter: (time, tickMarkType, locale) => {
+      const d = new Date(typeof time === 'string' ? time : time * 1000);
+      if (tickMarkType === 0) return d.getFullYear(); // Year
+      if (tickMarkType === 1) return MONTHS[d.getMonth()]; // Month
+      if (tickMarkType >= 2) return d.getDate(); // Day
+      return '';
+    }
+  });
   
   // UNIFIED ZOOM LOGIC: Use setVisibleRange instead of data filtering
   if (range && range !== 'ALL') {
@@ -4780,44 +4797,77 @@ function updateDailyMainChart(range) {
 }
 
 // ─── DAILY MAIN CHART SLIDER ─────────────────────────────────────────────────
-function _syncDailyMainSlider() {
-  const slider = document.getElementById('daily-main-slider');
-  const chart = STATE._dailyMainChart;
-  if (!slider || !chart) return;
-  
-  const range = chart.timeScale().getVisibleRange();
-  if (!range || !range.from) return;
-  
-  const allData = STATE._dailyMainAllData;
-  if (!allData || !allData.length) return;
-  
-  const fromTime = typeof range.from === 'string' ? range.from : (new Date(range.from * 1000).toISOString().slice(0, 10));
-  const idx = allData.findIndex(p => p.date >= fromTime);
-  const startPct = allData.length > 1 ? Math.round((Math.max(0, idx) / (allData.length - 1)) * 100) : 0;
-  
-  // Update slider value silently
-  slider.value = String(startPct);
+function _initDailyMainSlider() {
+  const start = document.getElementById('daily-main-slider-start');
+  const end = document.getElementById('daily-main-slider-end');
+  if (!start || !end) return;
+
+  const updateChartFromSliders = () => {
+    const chart = STATE._dailyMainChart;
+    const data = STATE._dailyMainAllData;
+    if (!chart || !data || !data.length) return;
+
+    let s = parseInt(start.value, 10);
+    let e = parseInt(end.value, 10);
+    
+    // Ensure min gap or swap (optional, Prices tab handles this)
+    if (s > e) [s, e] = [e, s];
+    
+    const startIdx = Math.round((s / 100) * (data.length - 1));
+    const endIdx = Math.round((e / 100) * (data.length - 1));
+    
+    // Deactivate range buttons if manually adjusted
+    document.querySelectorAll('#daily-range-switch .segment-btn').forEach(b => b.classList.remove('active'));
+    STATE.dailyRange = 'CUSTOM';
+
+    chart.timeScale().setVisibleRange({
+      from: data[startIdx].date,
+      to: data[endIdx].date
+    });
+    _syncDailyMainSlider();
+  };
+
+  start.addEventListener('input', updateChartFromSliders);
+  end.addEventListener('input', updateChartFromSliders);
 }
 
-function _initDailyMainSlider() {
-  const slider = document.getElementById('daily-main-slider');
-  if (!slider || slider.dataset.bound) return;
-  slider.dataset.bound = '1';
-  slider.addEventListener('input', () => {
-    const chart = STATE._dailyMainChart;
-    const allData = STATE._dailyMainAllData;
-    if (!chart || !allData || allData.length < 2) return;
-    const pct = parseInt(slider.value, 10) / 100;
-    const idx = Math.round(pct * (allData.length - 1));
-    const fromDate = allData[idx].date;
-    const toDate = allData[allData.length - 1].date;
-    try {
-      chart.timeScale().setVisibleRange({ from: fromDate, to: toDate });
-    } catch (_) {}
-    // Deactivate zoom buttons when slider is dragged manually
-    document.querySelectorAll('#daily-range-switch .segment-btn').forEach(b => b.classList.remove('active'));
-  });
+function _syncDailyMainSlider() {
+  const start = document.getElementById('daily-main-slider-start');
+  const end = document.getElementById('daily-main-slider-end');
+  const selection = document.getElementById('daily-main-range-selection');
+  const readout = document.getElementById('daily-range-readout');
+  const chart = STATE._dailyMainChart;
+  const allData = STATE._dailyMainAllData;
+
+  if (!start || !end || !selection || !chart || !allData || !allData.length) return;
+  
+  const range = chart.timeScale().getVisibleRange();
+  if (!range || !range.from || !range.to) return;
+  
+  const fromTime = typeof range.from === 'string' ? range.from : (new Date(range.from * 1000).toISOString().slice(0, 10));
+  const toTime = typeof range.to === 'string' ? range.to : (new Date(range.to * 1000).toISOString().slice(0, 10));
+  
+  const sIdx = allData.findIndex(p => p.date >= fromTime);
+  const eIdx = allData.findLastIndex(p => p.date <= toTime);
+  
+  if (sIdx === -1 || eIdx === -1) return;
+  
+  const sPct = (sIdx / (allData.length - 1)) * 100;
+  const ePct = (eIdx / (allData.length - 1)) * 100;
+  
+  start.value = String(Math.round(sPct));
+  end.value = String(Math.round(ePct));
+  
+  selection.style.left = sPct + '%';
+  selection.style.width = (ePct - sPct) + '%';
+  
+  if (readout) {
+    const sDate = allData[sIdx].date;
+    const eDate = allData[eIdx].date;
+    readout.textContent = `${sDate} to ${eDate} (${eIdx - sIdx + 1} days)`;
+  }
 }
+
 
 function _renderSpreadPanel(ngData) {
   const chipsEl = document.getElementById('daily-spread-chips');
