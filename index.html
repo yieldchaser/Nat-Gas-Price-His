@@ -4700,6 +4700,105 @@ function showExpiryMonthProfile(month) {
       { label: '5Y Avg', value: '$' + avg5y.toFixed(3) },
     ],
   });
+
+  // Slider controls
+  const minYear = allYears[0];
+  const maxYear = allYears[allYears.length - 1];
+  const footerEl = document.createElement('div');
+  footerEl.className = 'card chart-footer';
+  footerEl.style.marginTop = '0';
+  footerEl.style.borderTop = '1px solid var(--border)';
+  footerEl.style.padding = '10px 14px';
+  footerEl.innerHTML = `
+    <div class="range-toolbar" style="margin-bottom:8px;">
+      <div class="flex flex-col gap-sm">
+        <span class="range-kicker">Year Range</span>
+        <div class="flex gap-sm" id="expiry-profile-presets">
+          <button class="pill-btn" data-range="10">10Y</button>
+          <button class="pill-btn" data-range="20">20Y</button>
+          <button class="pill-btn active" data-range="all">ALL</button>
+        </div>
+      </div>
+      <div class="range-scale-labels">
+        <span id="expiry-profile-min-year">${minYear}</span>
+        <span id="expiry-profile-max-year">${maxYear}</span>
+      </div>
+    </div>
+    <div class="range-input-shell" style="margin:10px 0;">
+      <div class="range-selection" id="expiry-profile-selection"></div>
+      <input type="range" id="expiry-profile-window-start" min="${minYear}" max="${maxYear}" value="${minYear}" aria-label="Start year">
+      <input type="range" id="expiry-profile-window-end" min="${minYear}" max="${maxYear}" value="${maxYear}" aria-label="End year">
+    </div>
+    <div class="chart-readout" id="expiry-profile-readout">${minYear} TO ${maxYear}</div>
+  `;
+  profileEl.appendChild(footerEl);
+
+  STATE._expiryProfileChart = chart;
+  STATE._expiryProfileData = seriesData;
+  if (!STATE.expiryProfileView) STATE.expiryProfileView = { rangeStart: minYear, rangeEnd: maxYear };
+
+  const startS = document.getElementById('expiry-profile-window-start');
+  const endS = document.getElementById('expiry-profile-window-end');
+  
+  const updateRange = () => {
+    let s = parseInt(startS.value);
+    let e = parseInt(endS.value);
+    if (s >= e) { s = e - 1; startS.value = s; }
+    STATE.expiryProfileView = { rangeStart: s, rangeEnd: e };
+    syncExpiryProfileRangeFooter();
+  };
+
+  startS.addEventListener('input', updateRange);
+  endS.addEventListener('input', updateRange);
+
+  document.getElementById('expiry-profile-presets').addEventListener('click', e => {
+    const btn = e.target.closest('.pill-btn');
+    if (!btn) return;
+    const range = btn.dataset.range;
+    document.querySelectorAll('#expiry-profile-presets .pill-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (range === 'all') {
+      startS.value = minYear;
+      endS.value = maxYear;
+    } else {
+      const n = parseInt(range);
+      startS.value = Math.max(minYear, maxYear - n);
+      endS.value = maxYear;
+    }
+    updateRange();
+  });
+
+  syncExpiryProfileRangeFooter();
+}
+
+function syncExpiryProfileRangeFooter() {
+  const chart = STATE._expiryProfileChart;
+  const data = STATE._expiryProfileData;
+  if (!chart || !data) return;
+  const view = STATE.expiryProfileView || { rangeStart: data[0].year, rangeEnd: data[data.length-1].year };
+  
+  const startS = document.getElementById('expiry-profile-window-start');
+  const endS = document.getElementById('expiry-profile-window-end');
+  const selection = document.getElementById('expiry-profile-selection');
+  const readout = document.getElementById('expiry-profile-readout');
+
+  if (!startS || !endS) return;
+
+  const min = parseInt(startS.min);
+  const max = parseInt(startS.max);
+  const range = max - min || 1;
+  const s = view.rangeStart;
+  const e = view.rangeEnd;
+
+  const pctS = ((s - min) / range) * 100;
+  const pctE = ((e - min) / range) * 100;
+  if (selection) {
+    selection.style.left = `${pctS}%`;
+    selection.style.width = `${pctE - pctS}%`;
+  }
+  if (readout) readout.textContent = `${s} TO ${e}`;
+
+  chart.timeScale().setVisibleRange({ from: s + '-01-01', to: e + '-01-01' });
 }
 
 function buildExpirySeasonalBar(range) {
