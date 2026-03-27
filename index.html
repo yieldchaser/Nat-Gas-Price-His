@@ -1287,8 +1287,17 @@ async function init() {
         scheduleSpreadHeatmap(true);
       } else if (STATE.activeTab === 'curve' && STATE.renderedTabs.curve) {
         updateCurveChart();
-      } else if (STATE.activeTab === 'daily' && STATE.renderedTabs.daily) {
-        updateDailyTracker();
+      }
+      // Always refresh the daily tab when live data arrives — its charts
+      // (monthly seasonality, weekly, annual) depend on STATE.liveData['NG=F']
+      // which is empty during the initial tab render.
+      if (STATE.renderedTabs.daily) {
+        if (STATE.activeTab === 'daily') {
+          updateDailyTracker();
+        } else {
+          // Reset so the next visit triggers a full re-render with live data
+          STATE.renderedTabs.daily = false;
+        }
       }
     });
   } catch (e) {
