@@ -5123,6 +5123,28 @@ function renderDailyTab() {
             <span id="daily-weekly-subtitle" style="font-size:11px;color:var(--text-muted);"></span>
           </div>
           <div class="chart-wrap" id="daily-weekly-chart" style="height:220px;"></div>
+          <div class="card chart-footer" style="margin-top:0;border-top:1px solid var(--border);border-left:0;border-right:0;border-bottom:0;border-radius:0;padding:10px 14px;">
+            <div class="range-toolbar">
+              <div class="flex flex-col gap-sm">
+                <span class="range-kicker">Date Range</span>
+                <div class="flex gap-sm" id="daily-weekly-presets">
+                  <button class="pill-btn" data-range="5Y">5Y</button>
+                  <button class="pill-btn" data-range="10Y">10Y</button>
+                  <button class="pill-btn active" data-range="ALL">ALL</button>
+                </div>
+              </div>
+              <div class="range-scale-labels">
+                <span id="daily-weekly-min-label">—</span>
+                <span id="daily-weekly-max-label">—</span>
+              </div>
+            </div>
+            <div class="range-input-shell" style="margin:10px 0;">
+              <div class="range-selection" id="daily-weekly-selection"></div>
+              <input type="range" id="daily-weekly-slider-start" min="0" max="100" value="0" aria-label="Start date">
+              <input type="range" id="daily-weekly-slider-end" min="0" max="100" value="100" aria-label="End date">
+            </div>
+            <div class="chart-readout" id="daily-weekly-readout" style="font-size:11px;">Full history</div>
+          </div>
         </div>
         <div class="card" style="min-width:260px;flex-shrink:0;padding:0;" id="daily-dist"></div>
       </div>
@@ -5182,6 +5204,45 @@ function renderDailyTab() {
       const ssEnd = document.getElementById('daily-spread-slider-end');
       if (ssStart) ssStart.addEventListener('input', onDailySpreadSlider);
       if (ssEnd) ssEnd.addEventListener('input', onDailySpreadSlider);
+
+      // Chart 8 Presets
+      const weeklyPresets = document.getElementById('daily-weekly-presets');
+      if (weeklyPresets) {
+        weeklyPresets.addEventListener('click', e => {
+          const btn = e.target.closest('.pill-btn');
+          if (!btn) return;
+          const range = btn.dataset.range;
+          const data = STATE._dailyWeeklyData;
+          if (!data || !data.length) return;
+          
+          document.querySelectorAll('#daily-weekly-presets .pill-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          
+          let sIdx = 0;
+          if (range !== 'ALL') {
+            const now = new Date();
+            const years = parseInt(range) || 5;
+            const cutoff = new Date(now); cutoff.setFullYear(now.getFullYear() - years);
+            const cutoffStr = cutoff.toISOString().slice(0, 10);
+            sIdx = data.findIndex(p => p.time >= cutoffStr);
+            if (sIdx === -1) sIdx = 0;
+          }
+          
+          STATE.dailyWeeklyView = { rangeStart: sIdx, rangeEnd: data.length - 1 };
+          const startS = document.getElementById('daily-weekly-slider-start');
+          const endS = document.getElementById('daily-weekly-slider-end');
+          if (startS && endS) {
+            startS.value = (sIdx / (data.length - 1)) * 100;
+            endS.value = 100;
+          }
+          syncDailyWeeklyRangeFooter();
+        });
+      }
+      
+      const wsStart = document.getElementById('daily-weekly-slider-start');
+      const wsEnd = document.getElementById('daily-weekly-slider-end');
+      if (wsStart) wsStart.addEventListener('input', onDailyWeeklySlider);
+      if (wsEnd) wsEnd.addEventListener('input', onDailyWeeklySlider);
   }
   updateDailyTracker();
 }
