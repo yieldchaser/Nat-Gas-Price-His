@@ -1467,7 +1467,7 @@ function updateHHChart() {
   // Build chart
   renderHHChartWidget(filtered, data, month, year, calendarMode, compareOn);
   renderHHStats(data, month, year);
-  renderHHHistoryTable(month);
+  renderHHHistoryTable(month, year);
   renderHHSeasonalBar(data, month);
 }
 
@@ -1662,6 +1662,7 @@ function renderHHStats(data, month, year) {
     }
   }
 
+
   // Check if contract is active (has live data) or expired
   const code = MONTH_CODES[month];
   const yy = year % 100;
@@ -1669,13 +1670,32 @@ function renderHHStats(data, month, year) {
   const liveTicker = `NG${code}${pad}.NYM`;
   const isLive = !!STATE.liveData[liveTicker];
 
+  let expiryProgressHtml = '';
+  if (isLive && typeof computeNGExpiry === 'function') {
+    const expDate = computeNGExpiry(year, month);
+    const today = new Date();
+    const daysLeft = Math.ceil((expDate - today) / 86400000);
+    if (daysLeft > 0) {
+      const pctLeft = Math.max(0, Math.min(100, (daysLeft / 519) * 100)); // Rough estimate
+      expiryProgressHtml = `
+        <div class="stat">
+          <div class="stat-label">Days to Expiry</div>
+          <div class="stat-value" style="color:var(--accent-hh);">${daysLeft} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">days</span></div>
+          <div class="progress-bar" style="margin-top:4px;background:rgba(255,255,255,0.1);"><div class="progress-fill" style="width:${100-pctLeft}%;background:var(--accent-hh);"></div></div>
+        </div>
+      `;
+    }
+  }
+
   statsEl.innerHTML = `
+
     <div class="card-title">Contract Statistics</div>
     <div class="stat">
       <div class="stat-label">Trading Days</div>
       <div class="stat-value">${data.length} <span style="font-size:13px;color:var(--text-muted)">/ 519</span></div>
       <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${Math.round(data.length/519*100)}%;background:var(--accent-hh);"></div></div>
     </div>
+    ${expiryProgressHtml}
     <div class="stat">
       <div class="stat-label">vs 5Y Seasonal Avg</div>
       <div style="font-family:var(--font-mono);font-size:14px;">${vs5yAvg}</div>
@@ -1718,32 +1738,61 @@ function cycleHHContract(dir) {
   }
 }
 
-function renderHHHistoryTable(month) {
+
+function renderHHHistoryTable(month, currentYear) {
   const tableEl = document.getElementById('hh-history-table');
+  if (!tableEl) return;
   const expiry = STATE.expiry;
-  let rows = '';
   const years = Object.keys(expiry).sort((a, b) => b - a);
+  
+  // Calculate ranks
+  const allPrices = years.map(yr => expiry[yr][month]).filter(Number.isFinite);
+  const sortedPricesDesc = [...allPrices].sort((a, b) => b - a);
+  const priceRange = (Math.max(...allPrices) - Math.min(...allPrices)) || 1;
+  const priceMin = Math.min(...allPrices);
+
+  let rows = '';
+  // Show ALL available years for the contract's month
   years.forEach(yr => {
     const price = expiry[yr][month];
     if (price == null) return;
-    // Find prior year
+    
+    // Find prior year for YoY delta
     const priorYr = '' + (parseInt(yr) - 1);
     const prior = expiry[priorYr] ? expiry[priorYr][month] : null;
     const delta = prior ? ((price - prior) / prior * 100) : null;
-    rows += `<tr>
+    const rank = sortedPricesDesc.indexOf(price) + 1;
+    
+    const isSelected = yr === currentYear;
+    const rowBg = isSelected ? 'background:rgba(0,212,255,0.15);font-weight:600;' : '';
+    const barW = ((price - priceMin) / priceRange * 36).toFixed(1);
+    const bar = `<div style="width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;opacity:0.6;margin-top:2px;"></div>`;
+    
+    // Make row clickable: selection logic using cycleHHContract or directly setting the select box
+    rows += `<tr style="${rowBg}cursor:pointer;" onclick="const sel=document.getElementById('hh-year'); sel.value='${yr}'; window.updateHHChart();" title="Load ${yr} contract">
       <td style="text-align:left;">${yr}</td>
-      <td>$${price.toFixed(3)}</td>
-      <td class="${delta !== null ? (delta >= 0 ? 'positive' : 'negative') : ''}">${delta !== null ? (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : '—'}</td>
+      <td style="font-family:var(--font-mono);">$${price.toFixed(3)}${bar}</td>
+      <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">#${rank}<span style="font-size:9px;">/${allPrices.length}</span></td>
+      <td class="${delta !== null ? (delta >= 0 ? 'positive' : 'negative') : ''}" style="font-family:var(--font-mono);">${delta !== null ? (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : '—'}</td>
     </tr>`;
   });
+
   tableEl.innerHTML = `
-    <div class="card-title">Same Month Expiry History</div>
-    <table>
-      <thead><tr><th style="text-align:left;">Year</th><th>Expiry $</th><th>Δ vs Prior</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="card-title" style="padding:10px 14px 6px;">Same Month Expiry History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">(${years.length} yrs)</span></div>
+    <div style="overflow-y:auto;max-height:220px;">
+      <table>
+        <thead><tr>
+          <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Year</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Expiry</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Rank</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">YoY Δ</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   `;
 }
+
 
 function renderHHSeasonalBar(data, month) {
   const bar = document.getElementById('hh-seasonal-bar');
