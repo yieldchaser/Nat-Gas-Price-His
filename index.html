@@ -4886,6 +4886,9 @@ function updateDailyMainChart(range) {
   });
   
   // UNIFIED ZOOM LOGIC: Use setVisibleRange instead of data filtering
+  const disclaimerId = 'daily-main-disclaimer';
+  let disclaimer = document.getElementById(disclaimerId);
+
   if (range && range !== 'ALL') {
     const months = range === '1M' ? 1 : range === '3M' ? 3 : range === '6M' ? 6 :
                    range === '1Y' ? 12 : range === '2Y' ? 24 : range === '3Y' ? 36 :
@@ -4895,8 +4898,18 @@ function updateDailyMainChart(range) {
     try {
       chart.timeScale().setVisibleRange({ from: cutoffStr, to: data[data.length-1].date });
     } catch(e) { chart.timeScale().fitContent(); }
+    if (disclaimer) disclaimer.style.display = 'none';
   } else {
     chart.timeScale().fitContent();
+    if (!disclaimer) {
+      disclaimer = document.createElement('div');
+      disclaimer.id = disclaimerId;
+      disclaimer.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:5;background:rgba(0,0,0,0.4);padding:2px 8px;border-radius:10px;font-size:10px;color:rgba(255,255,255,0.5);pointer-events:none;';
+      disclaimer.textContent = 'Pre-2020 data: weekly sampling';
+      chartContainer.style.position = 'relative';
+      chartContainer.appendChild(disclaimer);
+    }
+    disclaimer.style.display = 'block';
   }
 
   // Store for slider sync — defer one animation frame so the chart viewport
