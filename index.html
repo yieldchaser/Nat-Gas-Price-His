@@ -2587,9 +2587,9 @@ function updateSpreadChart() {
   const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
 
   // Init/reset visible years and range when pair/instrument changes
+  const currentYear = new Date().getFullYear();
   const pairKey = `${instrument}|${front}|${back}`;
   if (!STATE.spreadPinnedYears) {
-    const currentYear = new Date().getFullYear();
     const defaults = new Set();
     const historicalDefaults = allYearsSorted
       .filter(y => y < currentYear)
