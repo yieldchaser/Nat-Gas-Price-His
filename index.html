@@ -5084,8 +5084,32 @@ function renderDailyTab() {
       <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
         <div class="card grow" style="min-width:260px;padding:0;">
           <div class="card-title" style="padding:10px 14px 0;">NG vs TTF Spread</div>
+          <div id="daily-spread-legend" style="padding:6px 14px 0;display:flex;flex-wrap:wrap;gap:5px;"></div>
           <div id="daily-spread-chips" style="padding:6px 14px 2px;display:flex;gap:12px;flex-wrap:wrap;"></div>
           <div class="chart-wrap" id="daily-spread-chart" style="height:190px;"></div>
+          <div class="card chart-footer" style="margin-top:0;border-top:1px solid var(--border);border-left:0;border-right:0;border-bottom:0;border-radius:0;padding:10px 14px;">
+            <div class="range-toolbar">
+              <div class="flex flex-col gap-sm">
+                <span class="range-kicker">Date Range</span>
+                <div class="flex gap-sm" id="daily-spread-presets">
+                  <button class="pill-btn" data-range="1Y">1Y</button>
+                  <button class="pill-btn" data-range="3Y">3Y</button>
+                  <button class="pill-btn" data-range="5Y">5Y</button>
+                  <button class="pill-btn active" data-range="ALL">ALL</button>
+                </div>
+              </div>
+              <div class="range-scale-labels">
+                <span id="daily-spread-min-label">—</span>
+                <span id="daily-spread-max-label">—</span>
+              </div>
+            </div>
+            <div class="range-input-shell" style="margin:10px 0;">
+              <div class="range-selection" id="daily-spread-selection"></div>
+              <input type="range" id="daily-spread-slider-start" min="0" max="100" value="0" aria-label="Start date">
+              <input type="range" id="daily-spread-slider-end" min="0" max="100" value="100" aria-label="End date">
+            </div>
+            <div class="chart-readout" id="daily-spread-readout" style="font-size:11px;">Full history</div>
+          </div>
         </div>
         <div class="card" style="min-width:220px;max-width:340px;padding:0;flex-shrink:0;" id="daily-calendar"></div>
       </div>
@@ -5119,6 +5143,45 @@ function renderDailyTab() {
         updateDailyMainChart(STATE.dailyRange);
       });
     _initDailyMainSlider();
+
+      // Chart 7 Presets
+      const spreadPresets = document.getElementById('daily-spread-presets');
+      if (spreadPresets) {
+        spreadPresets.addEventListener('click', e => {
+          const btn = e.target.closest('.pill-btn');
+          if (!btn) return;
+          const range = btn.dataset.range;
+          const data = STATE._dailySpreadData;
+          if (!data || !data.length) return;
+          
+          document.querySelectorAll('#daily-spread-presets .pill-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          
+          let sIdx = 0;
+          if (range !== 'ALL') {
+            const now = new Date();
+            const years = parseInt(range) || 1;
+            const cutoff = new Date(now); cutoff.setFullYear(now.getFullYear() - years);
+            const cutoffStr = cutoff.toISOString().slice(0, 10);
+            sIdx = data.findIndex(p => p.time >= cutoffStr);
+            if (sIdx === -1) sIdx = 0;
+          }
+          
+          STATE.dailySpreadView = { rangeStart: sIdx, rangeEnd: data.length - 1 };
+          const startS = document.getElementById('daily-spread-slider-start');
+          const endS = document.getElementById('daily-spread-slider-end');
+          if (startS && endS) {
+            startS.value = (sIdx / (data.length - 1)) * 100;
+            endS.value = 100;
+          }
+          syncDailySpreadRangeFooter();
+        });
+      }
+      
+      const ssStart = document.getElementById('daily-spread-slider-start');
+      const ssEnd = document.getElementById('daily-spread-slider-end');
+      if (ssStart) ssStart.addEventListener('input', onDailySpreadSlider);
+      if (ssEnd) ssEnd.addEventListener('input', onDailySpreadSlider);
   }
   updateDailyTracker();
 }
@@ -5455,7 +5518,72 @@ function _renderSpreadPanel(ngData) {
   });
   sSeries.setData(spreadSeries);
   applyChartTimeScaleOptions(spreadChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(600 / spreadSeries.length)), fixLeftEdge: true, fixRightEdge: true });
-  spreadChart.timeScale().fitContent();
+  
+  STATE._dailySpreadChart = spreadChart;
+  STATE._dailySpreadData = spreadSeries;
+  STATE._dailySpreadSeries = sSeries;
+  
+  if (!STATE.dailySpreadView) {
+    STATE.dailySpreadView = { rangeStart: 0, rangeEnd: spreadSeries.length - 1 };
+  }
+  
+  syncDailySpreadRangeFooter();
+}
+
+function onDailySpreadSlider() {
+  const chart = STATE._dailySpreadChart;
+  const data = STATE._dailySpreadData;
+  if (!chart || !data || !data.length) return;
+  
+  let start = parseInt(document.getElementById('daily-spread-slider-start').value);
+  let end   = parseInt(document.getElementById('daily-spread-slider-end').value);
+  
+  if (start >= end) {
+    end = Math.min(100, start + 1);
+    document.getElementById('daily-spread-slider-end').value = end;
+  }
+  
+  const sIdx = Math.floor((start / 100) * (data.length - 1));
+  const eIdx = Math.min(data.length - 1, Math.floor((end / 100) * (data.length - 1)));
+  
+  STATE.dailySpreadView = { rangeStart: sIdx, rangeEnd: eIdx };
+  syncDailySpreadRangeFooter();
+}
+
+function syncDailySpreadRangeFooter() {
+  const chart = STATE._dailySpreadChart;
+  const data = STATE._dailySpreadData;
+  if (!chart || !data || !data.length) return;
+  
+  const startS = document.getElementById('daily-spread-slider-start');
+  const endS   = document.getElementById('daily-spread-slider-end');
+  const selection = document.getElementById('daily-spread-selection');
+  const readout = document.getElementById('daily-spread-readout');
+  const minL = document.getElementById('daily-spread-min-label');
+  const maxL = document.getElementById('daily-spread-max-label');
+
+  if (!startS) return;
+  
+  const view = STATE.dailySpreadView || { rangeStart: 0, rangeEnd: data.length - 1 };
+  const sIdx = view.rangeStart;
+  const eIdx = view.rangeEnd;
+  
+  const pctS = (sIdx / (data.length - 1)) * 100;
+  const pctE = (eIdx / (data.length - 1)) * 100;
+  
+  if (selection) {
+    selection.style.left = `${pctS}%`;
+    selection.style.width = `${pctE - pctS}%`;
+  }
+  
+  if (minL) minL.textContent = data[0].time;
+  if (maxL) maxL.textContent = data[data.length - 1].time;
+  
+  if (readout) {
+    readout.innerHTML = `<span>${data[sIdx].time}</span> <span style="color:var(--text-muted);font-size:10px;">TO</span> <span>${data[eIdx].time}</span>`;
+  }
+  
+  chart.timeScale().setVisibleRange({ from: data[sIdx].time, to: data[eIdx].time });
 }
 
 function _renderExpiryCalendar(now) {
