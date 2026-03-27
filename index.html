@@ -4783,10 +4783,11 @@ function updateDailyMainChart(range) {
     chart.timeScale().fitContent();
   }
 
-  // Store for slider sync
+  // Store for slider sync — defer one animation frame so the chart viewport
+  // has settled before _syncDailyMainSlider reads getVisibleRange() back.
   STATE._dailyMainChart = chart;
   STATE._dailyMainAllData = data;
-  _syncDailyMainSlider();
+  requestAnimationFrame(() => _syncDailyMainSlider());
 
   const dataLookup = new Map(data.map(p => [p.date, p]));
   attachChartTooltip({
