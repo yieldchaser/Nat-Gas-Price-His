@@ -774,6 +774,22 @@ const STATE = {
   loaded: false,
 };
 
+/* ─── Caching Layer (localStorage) ─── */
+function getCachedData(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const json = JSON.parse(raw);
+    const ageH = (Date.now() - json.savedAt) / 3600000;
+    return { data: json.data, ageH: ageH.toFixed(1), isStale: ageH > 24 };
+  } catch (e) { return null; }
+}
+function setCachedData(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, savedAt: Date.now() }));
+  } catch (e) {}
+}
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_CODES = {Jan:'F',Feb:'G',Mar:'H',Apr:'J',May:'K',Jun:'M',Jul:'N',Aug:'Q',Sep:'U',Oct:'V',Nov:'X',Dec:'Z'};
 const CODE_TO_MONTH = Object.fromEntries(Object.entries(MONTH_CODES).map(([m,c])=>[c,m]));
@@ -5281,21 +5297,47 @@ function updateDailyTracker() {
 
 function _renderDailyStatChips(stats, currentPrice) {
   const el = document.getElementById('daily-stat-chips');
-  if (!el || !stats) return;
+  if (!el) return;
+
+  let chipData = stats;
+  let badge = '';
+
+  if (!stats) {
+    const cache = getCachedData('daily_cache_stats');
+    if (cache) {
+      chipData = cache.data;
+      badge = cache.isStale 
+        ? `<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(255,68,85,0.12);color:var(--negative);border:1px solid rgba(255,68,85,0.25);margin-left:auto;font-family:var(--font-mono);font-weight:700;letter-spacing:0.02em;">⚠️ STALE CACHE (${cache.ageH}h ago)</span>`
+        : `<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(255,204,0,0.12);color:var(--warning);border:1px solid rgba(255,204,0,0.25);margin-left:auto;font-family:var(--font-mono);font-weight:700;letter-spacing:0.02em;">🟡 CACHED (${cache.ageH}h ago)</span>`;
+    }
+  } else if (stats && currentPrice) {
+    setCachedData('daily_cache_stats', stats);
+  }
+
+  if (!chipData) {
+    el.innerHTML = '<span style="color:var(--text-muted);font-size:12px;padding-left:14px;font-family:var(--font-mono);">WAITING FOR LIVE MARKET QUOTES...</span>';
+    return;
+  }
+
+  const s = chipData;
   const chip = (label, value, color) =>
     '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;">' +
     '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">' + label + '</div>' +
     '<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + value + '</div>' +
     '</div>';
-  const pctFrom52h = stats.high52w ? ((currentPrice - stats.high52w) / stats.high52w * 100).toFixed(1) : null;
-  const pctFrom52l = stats.low52w ? ((currentPrice - stats.low52w) / stats.low52w * 100).toFixed(1) : null;
+  
+  const curP = currentPrice || (s.lastPrice || 0);
+  const pctFrom52h = s.high52w ? ((curP - s.high52w) / s.high52w * 100).toFixed(1) : null;
+  const pctFrom52l = s.low52w ? ((curP - s.low52w) / s.low52w * 100).toFixed(1) : null;
+  
   el.innerHTML = [
-    chip('52W High', stats.high52w ? '$' + stats.high52w.toFixed(3) : '\u2014', '#ff8c00'),
-    chip('52W Low', stats.low52w ? '$' + stats.low52w.toFixed(3) : '\u2014', '#00d4ff'),
+    chip('52W High', s.high52w ? '$' + s.high52w.toFixed(3) : '\u2014', '#ff8c00'),
+    chip('52W Low', s.low52w ? '$' + s.low52w.toFixed(3) : '\u2014', '#00d4ff'),
     chip('vs 52W H', pctFrom52h ? pctFrom52h + '%' : '\u2014', parseFloat(pctFrom52h) >= 0 ? 'var(--positive)' : 'var(--negative)'),
     chip('vs 52W L', pctFrom52l != null ? (parseFloat(pctFrom52l) >= 0 ? '+' : '') + pctFrom52l + '%' : '\u2014', parseFloat(pctFrom52l) >= 0 ? 'var(--positive)' : 'var(--negative)'),
-    chip('30D Avg', stats.avg30d ? '$' + stats.avg30d.toFixed(3) : '\u2014', 'var(--text-secondary)'),
-    chip('YTD \u0394%', stats.ytdPct != null ? (stats.ytdPct >= 0 ? '+' : '') + stats.ytdPct.toFixed(1) + '%' : '\u2014', stats.ytdPct != null && stats.ytdPct >= 0 ? 'var(--positive)' : 'var(--negative)'),
+    chip('30D Avg', s.avg30d ? '$' + s.avg30d.toFixed(3) : '\u2014', 'var(--text-secondary)'),
+    chip('YTD \u0394%', s.ytdPct != null ? (s.ytdPct >= 0 ? '+' : '') + s.ytdPct.toFixed(1) + '%' : '\u2014', s.ytdPct != null && s.ytdPct >= 0 ? 'var(--positive)' : 'var(--negative)'),
+    badge,
   ].join('');
 }
 
