@@ -2536,7 +2536,19 @@ function updateSpreadChart() {
       selectedLastPoint = sp[sp.length - 1] || null;
     }
     const last = sp[sp.length - 1].value;
-    tableRows.push({ yr, last, max: spreadResult.stats.max, min: spreadResult.stats.min, avg: spreadResult.stats.avg, days: sp.length });
+    
+    const getValAt = d => { const pt = sp.find(p => p.d === d); return pt ? pt.value : null; };
+    const getPenult = () => sp.length >= 2 ? sp[1].value : null; // T-Day array is reverse ordered? Wait, what is order of sp?
+    // In computeSpread, sp is pushing based on d1 which is chronologically oldest to newest. But d is remaining days. d goes from 519 down to 0/1. 
+    // Wait, let's just find by d directly.
+    tableRows.push({ 
+      yr, last, max: spreadResult.stats.max, min: spreadResult.stats.min, avg: spreadResult.stats.avg, days: sp.length,
+      at519: getValAt(519),
+      at90: getValAt(90),
+      at10: getValAt(10),
+      penult: sp.length >= 2 ? sp[sp.length - 2].value : null
+    });
+
   });
 
   // KPI bar
@@ -2692,6 +2704,10 @@ function updateSpreadChart() {
     <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Max</th>
     <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Min</th>
     <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Avg</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-519</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-PENULT</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-90D</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-10D</th>
   </tr></thead><tbody>`);
 
   tableRows.sort((a, b) => b.yr - a.yr).forEach(r => {
@@ -2710,8 +2726,44 @@ function updateSpreadChart() {
       <td>${r.max.toFixed(3)}</td>
       <td>${r.min.toFixed(3)}</td>
       <td>${r.avg.toFixed(3)}</td>
+      <td>${r.at519 != null ? r.at519.toFixed(3) : '—'}</td>
+      <td>${r.penult != null ? r.penult.toFixed(3) : '—'}</td>
+      <td>${r.at90 != null ? r.at90.toFixed(3) : '—'}</td>
+      <td>${r.at10 != null ? r.at10.toFixed(3) : '—'}</td>
     </tr>`;
   });
+
+  // Compute summary stats
+  const calcAvg = key => {
+    const vals = tableRows.map(r => r[key]).filter(Number.isFinite);
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+  };
+  const calcAvg5y = key => {
+    const vals = tableRows.filter(r => r.yr > currentYear - 5 && r.yr <= currentYear).map(r => r[key]).filter(Number.isFinite);
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+  };
+
+  const sums = {
+    all: { last: calcAvg('last'), max: calcAvg('max'), min: calcAvg('min'), avg: calcAvg('avg'), at519: calcAvg('at519'), penult: calcAvg('penult'), at90: calcAvg('at90'), at10: calcAvg('at10') },
+    y5: { last: calcAvg5y('last'), max: calcAvg5y('max'), min: calcAvg5y('min'), avg: calcAvg5y('avg'), at519: calcAvg5y('at519'), penult: calcAvg5y('penult'), at90: calcAvg5y('at90'), at10: calcAvg5y('at10') }
+  };
+
+  const mkRow = (label, data) => `
+    <tr style="background:var(--bg-card);font-weight:600;border-top:1px solid rgba(255,255,255,0.1);">
+      <td style="text-align:left;">${label}</td>
+      <td>${data.last != null ? data.last.toFixed(3) : '—'}</td>
+      <td>—</td>
+      <td>${data.max != null ? data.max.toFixed(3) : '—'}</td>
+      <td>${data.min != null ? data.min.toFixed(3) : '—'}</td>
+      <td>${data.avg != null ? data.avg.toFixed(3) : '—'}</td>
+      <td>${data.at519 != null ? data.at519.toFixed(3) : '—'}</td>
+      <td>${data.penult != null ? data.penult.toFixed(3) : '—'}</td>
+      <td>${data.at90 != null ? data.at90.toFixed(3) : '—'}</td>
+      <td>${data.at10 != null ? data.at10.toFixed(3) : '—'}</td>
+    </tr>
+  `;
+  html = html.replace('</tbody>', mkRow('Avg (All Time)', sums.all) + mkRow('Avg (Last 5Y)', sums.y5) + '</tbody>');
+
   html += `</tbody></table></div>`;
   document.getElementById('spread-table').innerHTML = html;
 
