@@ -4524,21 +4524,25 @@ function getDailyStats(data) {
   const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
   const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(now.getDate() - 30);
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+  const threeSixtyDaysAgo = new Date(now); threeSixtyDaysAgo.setDate(now.getDate() - 360);
+  const threeSixtyDaysAgoStr = threeSixtyDaysAgo.toISOString().slice(0, 10);
 
   const ttmData = data.filter(p => p.date >= oneYearAgoStr);
   const ytdData = data.filter(p => p.date >= yearStart);
   const d30 = data.filter(p => p.date >= thirtyDaysAgoStr);
+  const d360 = data.filter(p => p.date >= threeSixtyDaysAgoStr);
 
   const prices52w = ttmData.map(p => p.p);
   const high52w = prices52w.length ? Math.max(...prices52w) : null;
   const low52w = prices52w.length ? Math.min(...prices52w) : null;
   const avg30d = d30.length ? d30.reduce((s, p) => s + p.p, 0) / d30.length : null;
+  const avg360d = d360.length ? d360.reduce((s, p) => s + p.p, 0) / d360.length : null;
   const ytdPct = ytdData.length >= 2
     ? (ytdData[ytdData.length - 1].p - ytdData[0].p) / ytdData[0].p * 100
     : null;
   const rv21 = null;
   const rv63 = null;
-  return { high52w, low52w, avg30d, ytdPct };
+  return { high52w, low52w, avg30d, avg360d, ytdPct };
 }
 
 function getTTFSpreadData() {
@@ -4594,7 +4598,13 @@ function renderDailyTab() {
       <div class="card" style="padding:0;margin-bottom:var(--gap);">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 0;flex-wrap:wrap;gap:6px;">
           <span class="card-title" style="padding:0;">Price History &mdash; NG=F</span>
-          <div class="segment-switch" id="daily-range-switch">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div class="series-toggle-bar" id="daily-ref-toggles" style="padding:0;">
+              <button class="series-pill active" data-ref="52wh" style="border-color:rgba(255,140,0,0.45);"><span class="swatch" style="background:#ff8c00;"></span>52W H</button>
+              <button class="series-pill active" data-ref="52wl" style="border-color:rgba(0,212,255,0.45);"><span class="swatch" style="background:#00d4ff;"></span>52W L</button>
+              <button class="series-pill active" data-ref="avg360" style="border-color:rgba(167,139,250,0.45);"><span class="swatch" style="background:#a78bfa;"></span>360D Avg</button>
+            </div>
+            <div class="segment-switch" id="daily-range-switch">
             <button class="segment-btn ${STATE.dailyRange === '1M' ? 'active' : ''}" data-range="1M">1M</button>
             <button class="segment-btn ${STATE.dailyRange === '3M' ? 'active' : ''}" data-range="3M">3M</button>
             <button class="segment-btn ${STATE.dailyRange === '6M' ? 'active' : ''}" data-range="6M">6M</button>
@@ -4604,6 +4614,7 @@ function renderDailyTab() {
             <button class="segment-btn ${STATE.dailyRange === '5Y' ? 'active' : ''}" data-range="5Y">5Y</button>
             <button class="segment-btn ${STATE.dailyRange === '10Y' ? 'active' : ''}" data-range="10Y">10Y</button>
             <button class="segment-btn ${STATE.dailyRange === 'ALL' ? 'active' : ''}" data-range="ALL">All</button>
+          </div>
           </div>
         </div>
         <div class="chart-wrap" id="daily-main-chart" style="height:360px;"></div>
@@ -4743,16 +4754,61 @@ function updateDailyMainChart(range) {
   });
   areaSeries.setData(data.map(p => ({ time: p.date, value: p.p })));
 
-  // Key level annotations (static lines based on full data or visible?)
-  // For 52W High/Low we usually want the global stats
-  if (stats && stats.high52w) {
-    try { areaSeries.createPriceLine({ price: stats.high52w, color: '#ff8c00', lineStyle: 2, title: '52W H', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  // ── Reference level series (standalone, so applyOptions({ visible }) works) ──
+  // Read current visibility from pill toggle state (persists across range changes)
+  if (!STATE._dailyRefVisible) {
+    STATE._dailyRefVisible = { '52wh': true, '52wl': true, avg360: true };
   }
-  if (stats && stats.low52w) {
-    try { areaSeries.createPriceLine({ price: stats.low52w, color: '#00d4ff', lineStyle: 2, title: '52W L', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  const refVis = STATE._dailyRefVisible;
+
+  const makeRefSeries = (color, dotted) => chart.addLineSeries({
+    color,
+    lineWidth: 1,
+    lineStyle: dotted ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    crosshairMarkerVisible: false,
+    axisLabelVisible: true,
+  });
+
+  const fullDateRange = data.length >= 2
+    ? [{ time: data[0].date }, { time: data[data.length - 1].date }]
+    : [];
+
+  STATE._dailyRefSeries = {};
+
+  if (stats && stats.high52w && fullDateRange.length) {
+    const s = makeRefSeries('#ff8c00', true);
+    s.setData(fullDateRange.map(d => ({ time: d.time, value: stats.high52w })));
+    s.applyOptions({ visible: refVis['52wh'], title: '52W H' });
+    STATE._dailyRefSeries['52wh'] = s;
   }
-  if (stats && stats.avg30d) {
-    try { areaSeries.createPriceLine({ price: stats.avg30d, color: 'rgba(167,139,250,0.7)', lineStyle: 1, title: '30D Avg', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  if (stats && stats.low52w && fullDateRange.length) {
+    const s = makeRefSeries('#00d4ff', true);
+    s.setData(fullDateRange.map(d => ({ time: d.time, value: stats.low52w })));
+    s.applyOptions({ visible: refVis['52wl'], title: '52W L' });
+    STATE._dailyRefSeries['52wl'] = s;
+  }
+  if (stats && stats.avg360d && fullDateRange.length) {
+    const s = makeRefSeries('rgba(167,139,250,0.85)', true);
+    s.setData(fullDateRange.map(d => ({ time: d.time, value: stats.avg360d })));
+    s.applyOptions({ visible: refVis['avg360'], title: '360D Avg' });
+    STATE._dailyRefSeries['avg360'] = s;
+  }
+
+  // Wire toggle pills (idempotent — re-registers on every chart rebuild)
+  const toggleBar = document.getElementById('daily-ref-toggles');
+  if (toggleBar && !toggleBar.dataset.wired) {
+    toggleBar.dataset.wired = '1';
+    toggleBar.addEventListener('click', e => {
+      const pill = e.target.closest('.series-pill');
+      if (!pill) return;
+      const key = pill.dataset.ref;
+      const isActive = pill.classList.toggle('active');
+      STATE._dailyRefVisible[key] = isActive;
+      const series = STATE._dailyRefSeries && STATE._dailyRefSeries[key];
+      if (series) series.applyOptions({ visible: isActive });
+    });
   }
 
   applyChartTimeScaleOptions(chart, {
