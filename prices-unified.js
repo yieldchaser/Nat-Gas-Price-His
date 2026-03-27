@@ -1284,6 +1284,26 @@ function updatePricesChart({ skipDetails = false } = {}) {
   tickerEl.style.color = meta.color;
   tickerEl.textContent = ticker;
 
+    // Cache status badge
+    let cacheBadge = '';
+    const isHH = view.instrument === 'hh';
+    const isTTF = view.instrument === 'ttf';
+    if ((isHH && STATE.hhCacheUsed) || (isTTF && STATE.ttfCacheUsed)) {
+      const isStale = isHH ? STATE.hhCacheStale : STATE.ttfCacheStale;
+      const age = isHH ? STATE.hhCacheAge : STATE.ttfCacheAge;
+      cacheBadge = isStale 
+        ? `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">⚠️ STALE CACHE (${age}h ago)</span>`
+        : `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">🟡 CACHED (${age}h ago)</span>`;
+    }
+    // Remove old badge if exists and append new
+    const oldBadge = tickerEl.parentElement.querySelector('.ctrl-hint-badge');
+    if (oldBadge) oldBadge.remove();
+    if (cacheBadge) {
+      const temp = document.createElement('div');
+      temp.innerHTML = cacheBadge;
+      tickerEl.parentElement.appendChild(temp.firstElementChild);
+    }
+
   if (!fullData.length) {
     removeChart('prices');
     descEl.textContent = 'No data available for the selected view';

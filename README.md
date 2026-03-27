@@ -57,6 +57,16 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
   - **NG vs TTF Spread (Dynamic FX)**: Real-time nominal spread using live **EURUSD=X** conversion.
   - **Extended Ranges**: Fully synchronized presets for `1M`, `3M`, `1Y`, `2Y`, `3Y`, `5Y`, `10Y`, and `ALL`.
 
+### 8. Data Reliability & Caching
+To resolve "blank-on-refresh" issues, the dashboard implements a `localStorage` caching layer:
+- **Persistence**: KPI stats and contract price points are cached for **24 hours**.
+- **Instant Rendering**: Charts and data chips populate immediately from cache upon page load.
+- **Freshness Indicators**:
+  - `🟡 CACHED (xh ago)`: Data loaded from cache, still within 24h window.
+  - `⚠️ STALE CACHE (xh ago)`: Cached data is older than 24h (better than a blank screen).
+- **Background Refresh**: Live Yahoo Finance fetches run silently in the background. Once resolved, the cache is updated, and status badges are cleared automatically.
+- **Optimized Footprint**: Contract history is slimmed to the latest price point for caching, keeping the `localStorage` usage < 20KB.
+
 ### 9. Prices Tab
 - **X-Axis Mode Toggle**: Cal Date / T-Day segment switch to view contract price history on calendar dates or by trading day number (Day 1 to Day 519).
 - **Same Month History**: Clickable rows — click any year in the sidebar to instantly load that contract into the chart (highlighted in cyan/orange).

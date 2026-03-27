@@ -1169,16 +1169,22 @@ async function loadLiveData() {
   }
   updateStatus();
 
-  // Save successful loads to cache
+  // Save successful loads to cache (Slimmed: store only latest point for each contract to save space)
   if (STATE.hhLiveCount >= 60) {
     const hhData = {};
-    getActiveHHTickers().forEach(t => { if (STATE.liveData[t]) hhData[t] = STATE.liveData[t]; });
+    getActiveHHTickers().forEach(t => { 
+      const raw = STATE.liveData[t];
+      if (raw && raw.length > 0) hhData[t] = [raw[raw.length - 1]];
+    });
     setCachedData('fc_cache_hh', hhData);
     STATE.hhCacheUsed = false; // Resolved
   }
   if (STATE.ttfLiveCount >= 5) {
     const ttfData = {};
-    getActiveTTFTickers().forEach(t => { if (STATE.liveData[t]) ttfData[t] = STATE.liveData[t]; });
+    getActiveTTFTickers().forEach(t => { 
+      const raw = STATE.liveData[t];
+      if (raw && raw.length > 0) ttfData[t] = [raw[raw.length - 1]];
+    });
     setCachedData('fc_cache_ttf', ttfData);
     STATE.ttfCacheUsed = false; // Resolved
   }
@@ -1199,6 +1205,7 @@ async function loadLiveData() {
     // Remove dates from base that are covered by Yahoo's better recent density
     const baseFiltered = fm.filter(p => !recMap.has(p.date));
     fm = [...baseFiltered, ...fmRec].sort((a, b) => a.date.localeCompare(b.date));
+    STATE.dailyCacheUsed = false;
   } else {
     // If Yahoo fetch failed, use our continuous foundation as the only source
     isStale = true;
@@ -2742,6 +2749,27 @@ function updateSpreadChart() {
   if (!year) return;
 
   const instrument = getSpreadInstrument();
+  const header = document.getElementById('spread-header');
+  if (header) {
+    const isHH = instrument === 'hh';
+    const isTTF = instrument === 'ttf';
+    let badge = '';
+    if ((isHH && STATE.hhCacheUsed) || (isTTF && STATE.ttfCacheUsed)) {
+      const isStale = isHH ? STATE.hhCacheStale : STATE.ttfCacheStale;
+      const age = isHH ? STATE.hhCacheAge : STATE.ttfCacheAge;
+      badge = isStale 
+        ? `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">⚠️ STALE CACHE (${age}h ago)</span>`
+        : `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">🟡 CACHED (${age}h ago)</span>`;
+    }
+    const oldBadge = header.querySelector('.ctrl-hint-badge');
+    if (oldBadge) oldBadge.remove();
+    if (badge) {
+      const temp = document.createElement('div');
+      temp.innerHTML = badge;
+      header.querySelector('.ch-top').appendChild(temp.firstElementChild);
+    }
+  }
+
   const legInfo = getSpreadLegInfo(front, back, year, instrument);
   const unit = instrument === 'ttf' ? 'EUR/MWh' : 'USD/MMBtu';
   document.getElementById('spread-desc').textContent = `${legInfo.longLabel} Calendar Spread · ${instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub'} · ${unit}`;
