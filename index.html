@@ -1329,7 +1329,13 @@ function renderHHTab() {
           <label>T-Day Range: <span id="hh-tday-label">ALL</span></label>
           <input type="range" id="hh-tday" min="0" max="13" value="0">
         </div>
-        <button class="toggle-btn" id="hh-mode-toggle">Trading Days</button>
+        <div class="flex flex-col gap-sm">
+          <label>Axis Mode</label>
+          <div class="segment-switch" id="hh-mode-switch">
+             <button class="segment-btn active" data-mode="cal">Calendar Date</button>
+             <button class="segment-btn" data-mode="tday">Trading Day</button>
+          </div>
+        </div>
         <button class="toggle-btn" id="hh-compare-toggle">Compare Mode</button>
         <div class="flex flex-col gap-sm" id="hh-compare-select" style="display:none;">
           <label>Compare Year</label>
@@ -1358,8 +1364,11 @@ function renderHHTab() {
     });
     document.getElementById('hh-year').addEventListener('change', updateHHChart);
     document.getElementById('hh-tday').addEventListener('input', updateHHChart);
-    document.getElementById('hh-mode-toggle').addEventListener('click', function() {
-      this.classList.toggle('active');
+    document.getElementById('hh-mode-switch').addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#hh-mode-switch .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
       updateHHChart();
     });
     document.getElementById('hh-compare-toggle').addEventListener('click', function() {
@@ -1427,7 +1436,7 @@ function updateHHChart() {
   const yy = year % 100;
   const pad = yy < 10 ? '0' + yy : '' + yy;
   const ticker = `NG${code}${pad}`;
-  const calendarMode = document.getElementById('hh-mode-toggle').classList.contains('active');
+  const calendarMode = document.querySelector('#hh-mode-switch .segment-btn.active').dataset.mode === 'tday';
   const compareOn = document.getElementById('hh-compare-toggle').classList.contains('active');
   const tdayIdx = parseInt(document.getElementById('hh-tday').value);
   const tdayLimit = TDAY_STEPS[tdayIdx];
@@ -1546,10 +1555,12 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
     crosshairMarkerRadius: 4,
   });
 
-  const mainData = filtered.map(pt => ({
-    time: getTime(pt),
-    value: pt.p,
-  }));
+  const timeToDayMap = new Map();
+  const mainData = filtered.map(pt => {
+    const t = getTime(pt);
+    if (calendarMode) timeToDayMap.set(t, pt.d);
+    return { time: t, value: pt.p };
+  });
   mainSeries.setData(mainData);
 
   // Compare mode — overlay second contract
@@ -1577,6 +1588,30 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
     }
   }
 
+    if (calendarMode) {
+    applyChartTimeScaleOptions(chart, {
+      formatter: time => {
+        const tKey = time; // String format yyyy-mm-dd
+        const d = timeToDayMap.get(tKey);
+        return d ? `T-${d}` : '';
+      }
+    });
+  } else {
+    // Re-apply default just in case
+    applyChartTimeScaleOptions(chart, {});
+  }
+    if (calendarMode) {
+    applyChartTimeScaleOptions(chart, {
+      formatter: time => {
+        const tKey = time; // String format yyyy-mm-dd
+        const d = timeToDayMap.get(tKey);
+        return d ? `T-${d}` : '';
+      }
+    });
+  } else {
+    // Re-apply default just in case
+    applyChartTimeScaleOptions(chart, {});
+  }
   chart.timeScale().fitContent();
 }
 
@@ -1844,7 +1879,13 @@ function renderTTFTab() {
           <label>T-Day Range: <span id="ttf-tday-label">ALL</span></label>
           <input type="range" id="ttf-tday" min="0" max="13" value="0">
         </div>
-        <button class="toggle-btn" id="ttf-mode-toggle">Trading Days</button>
+        <div class="flex flex-col gap-sm">
+          <label>Axis Mode</label>
+          <div class="segment-switch" id="ttf-mode-switch">
+             <button class="segment-btn active" data-mode="cal">Calendar Date</button>
+             <button class="segment-btn" data-mode="tday">Trading Day</button>
+          </div>
+        </div>
       </div>
       <div class="flex gap" style="flex-wrap:wrap;">
         <div class="grow" style="min-width:0;">
@@ -1863,8 +1904,11 @@ function renderTTFTab() {
     });
     document.getElementById('ttf-year').addEventListener('change', updateTTFChart);
     document.getElementById('ttf-tday').addEventListener('input', updateTTFChart);
-    document.getElementById('ttf-mode-toggle').addEventListener('click', function() {
-      this.classList.toggle('active');
+    document.getElementById('ttf-mode-switch').addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#ttf-mode-switch .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
       updateTTFChart();
     });
   }
@@ -1899,7 +1943,7 @@ function updateTTFChart() {
   const yy = year % 100;
   const pad = yy < 10 ? '0' + yy : '' + yy;
   const ticker = `TG${code}${pad}`;
-  const calendarMode = document.getElementById('ttf-mode-toggle').classList.contains('active');
+  const calendarMode = document.querySelector('#ttf-mode-switch .segment-btn.active').dataset.mode === 'tday';
   const tdayIdx = parseInt(document.getElementById('ttf-tday').value);
   const tdayLimit = TDAY_STEPS[tdayIdx];
   document.getElementById('ttf-tday-label').textContent = tdayLimit === 0 ? 'ALL' : `Last ${tdayLimit}`;
