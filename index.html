@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -929,8 +929,9 @@ async function fetchJSON(url) {
   return res.json();
 }
 
-async function fetchYahoo(ticker) {
-  const directUrl = `${YAHOO_BASE}${encodeURIComponent(ticker)}?interval=1d&range=2y`;
+async function fetchYahoo(ticker, range) {
+  const r = range || '2y';
+  const directUrl = `\\?interval=1d&range=\`;
   const proxyUrl = CORS_PROXY + encodeURIComponent(directUrl);
   try {
     let data = await fetchJSON(proxyUrl);
@@ -1048,7 +1049,7 @@ async function loadLiveData() {
   setLoadProgress(50, 'FETCHING LIVE PRICES...');
   const allTickers = [...getActiveHHTickers(), ...getActiveTTFTickers()];
   // Also fetch front month for nav display
-  const frontMonth = fetchYahoo('NG=F');
+  const frontMonth = fetchYahoo('NG=F', 'max');
 
   // Batch fetch in groups of 10 to avoid overwhelming
   const batchSize = 10;
@@ -3906,6 +3907,10 @@ function renderDailyTab() {
       </div>
 
       <div class="card" style="padding:0;" id="daily-table"></div>
+
+      <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-seasonality"></div>
+
+      <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-annual"></div>
     `;
 
     document.getElementById('daily-range-switch').addEventListener('click', e => {
@@ -3947,6 +3952,8 @@ function updateDailyTracker() {
   _renderExpiryCalendar(now);
   _renderWeeklyChart(data);
   _renderDailyPriceLog(data);
+  _renderMonthlySeasonality(data);
+  _renderAnnualPerformance(data);
 }
 
 function _renderDailyStatChips(stats, currentPrice) {
@@ -4198,6 +4205,120 @@ function _renderDailyPriceLog(data) {
   el.innerHTML = html;
 }
 
+</script>
+
+<script>
+// ─── DAILY TRACKER UPGRADE 6: MONTHLY SEASONALITY + ANNUAL PERFORMANCE ───────
+
+function _renderMonthlySeasonality(data) {
+  const el = document.getElementById('daily-seasonality');
+  if (!el || data.length < 50) {
+    if (el) el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px;">Need more data for seasonality</div>';
+    return;
+  }
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthReturns = Array.from({length:12}, () => []);
+  const monthYearCounts = Array.from({length:12}, () => ({ pos: 0, total: 0 }));
+  const yearlyMonthData = new Map();
+
+  data.forEach(pt => {
+    const d = new Date(pt.date + 'T00:00:00Z');
+    const mo = d.getUTCMonth();
+    const yr = d.getUTCFullYear();
+    const key = `${yr}-${mo}`;
+    if (!yearlyMonthData.has(key)) yearlyMonthData.set(key, { month: mo, year: yr, first: pt.p, last: pt.p });
+    else yearlyMonthData.get(key).last = pt.p;
+  });
+
+  for (const [, v] of yearlyMonthData) {
+    if (v.first <= 0) continue;
+    const ret = (v.last - v.first) / v.first * 100;
+    monthReturns[v.month].push(ret);
+    monthYearCounts[v.month].total++;
+    if (ret >= 0) monthYearCounts[v.month].pos++;
+  }
+
+  const avgs = monthReturns.map(rets => rets.length ? rets.reduce((s, r) => s + r, 0) / rets.length : 0);
+  const maxAbs = Math.max(...avgs.map(Math.abs), 0.01);
+
+  let html = '<div class="card-title" style="padding:10px 14px 4px;">AVERAGE MONTHLY RETURN \u2014 NG=F <span style="font-size:10px;color:var(--text-muted);font-weight:400;">full history</span></div>' +
+    '<div style="display:flex;align-items:flex-end;justify-content:space-around;padding:8px 14px 0;gap:4px;height:140px;">';
+
+  avgs.forEach((avg, i) => {
+    const pct = Math.abs(avg) / maxAbs;
+    const isPos = avg >= 0;
+    const barH = Math.max(4, Math.floor(pct * 80));
+    const { pos, total } = monthYearCounts[i];
+    html += '<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;" title="' + MONTH_NAMES[i] + ': ' + pos + ' of ' + total + ' years positive">' +
+      '<span style="font-family:var(--font-mono);font-size:9px;color:' + (isPos ? 'var(--positive)' : 'var(--negative)') + ';">' + (isPos ? '+' : '') + avg.toFixed(1) + '%</span>' +
+      '<div style="width:100%;display:flex;flex-direction:column;justify-content:' + (isPos ? 'flex-end' : 'flex-start') + ';height:84px;">' +
+        '<div style="width:100%;height:' + barH + 'px;background:' + (isPos ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)') + ';border-radius:2px;"></div>' +
+      '</div>' +
+      '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);">' + MONTH_NAMES[i] + '</span>' +
+      '<span style="font-size:9px;color:var(--text-muted);">' + pos + '/' + total + '</span>' +
+    '</div>';
+  });
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function _renderAnnualPerformance(data) {
+  const el = document.getElementById('daily-annual');
+  if (!el || data.length < 50) { if (el) el.innerHTML = ''; return; }
+
+  const yearMap = new Map();
+  data.forEach(pt => {
+    const yr = pt.date.slice(0, 4);
+    if (!yearMap.has(yr)) yearMap.set(yr, { first: pt.p, last: pt.p });
+    else yearMap.get(yr).last = pt.p;
+  });
+
+  const rows = [];
+  for (const [yr, {first, last}] of yearMap) {
+    if (first <= 0) continue;
+    rows.push({ year: yr, jan: first, dec: last, pct: (last - first) / first * 100 });
+  }
+  rows.sort((a, b) => b.year.localeCompare(a.year));
+
+  // Rank by annual %
+  const sorted = [...rows].sort((a, b) => b.pct - a.pct);
+  sorted.forEach((r, i) => { r.rank = i + 1; });
+  const byYear = new Map(rows.map(r => [r.year, r]));
+
+  const posYears = rows.filter(r => r.pct >= 0).length;
+  const allPcts = rows.map(r => r.pct);
+  const avgAnn = allPcts.reduce((s, v) => s + v, 0) / allPcts.length;
+  const best = sorted[0];
+  const worst = sorted[sorted.length - 1];
+
+  const th = label => '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">' + label + '</th>';
+  let html = '<div class="card-title" style="padding:10px 14px 6px;">ANNUAL PERFORMANCE \u2014 NG=F <span style="font-size:10px;color:var(--text-muted);font-weight:400;">' + rows.length + ' years</span></div>';
+  html += '<div style="overflow-y:auto;max-height:360px;"><table><thead><tr>' +
+    '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;text-align:left;">Year</th>' +
+    th('Jan Price') + th('Dec Price') + th('Annual \u0394%') + th('Rank') + '</tr></thead><tbody>';
+
+  rows.forEach(r => {
+    html += '<tr>' +
+      '<td style="text-align:left;font-weight:600;">' + r.year + '</td>' +
+      '<td style="font-family:var(--font-mono);">$' + r.jan.toFixed(3) + '</td>' +
+      '<td style="font-family:var(--font-mono);">$' + r.dec.toFixed(3) + '</td>' +
+      '<td class="' + (r.pct >= 0 ? 'positive' : 'negative') + '">' + (r.pct >= 0 ? '+' : '') + r.pct.toFixed(1) + '%</td>' +
+      '<td style="color:var(--text-muted);">#' + r.rank + '</td>' +
+    '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  html += '<div style="padding:8px 14px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;display:flex;gap:16px;flex-wrap:wrap;color:var(--text-muted);">' +
+    '<span>Avg: <strong style="color:var(--text-primary);">' + (avgAnn >= 0 ? '+' : '') + avgAnn.toFixed(1) + '%</strong></span>' +
+    '<span>Best: <strong style="color:var(--positive);">+' + best.pct.toFixed(1) + '% (' + best.year + ')</strong></span>' +
+    '<span>Worst: <strong style="color:var(--negative);">' + worst.pct.toFixed(1) + '% (' + worst.year + ')</strong></span>' +
+    '<span>Pos: <strong style="color:var(--positive);">' + posYears + '/' + rows.length + '</strong></span>' +
+  '</div>';
+
+  el.innerHTML = html;
+}
 </script>
 
 <script>
