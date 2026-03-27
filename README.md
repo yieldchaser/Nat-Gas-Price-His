@@ -12,12 +12,12 @@ The app is intentionally lightweight:
 ## What Is In The Dashboard
 
 - `HH Contracts`: Henry Hub contract history with seasonal overlays and compare mode
-- `TTF Contracts`: Dutch TTF contract history
-- `Spot`: Henry Hub daily spot history
-- `Spreads`: calendar spread chart plus heatmap
-- `Forward Curve`: live strip view from current forward contracts
-- `Expiry Prices`: historical final settlement table
-- `Daily Tracker`: front-month contract log and upcoming expirations
+- `TTF Contracts`: Dutch TTF contract history with dedicated instrument switcher
+- `Spot`: Henry Hub daily spot history (EIA data)
+- `Spreads`: Calendar spread charts and heatmaps for seasonal analysis
+- `Forward Curve`: Overhauled live strip view with multi-instrument support (HH/TTF), pixel-precise annotation sync, and strict x-axis bounding to prevent pseudo-date artifacts.
+- `Expiry Prices`: Historical settlement table with YoY% change columns, relative heat-mapping, and cross-column averages.
+- `Daily Tracker`: Redesigned information-dense dashboard featuring live NG=F charting, 52W stats, realized volatility (21D/63D) metrics, NG-TTF spread panel, and correct CME-rule expiration calendars.
 
 ## Repo Layout
 
