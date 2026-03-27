@@ -3580,7 +3580,7 @@ function renderCurveTable(curveData, windowContext) {
 
   curveData.slots.forEach((slot, index) => {
     const inWindow = index >= windowContext.start && index <= windowContext.end;
-    const rowStyle = `${inWindow ? 'background:rgba(255,255,255,0.03);' : ''}${slot.missing ? 'opacity:0.72;' : ''}`;
+    const rowStyle = `${inWindow ? 'background:rgba(255,255,255,0.03);' : ''}${slot.missing ? 'opacity:0.72;' : ''}cursor:pointer;`;
     const barWidth = Number.isFinite(slot.price) ? ((slot.price - priceMin) / priceRange * 40).toFixed(1) : '0';
     const bar = Number.isFinite(slot.price)
       ? `<span style="display:inline-block;width:${barWidth}px;height:3px;background:${meta.color};border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`
@@ -3593,9 +3593,21 @@ function renderCurveTable(curveData, windowContext) {
       : `<span style="color:var(--negative);">Missing</span>`;
     const seasonHtml = `<span style="color:${seasonColor[slot.season]};">${slot.season.charAt(0).toUpperCase() + slot.season.slice(1)}</span>`;
 
-    tableHtml += `<tr style="${rowStyle}">
+    // Extract month and year from ticker for cross-tab navigation
+    // Ticker format: NGJ26 or TTFJ26 — month code at pos 2 (HH) or pos 3 (TTF)
+    const isHH = instrument === 'hh';
+    const tickerCode = isHH ? slot.ticker.charAt(2) : slot.ticker.charAt(3);
+    const tickerYrStr = isHH ? slot.ticker.slice(3) : slot.ticker.slice(4);
+    const tickerYrFull = parseInt(tickerYrStr) < 50 ? 2000 + parseInt(tickerYrStr) : 1900 + parseInt(tickerYrStr);
+    const tickerMonth = (typeof CODE_TO_MONTH !== 'undefined' ? CODE_TO_MONTH : {})[tickerCode] || '';
+    const navMarket = isHH ? 'hh' : 'ttf';
+    const clickHandler = tickerMonth
+      ? `onclick="navigateTo('prices',{market:'${navMarket}',month:'${tickerMonth}',year:'${tickerYrFull}'})" title="View ${slot.ticker} in Prices tab"`
+      : '';
+
+    tableHtml += `<tr style="${rowStyle}" ${clickHandler}>
       <td style="text-align:left;">
-        <div style="font-family:var(--font-mono);color:var(--text-primary);">${slot.ticker}</div>
+        <div style="font-family:var(--font-mono);color:${meta.color};">${slot.ticker}</div>
         <div style="font-size:11px;color:var(--text-muted);">${slot.label}</div>
       </td>
       <td>${priceHtml}</td>
@@ -4145,6 +4157,14 @@ function buildExpiryTable(range) {
     '<th style="color:var(--accent-hh);">3Y Avg</th>' +
     '</tr></thead><tbody>';
 
+  // Pre-compute per-month all-years rank lookup (over all years in STATE.expiry, not just visible)
+  const allExpiryYears = Object.keys(STATE.expiry).sort((a, b) => +a - +b);
+  const monthRankLookup = {}; // m -> sorted prices desc for ranking
+  MONTHS.forEach(m => {
+    const allPricesForMonth = allExpiryYears.map(yr => STATE.expiry[yr] ? STATE.expiry[yr][m] : null).filter(v => v != null);
+    monthRankLookup[m] = [...allPricesForMonth].sort((a, b) => b - a);
+  });
+
   MONTHS.forEach(m => {
     html += '<tr><td style="text-align:left;font-weight:600;cursor:pointer;" class="expiry-month-label" data-month="' + m + '" onclick="showExpiryMonthProfile(\'' + m + '\')" title="Click to view ' + m + ' expiry history">' + m + ' &#9660;</td>';
     years.forEach(yr => {
@@ -4158,7 +4178,21 @@ function buildExpiryTable(range) {
         if (delta > 0.02)       bg = 'rgba(0,255,136,'  + Math.min(delta * 1.8, 0.55) + ')';
         else if (delta < -0.02) bg = 'rgba(255,68,85,'  + Math.min(Math.abs(delta) * 1.8, 0.55) + ')';
       }
-      html += '<td style="background:' + bg + ';cursor:pointer;" onclick="navigateTo(\'prices\',{month:\'' + m + '\',year:\'' + yr + '\'})">$' + v.toFixed(3) + '</td>';
+      // Per-cell tooltip: rank + vs 5Y avg + YoY
+      const sortedM = monthRankLookup[m];
+      const rank = sortedM.indexOf(v) + 1;
+      const rankN = sortedM.length;
+      const vs5y = avg5y[m] != null ? ((v - avg5y[m]) / avg5y[m] * 100) : null;
+      const priorYr = String(parseInt(yr) - 1);
+      const priorV = expiry[priorYr] ? expiry[priorYr][m] : null;
+      const yoyCell = (priorV != null && priorV !== 0) ? ((v - priorV) / priorV * 100) : null;
+      const ttParts = ['Rank #' + rank + '/' + rankN + ' all time'];
+      if (vs5y != null) ttParts.push((vs5y >= 0 ? '+' : '') + vs5y.toFixed(1) + '% vs 5Y avg');
+      if (yoyCell != null) ttParts.push('YoY: ' + (yoyCell >= 0 ? '+' : '') + yoyCell.toFixed(1) + '% from ' + priorYr);
+      const tooltipTitle = ttParts.join(' | ');
+      const rankSup = rank <= 3 ? '<sup style="font-size:8px;color:var(--accent-hh);vertical-align:super;">#' + rank + '</sup>' : '';
+      html += '<td style="background:' + bg + ';cursor:pointer;position:relative;" title="' + tooltipTitle + '" onclick="navigateTo(\'prices\',{month:\'' + m + '\',year:\'' + yr + '\'})">' +
+        '$' + v.toFixed(3) + rankSup + '</td>';
     });
     // YoY column: last vs second-to-last visible year
     const lastYr = years[years.length - 1];
@@ -4794,28 +4828,55 @@ function _renderWeeklyChart(data) {
   distEl.innerHTML = distHtml;
 }
 
+const _priceLogState = { page: 0, data: [], pageSize: 100 };
+
 function _renderDailyPriceLog(data) {
   const el = document.getElementById('daily-table');
   if (!el) return;
-  const reversed = [...data].reverse();
-  const allPrices = reversed.map(p => p.p);
+  _priceLogState.data = [...data].reverse();
+  _priceLogState.page = 0;
+  _renderPriceLogPage(el);
+}
+
+function _renderPriceLogPage(el) {
+  if (!el) el = document.getElementById('daily-table');
+  if (!el) return;
+  const { data, page, pageSize } = _priceLogState;
+  const totalPages = Math.ceil(data.length / pageSize);
+  const start = page * pageSize;
+  const pageData = data.slice(start, start + pageSize);
+  const allPrices = data.map(p => p.p);
   const pMin = Math.min(...allPrices), pMax = Math.max(...allPrices), pRange = pMax - pMin || 1;
+  const sessionLabel = data.length >= 8000 ? data.length + '+ SESSIONS' : data.length + ' sessions';
   const th = (label, extra) => '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;' + (label === 'Date' ? 'text-align:left;' : '') + (extra || '') + '">' + label + '</th>';
-  let html = '<div class="card-title" style="padding:10px 14px 6px;">Price Log &mdash; NG=F <span style="font-size:11px;color:var(--text-muted);font-weight:400;">' + data.length + ' sessions</span></div>';
-  html += '<div style="overflow-y:auto;max-height:480px;"><table><thead><tr>' + th('Date') + th('Close') + th('Day \u0394%') + th('Range') + '</tr></thead><tbody>';
-  reversed.forEach((pt, i) => {
-    const prevPt = i < reversed.length - 1 ? reversed[i + 1] : pt;
+  let html = '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 6px;flex-wrap:wrap;gap:4px;">' +
+    '<span class="card-title" style="margin-bottom:0;">Price Log &mdash; NG=F · <span style="color:var(--accent-hh);">' + sessionLabel + '</span></span>' +
+    '<div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">' +
+    '<button onclick="_priceLogPage(-1)" style="background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:var(--font-mono);font-size:12px;" ' + (page === 0 ? 'disabled' : '') + '>&#9664; Prev</button>' +
+    '<span>Page ' + (page + 1) + ' / ' + totalPages + '</span>' +
+    '<button onclick="_priceLogPage(1)" style="background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:var(--font-mono);font-size:12px;" ' + (page >= totalPages - 1 ? 'disabled' : '') + '>Next &#9654;</button>' +
+    '</div></div>';
+  html += '<div style="overflow-y:auto;max-height:420px;"><table><thead><tr>' + th('Date') + th('Close') + th('Day \u0394%') + th('Range') + '</tr></thead><tbody>';
+  pageData.forEach((pt, i) => {
+    const globalIdx = start + i;
+    const prevPt = globalIdx < data.length - 1 ? data[globalIdx + 1] : pt;
     const delta = (pt.p - prevPt.p) / prevPt.p * 100;
     const barW = ((pt.p - pMin) / pRange * 56).toFixed(1);
     html += '<tr>' +
       '<td style="text-align:left;">' + formatDailyDate(pt.date) + '</td>' +
       '<td style="font-family:var(--font-mono);">$' + pt.p.toFixed(3) + '</td>' +
-      '<td class="' + (delta >= 0 ? 'positive' : 'negative') + '">' + (i === reversed.length - 1 ? '\u2014' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%') + '</td>' +
+      '<td class="' + (delta >= 0 ? 'positive' : 'negative') + '">' + (globalIdx === data.length - 1 ? '\u2014' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%') + '</td>' +
       '<td><div style="width:' + barW + 'px;height:3px;background:var(--accent-hh);border-radius:2px;opacity:0.55;"></div></td>' +
       '</tr>';
   });
   html += '</tbody></table></div>';
   el.innerHTML = html;
+}
+
+function _priceLogPage(dir) {
+  const totalPages = Math.ceil(_priceLogState.data.length / _priceLogState.pageSize);
+  _priceLogState.page = Math.max(0, Math.min(totalPages - 1, _priceLogState.page + dir));
+  _renderPriceLogPage();
 }
 
 </script>
@@ -4955,17 +5016,15 @@ function navigateTo(tab, params) {
   // After tab renders, apply params
   requestAnimationFrame(() => {
     if (tab === 'prices' && params.month && params.year) {
-      // Set market, month, year
-      if (params.market === 'ttf') {
-        const mktBtn = document.querySelector('.segment-btn[data-market="ttf"]');
-        if (mktBtn) mktBtn.click();
-      }
-      const monthSel = document.getElementById('price-month');
-      if (monthSel) { monthSel.value = params.month; monthSel.dispatchEvent(new Event('change')); }
-      const yearSel = document.getElementById('price-year');
-      if (yearSel) { yearSel.value = params.year; yearSel.dispatchEvent(new Event('change')); }
-      // Render
-      if (typeof renderPricesTab === 'function') renderPricesTab(params.market || 'hh', params.month, params.year);
+      // Update STATE.priceView directly (reliable path regardless of element IDs)
+      const market = params.market || 'hh';
+      STATE.priceView.instrument = market;
+      STATE.priceView.month = params.month;
+      STATE.priceView.year = parseInt(params.year, 10) || STATE.priceView.year;
+      resetPriceWindow(STATE.priceView);
+      // Re-render controls and chart
+      if (typeof renderPricesControls === 'function') renderPricesControls();
+      if (typeof schedulePricesChartUpdate === 'function') schedulePricesChartUpdate();
     }
   });
 }
