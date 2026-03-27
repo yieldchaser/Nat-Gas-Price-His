@@ -2921,6 +2921,7 @@ function teardownCurveAnnotations() {
   if (STATE._curveTimeRangeListener && STATE._curveChart) {
     try {
       STATE._curveChart.timeScale().unsubscribeVisibleTimeRangeChange(STATE._curveTimeRangeListener);
+      STATE._curveChart.timeScale().unsubscribeVisibleLogicalRangeChange(STATE._curveTimeRangeListener);
     } catch (_) {}
     STATE._curveTimeRangeListener = null;
   }
@@ -2942,6 +2943,7 @@ function bindCurveAnnotations(chart, container) {
   const rerender = () => scheduleCurveAnnotationRender();
   STATE._curveTimeRangeListener = rerender;
   chart.timeScale().subscribeVisibleTimeRangeChange(rerender);
+  chart.timeScale().subscribeVisibleLogicalRangeChange(rerender);
   if (typeof ResizeObserver === 'function' && container) {
     const observer = new ResizeObserver(() => scheduleCurveAnnotationRender());
     observer.observe(container);
@@ -3478,8 +3480,9 @@ function updateCurveChart() {
   applyChartTimeScaleOptions(chart, {
     formatter: buildCurveAxisFormatter(time => curveLookup.get(timeKey(time))),
     barSpacing: slots.length > 36 ? 8 : 11,
-    fixLeftEdge: false,
-    fixRightEdge: false,
+    minBarSpacing: 0.5,
+    fixLeftEdge: true,
+    fixRightEdge: true,
   });
   chart.timeScale().fitContent();
   attachChartTooltip({

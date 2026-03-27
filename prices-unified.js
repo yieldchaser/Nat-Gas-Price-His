@@ -321,7 +321,7 @@ function buildSmartAxisFormatter(filteredData, chartPixelWidth, useTradingAxis) 
 function buildCurveAxisFormatter(resolveContract) {
   return time => {
     const point = typeof resolveContract === 'function' ? resolveContract(time) : null;
-    return point ? point.label : ' ';
+    return point ? point.label : '\u00A0';
   };
 }
 
