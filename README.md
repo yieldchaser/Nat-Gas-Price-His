@@ -48,17 +48,18 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 - **Compare Curve**: Dropdown to overlay the curve from 1 Week Ago, 1 Month Ago, 3 Months Ago, or 1 Year Ago as a dashed line.
 - **Contract Table Navigation**: Click any contract row to jump to the Prices tab with that contract loaded.
 
-### 8. Daily Tracker (NG=F)
-- **Full History**: NG=F fetched with `range=max` — 8,500+ sessions since 1990.
-- **Main Price Chart**: High-performance NG=F front-month chart with 1M/3M/1Y/All toggles.
-- **Technical Annotations**: Automatic horizontal levels for 52W High, 52W Low, and 30D Moving Average.
-- **NG vs TTF Spread**: Live nominal spread tracking between US and European benchmarks.
-- **Weekly Returns**: Color-coded histogram of weekly performance.
-- **Upcoming Expirations**: CME-rule based calendar with real-time countdown ("Expiring in X days").
-- **Return Distribution**: Statistical frequency plot of historical returns.
-- **Monthly Seasonality Chart**: 12-bar average monthly return chart (green/positive, red/negative) with pos/total year count per bar.
-- **Annual Performance Table**: Year, Jan Price, Dec Price, Annual Delta %, and Rank for every year since 1990.
-- **Paginated Price Log**: Session-by-session history paginated at 100 rows/page with Prev/Next navigation, showing all 8,500+ sessions.
+### 8. Daily Tracker & Data Roadmap (v2.0 Updates)
+- **High-Fidelity History**: Built from a 9,000+ session continuous `NG=F` foundation (1990–2026) derived from local raw contract database.
+- **Zero-Lag Seeding**: STATE.liveData['NG=F'] is pre-seeded with historical data on first paint, ensuring zero-latency initial rendering.
+- **Resilient Data Engine**:
+  - **Proxy Rotation**: Automatic failover across multiple CORS proxies (`corsproxy.io`, `allorigins`, `codetabs`).
+  - **Retry Logic**: 3-layer fetch attempts with exponential backoff to bypass Yahoo Finance throttling.
+  - **Graceful Fallback**: Active **🟡 STALE** detection that falls back to historical records when live APIs are unavailable.
+- **Institutional Analytics**:
+  - **Pill-Toggle Series**: Toggleable overlays for `52W High`, `52W Low`, and `360D Average`.
+  - **NG vs TTF Spread (Dynamic FX)**: Real-time nominal spread using live **EURUSD=X** conversion (EUR/MWh to USD/MMBtu).
+  - **Spread KPIs**: Performance cards for Current, 52W Range, and YTD Δ%.
+  - **Extended Ranges**: Fully synchronized presets for `1M`, `3M`, `1Y`, `2Y`, `3Y`, `5Y`, `10Y`, and `ALL`.
 
 ### 9. Prices Tab
 - **X-Axis Mode Toggle**: Cal Date / T-Day segment switch to view contract price history on calendar dates or by trading day number (Day 1 to Day 519).
