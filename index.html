@@ -943,40 +943,67 @@ function hideLoading() {
 }
 
 /* ─── Data Loading ─── */
-const CORS_PROXY = 'https://corsproxy.io/?';
+/* ─── Data Loading ─── */
+const CORS_PROXIES = [
+  'https://corsproxy.io/?',
+  'https://api.allorigins.win/raw?url=',
+  'https://api.codetabs.com/v1/proxy?quest='
+];
 const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 
-async function fetchJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
+async function fetchJSON(url, timeout = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
+    if (!res.ok) return null;
+    return res.json();
+  } catch (e) {
+    clearTimeout(id);
+    return null;
+  }
 }
 
-async function fetchYahoo(ticker, range) {
+async function fetchYahoo(ticker, range, retries = 3) {
   const r = range || '2y';
   const directUrl = `${YAHOO_BASE}${ticker}?interval=1d&range=${r}`;
-  const proxyUrl = CORS_PROXY + encodeURIComponent(directUrl);
-  try {
-    let data = await fetchJSON(proxyUrl);
-    if (!data) data = await fetchJSON(directUrl);
-    if (!data || !data.chart || !data.chart.result) return null;
-    const r = data.chart.result[0];
-    const ts = r.timestamp || [];
-    const quotes = r.indicators.quote[0];
-    const points = [];
-    for (let i = 0; i < ts.length; i++) {
-      if (quotes.close[i] == null) continue;
-      const dt = new Date(ts[i] * 1000);
-      points.push({
-        date: dt.toISOString().slice(0, 10),
-        p: Math.round(quotes.close[i] * 10000) / 10000,
-        o: quotes.open[i] ? Math.round(quotes.open[i] * 10000) / 10000 : null,
-        h: quotes.high[i] ? Math.round(quotes.high[i] * 10000) / 10000 : null,
-        l: quotes.low[i] ? Math.round(quotes.low[i] * 10000) / 10000 : null,
-      });
+  
+  for (let attempt = 0; attempt < retries; attempt++) {
+    // Rotate proxies on each attempt
+    const proxy = CORS_PROXIES[attempt % CORS_PROXIES.length];
+    const proxyUrl = proxy.includes('allorigins') ? proxy + encodeURIComponent(directUrl) : proxy + directUrl;
+    
+    try {
+      let data = await fetchJSON(proxyUrl);
+      if (!data && attempt === retries - 1) data = await fetchJSON(directUrl); // Last ditch direct
+      
+      if (data && data.chart && data.chart.result) {
+        const r = data.chart.result[0];
+        const ts = r.timestamp || [];
+        const quotes = r.indicators.quote[0];
+        const points = [];
+        for (let i = 0; i < ts.length; i++) {
+          if (quotes.close[i] == null) continue;
+          const dt = new Date(ts[i] * 1000);
+          points.push({
+            date: dt.toISOString().slice(0, 10),
+            p: Math.round(quotes.close[i] * 10000) / 10000,
+            o: quotes.open[i] ? Math.round(quotes.open[i] * 10000) / 10000 : null,
+            h: quotes.high[i] ? Math.round(quotes.high[i] * 10000) / 10000 : null,
+            l: quotes.low[i] ? Math.round(quotes.low[i] * 10000) / 10000 : null,
+          });
+        }
+        return points;
+      }
+    } catch (e) { console.warn(`Fetch failed for ${ticker} (attempt ${attempt+1}):`, e); }
+    
+    // Exponential backoff
+    if (attempt < retries - 1) {
+      await new Promise(res => setTimeout(res, 500 * Math.pow(2, attempt)));
     }
-    return points;
-  } catch (e) { return null; }
+  }
+  return null;
 }
 
 async function loadHistoricalData() {
@@ -1074,6 +1101,11 @@ function getActiveTTFTickers() {
 
 async function loadLiveData() {
   setLoadProgress(50, 'FETCHING LIVE PRICES...');
+  
+  const hhTickers = getActiveHHTickers().slice(0, 6);
+  const ttfTickers = getActiveTTFTickers().slice(0, 4);
+  const allTickers = [...hhTickers, ...ttfTickers];
+
   // Fetch front month with '2y' for current daily density
   // We use our own data/ng_continuous.json as the baseline for history
   const frontMonthRecent = fetchYahoo('NG=F', '2y');
@@ -1091,16 +1123,21 @@ async function loadLiveData() {
   // Merge dense historical database with live Yahoo data (Yahoo overwrites on overlap)
   const [fmRec, fxRec] = await Promise.all([frontMonthRecent, eurusdRecent]);
   
+  let isStale = false;
   // Update live FX rate
   if (fxRec && fxRec.length > 0) {
     STATE.eurusd = fxRec[fxRec.length - 1].p;
   }
+  
   let fm = STATE._ngContinuous || [];
   if (fmRec && fmRec.length > 0) {
     const recMap = new Map(fmRec.map(p => [p.date, p]));
     // Remove dates from base that are covered by Yahoo's better recent density
     const baseFiltered = fm.filter(p => !recMap.has(p.date));
     fm = [...baseFiltered, ...fmRec].sort((a, b) => a.date.localeCompare(b.date));
+  } else {
+    // If Yahoo fetch failed, use our continuous foundation as the only source
+    isStale = true;
   }
 
   if (fm && fm.length > 0) {
@@ -1111,11 +1148,24 @@ async function loadLiveData() {
     if (el) {
       el.textContent = `$${last.p.toFixed(3)} ${change >= 0 ? '▲' : '▼'}${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
       el.className = change >= 0 ? 'positive' : 'negative';
+      if (isStale) el.style.opacity = '0.6'; else el.style.opacity = '1';
     }
     STATE.liveData['NG=F'] = fm;
   }
+  
+  // Custom status message replacing "Live data unavailable"
+  const fDot = document.getElementById('freshness-dot');
   const fTime = document.getElementById('freshness-time');
-  if (fTime) fTime.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  if (fTime) {
+    const timeStr = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    if (isStale) {
+      if (fDot) fDot.style.background = 'var(--warning)';
+      fTime.innerHTML = `<span style="color:var(--warning)">\u26A0 STALE</span> \u2014 Using historical data (${timeStr})`;
+    } else {
+      if (fDot) fDot.style.background = 'var(--positive)';
+      fTime.textContent = timeStr;
+    }
+  }
   invalidateDerivedCaches();
 }
 
