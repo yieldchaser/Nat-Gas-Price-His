@@ -1122,6 +1122,19 @@ async function loadLiveData() {
   const ttfTickers = getActiveTTFTickers();
   const allTickers = [...hhTickers, ...ttfTickers];
 
+  // Load from cache first for instant render
+  const cacheHH = getCachedData('fc_cache_hh');
+  if (cacheHH) {
+    Object.entries(cacheHH.data).forEach(([t, d]) => { if (!STATE.liveData[t]) STATE.liveData[t] = d; });
+    STATE.hhCacheUsed = true; STATE.hhCacheAgeH = cacheHH.ageH; STATE.hhCacheIsStale = cacheHH.isStale;
+  }
+  const cacheTTF = getCachedData('fc_cache_ttf');
+  if (cacheTTF) {
+    Object.entries(cacheTTF.data).forEach(([t, d]) => { if (!STATE.liveData[t]) STATE.liveData[t] = d; });
+    STATE.ttfCacheUsed = true; STATE.ttfCacheAgeH = cacheTTF.ageH; STATE.ttfCacheIsStale = cacheTTF.isStale;
+  }
+  if (STATE.activeTab === 'curve') updateCurveChart();
+
   // Fetch front month with '2y' for current daily density
   // We use our own data/ng_continuous.json as the baseline for history
   const frontMonthRecent = fetchYahoo('NG=F', '2y');
@@ -1153,6 +1166,21 @@ async function loadLiveData() {
     const pct = 50 + Math.round((i / allTickers.length) * 40);
     setLoadProgress(pct, `FETCHING CONTRACTS... ${STATE.hhLiveCount + STATE.ttfLiveCount} loaded`);
     if (i + batchSize < allTickers.length) await new Promise(res => setTimeout(res, 300));
+  }
+  updateStatus();
+
+  // Save successful loads to cache
+  if (STATE.hhLiveCount >= 60) {
+    const hhData = {};
+    getActiveHHTickers().forEach(t => { if (STATE.liveData[t]) hhData[t] = STATE.liveData[t]; });
+    setCachedData('fc_cache_hh', hhData);
+    STATE.hhCacheUsed = false; // Resolved
+  }
+  if (STATE.ttfLiveCount >= 5) {
+    const ttfData = {};
+    getActiveTTFTickers().forEach(t => { if (STATE.liveData[t]) ttfData[t] = STATE.liveData[t]; });
+    setCachedData('fc_cache_ttf', ttfData);
+    STATE.ttfCacheUsed = false; // Resolved
   }
   updateStatus();
 
@@ -3473,8 +3501,20 @@ function getForwardCurveStatusHtml() {
   const hhLive = STATE.hhLiveCount || 0;
   const ttfLive = STATE.ttfLiveCount || 0;
   const totalLive = hhLive + ttfLive;
-  let html = `HH: ${hhLive}/72 · TTF: ${ttfLive}/36 quoted`;
-  if (totalLive < 20 && totalLive > 0) {
+  
+  const getBadge = (used, stale, age) => {
+    if (!used) return '';
+    const color = stale ? 'var(--negative)' : 'var(--warning)';
+    const text = stale ? 'STALE' : 'CACHED';
+    const sym = stale ? '\u26A0' : '\u231B';
+    return `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,0.05);border:1px solid ${color};color:${color};margin-right:4px;font-weight:700;" title="${age}h ago">${sym} ${text}</span>`;
+  };
+
+  const hhBadge = getBadge(STATE.hhCacheUsed, STATE.hhCacheIsStale, STATE.hhCacheAgeH);
+  const ttfBadge = getBadge(STATE.ttfCacheUsed, STATE.ttfCacheIsStale, STATE.ttfCacheAgeH);
+
+  let html = `${hhBadge}HH: ${hhLive}/72 · ${ttfBadge}TTF: ${ttfLive}/36 quoted`;
+  if (totalLive < 20 && totalLive > 0 && !STATE.hhCacheUsed && !STATE.ttfCacheUsed) {
     html = `<span style="color:var(--warning);font-weight:700;">\u26A0 PARTIAL DATA</span> \u2014 ` + html;
   }
   return html;
