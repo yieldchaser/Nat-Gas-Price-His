@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2957,17 +2957,6 @@ function scheduleCurveAnnotationRender() {
     STATE._curveAnnotationFrame = null;
     renderCurveAnnotations();
   });
-
-  if (selectedSeries && selectedLastPoint && typeof selectedSeries.createPriceLine === 'function') {
-    selectedSeries.createPriceLine({
-      price: selectedLastPoint.value,
-      color: selectedLastPoint.value >= 0 ? '#00ff88' : '#ff4455',
-      lineVisible: false,
-      axisLabelVisible: true,
-      lineWidth: 1,
-      title: '',
-    });
-  }
 }
 
 function isCurveTurningPoint(points, index) {
@@ -2985,9 +2974,10 @@ function renderCurveAnnotations() {
   const chart = STATE._curveChart;
   const series = STATE._curveSeries;
   const windowContext = STATE._curveWindowContext;
-  const slots = (windowContext && Array.isArray(windowContext.windowSlots) && windowContext.windowSlots.length)
+  // Guard: windowSlots may be undefined on first render before syncCurveRangeFooter
+  const slots = (windowContext && Array.isArray(windowContext.windowSlots) && windowContext.windowSlots.length > 0)
     ? windowContext.windowSlots
-    : (STATE._curveSlots || []);
+    : (Array.isArray(STATE._curveSlots) && STATE._curveSlots.length > 0 ? STATE._curveSlots : []);
   const container = document.getElementById('curve-chart-container');
   const layer = ensureCurveAnnotationLayer(container);
   if (!layer) return;
@@ -2999,7 +2989,8 @@ function renderCurveAnnotations() {
 
   const width = container.clientWidth || 0;
   const height = container.clientHeight || 0;
-  const bottomInset = Math.max(26, Math.round(height * 0.07));
+  // Clamp bottomInset so dots don't float too high on compact/narrow viewports
+  const bottomInset = Math.max(20, Math.min(40, height * 0.06));
   const visiblePoints = slots
     .filter(slot => Number.isFinite(slot.price))
     .map(slot => ({
@@ -3085,22 +3076,24 @@ function applyCurveVisibleWindow(chart, slots, start, end) {
   if (!chart || !Array.isArray(slots) || !slots.length) return;
   const maxIdx = slots.length - 1;
   const isFullWindow = start <= 0 && end >= maxIdx;
+  const logicalPadding = 0.45;
+  // Always use logical range — prevents the chart from rendering empty
+  // pseudo-time space at the edges which causes spurious "Year 2000" labels.
+  if (typeof chart.timeScale().setVisibleLogicalRange === 'function') {
+    const from = Math.max(-0.5, start - logicalPadding);
+    const to = Math.min(maxIdx + 0.5, end + logicalPadding);
+    if (isFullWindow) {
+      chart.timeScale().setVisibleLogicalRange({ from: -logicalPadding, to: maxIdx + logicalPadding });
+    } else {
+      chart.timeScale().setVisibleLogicalRange({ from, to });
+    }
+    return;
+  }
+  // Fallback: use time-based range
   if (isFullWindow) {
     chart.timeScale().fitContent();
     return;
   }
-
-  // The curve uses evenly spaced synthetic contract slots, so a logical range
-  // is more stable than a time-based range when the window starts/ends on
-  // whitespace months.
-  const logicalPadding = 0.45;
-  const from = Math.max(-0.5, start - logicalPadding);
-  const to = Math.min(maxIdx + 0.5, end + logicalPadding);
-  if (typeof chart.timeScale().setVisibleLogicalRange === 'function') {
-    chart.timeScale().setVisibleLogicalRange({ from, to });
-    return;
-  }
-
   chart.timeScale().setVisibleRange({
     from: slots[start].time,
     to: slots[end].time,
@@ -3410,6 +3403,8 @@ function renderCurveTab() {
       const h = parseInt(btn.dataset.val);
       STATE.curveView = { rangeStart: 0, rangeEnd: h - 1 };
       updateCurveChart();
+      // Immediately sync footer so window context is fresh after horizon switch
+      if (typeof syncCurveRangeFooter === 'function') syncCurveRangeFooter();
     });
   }
   updateCurveChart();
@@ -3491,7 +3486,7 @@ function updateCurveChart() {
     titleColor: '#f5f7fb',
     seriesConfigs: [{
       series: lineSeries,
-      label: `${meta.prefix} curve`,
+      label: `${meta.label} curve`,
       color: meta.color,
       emphasis: true,
       getPoint: param => curveLookup.get(timeKey(param.time)),
@@ -3620,7 +3615,7 @@ function renderExpiryTab() {
           <div class="ch-top">
             <span class="ticker" style="color:var(--accent-hh);">EXPIRY SETTLEMENT PRICES</span>
           </div>
-          <span class="desc">HH Contract Final Settlements — USD/MMBtu</span>
+          <span class="desc">Henry Hub Settlement Prices — USD/MMBtu</span>
         </div>
       </div>
       <div class="card" style="margin-bottom:var(--gap);">
@@ -3658,66 +3653,198 @@ function buildExpiryTable(range) {
     years = years.filter(y => parseInt(y) >= currentYear - n);
   }
 
-  // Compute 5Y and 3Y averages per month
-  const avg5y = {}, avg3y = {}, avgAll = {};
+  // Bug fix: compute averages using ONLY the visible/filtered years so the
+  // heat-map coloring is relative to whatever the user is looking at.
+  const avg5y = {}, avg3y = {}, avgVisible = {};
   MONTHS.forEach(m => {
-    let s5 = 0, c5 = 0, s3 = 0, c3 = 0, sa = 0, ca = 0;
-    Object.keys(expiry).forEach(yr => {
-      const v = expiry[yr][m];
+    let sv = 0, cv = 0, s5 = 0, c5 = 0, s3 = 0, c3 = 0;
+    years.forEach(yr => {
+      const v = expiry[yr] && expiry[yr][m];
       if (v == null) return;
-      sa += v; ca++;
+      sv += v; cv++;
       if (parseInt(yr) >= currentYear - 5) { s5 += v; c5++; }
       if (parseInt(yr) >= currentYear - 3) { s3 += v; c3++; }
     });
-    avg5y[m] = c5 ? s5 / c5 : null;
-    avg3y[m] = c3 ? s3 / c3 : null;
-    avgAll[m] = ca ? sa / ca : null;
+    avgVisible[m] = cv ? sv / cv : null;
+    avg5y[m]      = c5 ? s5 / c5 : null;
+    avg3y[m]      = c3 ? s3 / c3 : null;
   });
 
-  let html = '<table style="white-space:nowrap;"><thead><tr><th style="text-align:left;">Month</th>';
-  years.forEach(y => { html += `<th>${y}</th>`; });
-  html += '<th style="color:var(--accent-hh);">All Avg</th><th style="color:var(--accent-hh);">5Y Avg</th><th style="color:var(--accent-hh);">3Y Avg</th></tr></thead><tbody>';
+  // Range label for Avg column header
+  const rangeLabel = range === 'all' ? 'All' : range + 'Y';
+
+  let html = '<table style="white-space:nowrap;"><thead><tr>' +
+    '<th style="text-align:left;">Month</th>';
+  years.forEach(y => { html += '<th>' + y + '</th>'; });
+  html += '<th style="color:var(--text-muted);font-size:10px;">YoY%</th>' +
+    '<th style="color:var(--accent-hh);">Avg(' + rangeLabel + ')</th>' +
+    '<th style="color:var(--accent-hh);">5Y Avg</th>' +
+    '<th style="color:var(--accent-hh);">3Y Avg</th>' +
+    '</tr></thead><tbody>';
 
   MONTHS.forEach(m => {
-    html += `<tr><td style="text-align:left;font-weight:600;">${m}</td>`;
+    html += '<tr><td style="text-align:left;font-weight:600;">' + m + '</td>';
     years.forEach(yr => {
       const v = expiry[yr] ? expiry[yr][m] : null;
-      if (v == null) { html += '<td style="color:var(--text-muted);">—</td>'; return; }
-      // Color: green if above 5Y avg, red if below
-      const ref = avg5y[m];
+      if (v == null) { html += '<td style="color:var(--text-muted);">\u2014</td>'; return; }
+      // Heat-map: compare against visible-window average for better contrast
+      const ref = avgVisible[m];
       let bg = 'transparent';
       if (ref) {
         const delta = (v - ref) / ref;
-        if (delta > 0.02) bg = `rgba(0,255,136,${Math.min(delta, 0.4) * 0.5})`;
-        else if (delta < -0.02) bg = `rgba(255,68,85,${Math.min(Math.abs(delta), 0.4) * 0.5})`;
+        if (delta > 0.02)       bg = 'rgba(0,255,136,'  + Math.min(delta * 1.8, 0.55) + ')';
+        else if (delta < -0.02) bg = 'rgba(255,68,85,'  + Math.min(Math.abs(delta) * 1.8, 0.55) + ')';
       }
-      html += `<td style="background:${bg};">$${v.toFixed(3)}</td>`;
+      html += '<td style="background:' + bg + ';">$' + v.toFixed(3) + '</td>';
     });
-    // Averages
-    [avgAll, avg5y, avg3y].forEach(a => {
-      html += `<td style="font-weight:600;">${a[m] ? '$' + a[m].toFixed(3) : '—'}</td>`;
+    // YoY column: last vs second-to-last visible year
+    const lastYr = years[years.length - 1];
+    const prevYr = years[years.length - 2];
+    const lastV = lastYr && expiry[lastYr] ? expiry[lastYr][m] : null;
+    const prevV = prevYr && expiry[prevYr] ? expiry[prevYr][m] : null;
+    const yoy = (lastV != null && prevV != null && prevV !== 0)
+      ? (lastV - prevV) / prevV * 100 : null;
+    html += '<td style="color:' + (yoy == null ? 'var(--text-muted)' : yoy >= 0 ? 'var(--positive)' : 'var(--negative)') + ';font-style:italic;">' +
+      (yoy == null ? '\u2014' : (yoy >= 0 ? '+' : '') + yoy.toFixed(1) + '%') + '</td>';
+    // Avg columns
+    [avgVisible, avg5y, avg3y].forEach(a => {
+      html += '<td style="font-weight:600;">' + (a[m] != null ? '$' + a[m].toFixed(3) : '\u2014') + '</td>';
     });
     html += '</tr>';
   });
 
-  // Year average row
+  // Year Avg row — fix: compute cross-column averages instead of blank cells
   html += '<tr style="border-top:2px solid var(--border);"><td style="text-align:left;font-weight:700;">Year Avg</td>';
+  const yearAvgs = [];
   years.forEach(yr => {
     const vals = MONTHS.map(m => expiry[yr] ? expiry[yr][m] : null).filter(v => v != null);
     const avg = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
-    html += `<td style="font-weight:600;">${avg ? '$' + avg.toFixed(3) : '—'}</td>`;
+    yearAvgs.push(avg);
+    html += '<td style="font-weight:600;">' + (avg != null ? '$' + avg.toFixed(3) : '\u2014') + '</td>';
   });
-  html += '<td></td><td></td><td></td></tr>';
+  const lastYrAvg = yearAvgs[yearAvgs.length - 1];
+  const prevYrAvg = yearAvgs[yearAvgs.length - 2];
+  const yoyAvg = (lastYrAvg != null && prevYrAvg != null && prevYrAvg !== 0)
+    ? (lastYrAvg - prevYrAvg) / prevYrAvg * 100 : null;
+  html += '<td style="color:' + (yoyAvg == null ? 'var(--text-muted)' : yoyAvg >= 0 ? 'var(--positive)' : 'var(--negative)') + ';font-style:italic;font-weight:600;">' +
+    (yoyAvg == null ? '\u2014' : (yoyAvg >= 0 ? '+' : '') + yoyAvg.toFixed(1) + '%') + '</td>';
+  const visAll = yearAvgs.filter(v => v != null);
+  const v5 = yearAvgs.slice(-5).filter(v => v != null);
+  const v3 = yearAvgs.slice(-3).filter(v => v != null);
+  const visAllAvg = visAll.length ? visAll.reduce((s, v) => s + v, 0) / visAll.length : null;
+  const vis5Avg   = v5.length   ? v5.reduce((s, v) => s + v, 0)   / v5.length   : null;
+  const vis3Avg   = v3.length   ? v3.reduce((s, v) => s + v, 0)   / v3.length   : null;
+  [visAllAvg, vis5Avg, vis3Avg].forEach(v => {
+    html += '<td style="font-weight:700;">' + (v != null ? '$' + v.toFixed(3) : '\u2014') + '</td>';
+  });
+  html += '</tr>';
 
   html += '</tbody></table>';
   document.getElementById('expiry-table-wrap').innerHTML = html;
 }
 </script>
 
-<!-- ═══════════════════════════════════════════════════════════
-     TAB 7: DAILY TRACKER
-     ═══════════════════════════════════════════════════════════ -->
+<!-- ═══ TAB 7: DAILY TRACKER ═══ -->
 <script>
+// ─── DAILY TRACKER HELPERS ───────────────────────────────────────────────────
+
+function computeNGExpiry(year, month0) {
+  // CME rule: NG expires 4 business days before the 1st calendar day of
+  // the delivery month.
+  const d = new Date(Date.UTC(year, month0, 1));
+  let bd = 0;
+  d.setUTCDate(d.getUTCDate() - 1);
+  while (bd < 4) {
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) bd++;
+    if (bd < 4) d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return d;
+}
+
+function computeRealizedVol(data, days) {
+  if (!data || data.length < days + 1) return null;
+  const slice = data.slice(-(days + 1));
+  const logRets = [];
+  for (let i = 1; i < slice.length; i++) {
+    if (slice[i - 1].p > 0 && slice[i].p > 0)
+      logRets.push(Math.log(slice[i].p / slice[i - 1].p));
+  }
+  if (!logRets.length) return null;
+  const mean = logRets.reduce((s, r) => s + r, 0) / logRets.length;
+  const variance = logRets.reduce((s, r) => s + (r - mean) ** 2, 0) / logRets.length;
+  return Math.sqrt(variance * 252) * 100;
+}
+
+function computeWeeklyChanges(data) {
+  if (!data || data.length < 2) return [];
+  const weekMap = new Map();
+  data.forEach(pt => {
+    const d = new Date(pt.date + 'T00:00:00');
+    const day = d.getDay() || 7;
+    const mon = new Date(d); mon.setDate(d.getDate() - day + 1);
+    const key = mon.toISOString().slice(0, 10);
+    weekMap.set(key, pt);
+  });
+  const weeks = [...weekMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const changes = [];
+  for (let i = 1; i < weeks.length; i++) {
+    const pct = (weeks[i].p - weeks[i - 1].p) / weeks[i - 1].p * 100;
+    changes.push({ date: weeks[i].date, pct });
+  }
+  return changes;
+}
+
+function getDailyStats(data) {
+  if (!data || !data.length) return null;
+  const now = new Date();
+  const yearStart = `${now.getFullYear()}-01-01`;
+  const oneYearAgo = new Date(now); oneYearAgo.setFullYear(now.getFullYear() - 1);
+  const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(now.getDate() - 30);
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+
+  const ttmData = data.filter(p => p.date >= oneYearAgoStr);
+  const ytdData = data.filter(p => p.date >= yearStart);
+  const d30 = data.filter(p => p.date >= thirtyDaysAgoStr);
+
+  const prices52w = ttmData.map(p => p.p);
+  const high52w = prices52w.length ? Math.max(...prices52w) : null;
+  const low52w = prices52w.length ? Math.min(...prices52w) : null;
+  const avg30d = d30.length ? d30.reduce((s, p) => s + p.p, 0) / d30.length : null;
+  const ytdPct = ytdData.length >= 2
+    ? (ytdData[ytdData.length - 1].p - ytdData[0].p) / ytdData[0].p * 100
+    : null;
+  const rv21 = computeRealizedVol(data, 21);
+  const rv63 = computeRealizedVol(data, 63);
+  return { high52w, low52w, avg30d, ytdPct, rv21, rv63 };
+}
+
+function getTTFSpreadData() {
+  const now = new Date();
+  const historical = [];
+  for (let offset = 0; offset <= 2; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const month = MONTHS[d.getMonth()];
+    const yy = d.getFullYear() % 100;
+    const pad = yy < 10 ? '0' + yy : '' + yy;
+    const ticker = `TG${MONTH_CODES[month]}${pad}`;
+    const td = typeof getTTFContractData === 'function' ? getTTFContractData(ticker) : [];
+    (td || []).forEach(pt => historical.push({ date: pt.date, p: pt.p, ticker }));
+  }
+  return historical;
+}
+
+function formatDailyDate(dateStr) {
+  if (!dateStr) return '\u2014';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const d = new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2]));
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// ─── DAILY TRACKER TAB ───────────────────────────────────────────────────────
+
 function renderDailyTab() {
   const container = document.getElementById('tab-daily');
   if (!container.dataset.built) {
@@ -3726,32 +3853,73 @@ function renderDailyTab() {
       <div class="contract-header" id="daily-header">
         <div class="ch-left">
           <div class="ch-top">
-            <span class="ticker" style="color:var(--accent-hh);">FRONT MONTH TRACKER</span>
+            <span class="ticker" style="color:var(--accent-hh);">DAILY TRACKER</span>
+            <span class="instrument-stamp">
+              <span style="background:var(--accent-hh);border-radius:50%;display:inline-block;width:7px;height:7px;margin-right:5px;"></span>
+              NG Front Month
+            </span>
           </div>
-          <span class="desc" id="daily-contract">—</span>
+          <span class="desc" id="daily-contract">NG=F &middot; Continuous Front Month</span>
         </div>
         <div class="ch-right">
-          <span class="price" id="daily-price" style="margin-left:0;">—</span>
-          <span class="change" id="daily-change">—</span>
+          <span class="price" id="daily-price" style="margin-left:0;">&mdash;</span>
+          <span class="change" id="daily-change">&mdash;</span>
+          <span id="daily-freshness" style="font-size:10px;color:var(--text-muted);display:block;text-align:right;"></span>
         </div>
       </div>
-      <div class="flex gap" style="flex-wrap:wrap;">
-        <div class="grow" style="min-width:0;">
-          <div class="card" style="padding:0;" id="daily-table"></div>
+
+      <div id="daily-stat-chips" class="ctrl-toolbar" style="flex-wrap:wrap;gap:8px;margin-bottom:var(--gap);"></div>
+
+      <div class="card" style="padding:0;margin-bottom:var(--gap);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 0;flex-wrap:wrap;gap:6px;">
+          <span class="card-title" style="padding:0;">Price History &mdash; NG=F</span>
+          <div class="segment-switch" id="daily-range-switch">
+            <button class="segment-btn" data-range="1M">1M</button>
+            <button class="segment-btn" data-range="3M">3M</button>
+            <button class="segment-btn active" data-range="1Y">1Y</button>
+            <button class="segment-btn" data-range="ALL">All</button>
+          </div>
         </div>
-        <div style="width:320px;flex-shrink:0;">
-          <div class="card" id="daily-calendar"></div>
+        <div class="chart-wrap" id="daily-main-chart" style="height:360px;"></div>
+      </div>
+
+      <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
+        <div class="card grow" style="min-width:260px;padding:0;">
+          <div class="card-title" style="padding:10px 14px 0;">NG vs TTF Spread</div>
+          <div id="daily-spread-chips" style="padding:6px 14px 2px;display:flex;gap:12px;flex-wrap:wrap;"></div>
+          <div class="chart-wrap" id="daily-spread-chart" style="height:190px;"></div>
         </div>
+        <div class="card" style="min-width:220px;max-width:340px;padding:0;flex-shrink:0;" id="daily-calendar"></div>
       </div>
-      <div class="card" style="margin-top:var(--gap);padding:0;">
-        <div class="card-title" style="padding:12px 16px 8px;">Weekly % Change — NG=F <span id="daily-weekly-subtitle" style="font-size:11px;color:var(--text-muted);font-weight:400;"></span></div>
-        <div class="chart-wrap" id="daily-weekly-chart" style="height:280px;"></div>
+
+      <div class="card" style="padding:0;margin-bottom:var(--gap);">
+        <div class="card-title" style="padding:10px 14px 0;">Realized Volatility
+          <span style="font-size:11px;color:var(--text-muted);font-weight:400;"> &mdash; annualized</span>
+        </div>
+        <div class="chart-wrap" id="daily-vol-chart" style="height:190px;"></div>
       </div>
-      <div class="flex gap" style="margin-top:var(--gap);flex-wrap:wrap;">
-        <div class="card grow" style="min-width:0;padding:0;" id="daily-dist"></div>
-        <div class="card" style="min-width:220px;flex-shrink:0;padding:0;" id="daily-posnegtable"></div>
+
+      <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
+        <div class="card grow" style="min-width:0;padding:0;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 0;flex-wrap:wrap;gap:6px;">
+            <span class="card-title" style="padding:0;">Weekly % Change</span>
+            <span id="daily-weekly-subtitle" style="font-size:11px;color:var(--text-muted);"></span>
+          </div>
+          <div class="chart-wrap" id="daily-weekly-chart" style="height:220px;"></div>
+        </div>
+        <div class="card" style="min-width:260px;flex-shrink:0;padding:0;" id="daily-dist"></div>
       </div>
+
+      <div class="card" style="padding:0;" id="daily-table"></div>
     `;
+
+    document.getElementById('daily-range-switch').addEventListener('click', e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#daily-range-switch .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      updateDailyMainChart(btn.dataset.range);
+    });
   }
   updateDailyTracker();
 }
@@ -3759,159 +3927,312 @@ function renderDailyTab() {
 function updateDailyTracker() {
   const now = new Date();
   const data = STATE.liveData['NG=F'] || [];
-
-  document.getElementById('daily-contract').textContent = 'NG=F · Continuous Front Month Contract';
+  const freshnessEl = document.getElementById('daily-freshness');
+  if (freshnessEl) freshnessEl.textContent = 'Updated ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   if (!data.length) {
     document.getElementById('daily-price').textContent = 'No data';
     document.getElementById('daily-change').textContent = '';
-    document.getElementById('daily-table').innerHTML = '<div style="padding:16px;color:var(--text-muted);">Live data not loaded</div>';
+    document.getElementById('daily-table').innerHTML = '<div style="padding:16px;color:var(--text-muted);">Live data unavailable</div>';
     return;
   }
 
   const last = data[data.length - 1];
   const prev = data.length > 1 ? data[data.length - 2] : last;
   const dayDelta = (last.p - prev.p) / prev.p * 100;
-
-  document.getElementById('daily-price').textContent = `$${last.p.toFixed(3)}`;
+  document.getElementById('daily-price').textContent = '$' + last.p.toFixed(3);
   const changeEl = document.getElementById('daily-change');
-  changeEl.textContent = `${dayDelta >= 0 ? '+' : ''}${dayDelta.toFixed(2)}% day`;
+  changeEl.textContent = (dayDelta >= 0 ? '+' : '') + dayDelta.toFixed(2) + '% day';
   changeEl.className = 'change ' + (dayDelta >= 0 ? 'positive' : 'negative');
 
-  // Price log — most recent first
-  const reversed = [...data].reverse();
-  const allPrices = reversed.map(p => p.p);
-  const pMin = Math.min(...allPrices), pMax = Math.max(...allPrices), pRange = pMax - pMin || 1;
-  const th = label => `<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;${label==='Date'?'text-align:left;':''}">${label}</th>`;
-  let html = `<div class="card-title" style="padding:12px 16px 8px;">Price Log — NG=F <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${data.length} sessions</span></div>`;
-  html += `<div style="overflow-y:auto;max-height:600px;"><table><thead><tr>${th('Date')}${th('Close')}${th('Day Δ%')}</tr></thead><tbody>`;
-  reversed.forEach((pt, i) => {
-    const prevPt = i < reversed.length - 1 ? reversed[i + 1] : pt;
-    const delta = (pt.p - prevPt.p) / prevPt.p * 100;
-    const barW = ((pt.p - pMin) / pRange * 44).toFixed(1);
-    const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`;
-    html += `<tr>
-      <td style="text-align:left;">${pt.date}</td>
-      <td>$${pt.p.toFixed(3)}${bar}</td>
-      <td class="${delta >= 0 ? 'positive' : 'negative'}">${i === reversed.length-1 ? '—' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%'}</td>
-    </tr>`;
-  });
-  html += '</tbody></table></div>';
-  document.getElementById('daily-table').innerHTML = html;
+  const stats = getDailyStats(data);
+  _renderDailyStatChips(stats, last.p);
+  updateDailyMainChart('1Y');
+  _renderSpreadPanel(data);
+  _renderExpiryCalendar(now);
+  _renderVolatilityChart(data);
+  _renderWeeklyChart(data);
+  _renderDailyPriceLog(data);
+}
 
-  // Expiry calendar - next 12 contracts
-  let calHtml = '<div class="card-title">Upcoming Expirations</div>';
+function _renderDailyStatChips(stats, currentPrice) {
+  const el = document.getElementById('daily-stat-chips');
+  if (!el || !stats) return;
+  const chip = (label, value, color) =>
+    '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;">' +
+    '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">' + label + '</div>' +
+    '<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + value + '</div>' +
+    '</div>';
+  const pctFrom52h = stats.high52w ? ((currentPrice - stats.high52w) / stats.high52w * 100).toFixed(1) : null;
+  const pctFrom52l = stats.low52w ? ((currentPrice - stats.low52w) / stats.low52w * 100).toFixed(1) : null;
+  el.innerHTML = [
+    chip('52W High', stats.high52w ? '$' + stats.high52w.toFixed(3) : '\u2014', '#ff8c00'),
+    chip('52W Low', stats.low52w ? '$' + stats.low52w.toFixed(3) : '\u2014', '#00d4ff'),
+    chip('vs 52W H', pctFrom52h ? pctFrom52h + '%' : '\u2014', parseFloat(pctFrom52h) >= 0 ? 'var(--positive)' : 'var(--negative)'),
+    chip('vs 52W L', pctFrom52l != null ? (parseFloat(pctFrom52l) >= 0 ? '+' : '') + pctFrom52l + '%' : '\u2014', parseFloat(pctFrom52l) >= 0 ? 'var(--positive)' : 'var(--negative)'),
+    chip('30D Avg', stats.avg30d ? '$' + stats.avg30d.toFixed(3) : '\u2014', 'var(--text-secondary)'),
+    chip('YTD \u0394%', stats.ytdPct != null ? (stats.ytdPct >= 0 ? '+' : '') + stats.ytdPct.toFixed(1) + '%' : '\u2014', stats.ytdPct != null && stats.ytdPct >= 0 ? 'var(--positive)' : 'var(--negative)'),
+    chip('21D RV', stats.rv21 ? stats.rv21.toFixed(1) + '%' : '\u2014', stats.rv21 > 60 ? 'var(--negative)' : stats.rv21 > 35 ? '#ff8c00' : 'var(--text-primary)'),
+    chip('63D RV', stats.rv63 ? stats.rv63.toFixed(1) + '%' : '\u2014', 'var(--text-secondary)'),
+  ].join('');
+}
+
+function updateDailyMainChart(range) {
+  const data = STATE.liveData['NG=F'] || [];
+  if (!data.length) return;
+  const now = new Date();
+  let filtered = data;
+  if (range !== 'ALL') {
+    const months = range === '1M' ? 1 : range === '3M' ? 3 : 12;
+    const cutoff = new Date(now); cutoff.setMonth(now.getMonth() - months);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    filtered = data.filter(p => p.date >= cutoffStr);
+  }
+  if (!filtered.length) filtered = data;
+
+  const stats = getDailyStats(data);
+  const chartContainer = document.getElementById('daily-main-chart');
+  const chart = createManagedChart('daily', 'main', chartContainer);
+  chart.applyOptions({ rightPriceScale: { scaleMargins: { top: 0.12, bottom: 0.12 } } });
+
+  const areaSeries = chart.addAreaSeries({
+    lineColor: '#00d4ff',
+    topColor: 'rgba(0,212,255,0.18)',
+    bottomColor: 'rgba(0,212,255,0.0)',
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+    crosshairMarkerRadius: 5,
+    priceFormat: { type: 'custom', formatter: v => '$' + v.toFixed(3), minMove: 0.001 },
+  });
+  areaSeries.setData(filtered.map(p => ({ time: p.date, value: p.p })));
+
+  // Key level annotations
+  if (stats && stats.high52w) {
+    try { areaSeries.createPriceLine({ price: stats.high52w, color: '#ff8c00', lineStyle: 2, title: '52W H', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  }
+  if (stats && stats.low52w) {
+    try { areaSeries.createPriceLine({ price: stats.low52w, color: '#00d4ff', lineStyle: 2, title: '52W L', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  }
+  if (stats && stats.avg30d) {
+    try { areaSeries.createPriceLine({ price: stats.avg30d, color: 'rgba(167,139,250,0.7)', lineStyle: 1, title: '30D Avg', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  }
+  // Round dollar levels
+  const visMin = Math.min(...filtered.map(p => p.p));
+  const visMax = Math.max(...filtered.map(p => p.p));
+  for (let lvl = Math.ceil(visMin); lvl <= visMax; lvl++) {
+    const rounded = Math.round(lvl * 1000) / 1000;
+    try { areaSeries.createPriceLine({ price: rounded, color: 'rgba(255,255,255,0.09)', lineStyle: 1, title: '$' + rounded.toFixed(0), lineWidth: 1, axisLabelVisible: false }); } catch (_) {}
+  }
+
+  applyChartTimeScaleOptions(chart, { formatter: undefined, barSpacing: Math.max(2.5, Math.min(12, Math.floor(900 / filtered.length))), fixLeftEdge: true, fixRightEdge: true });
+  chart.timeScale().fitContent();
+
+  const dataLookup = new Map(filtered.map(p => [p.date, p]));
+  attachChartTooltip({
+    chart, container: chartContainer, titleColor: '#f5f7fb',
+    seriesConfigs: [{ series: areaSeries, label: 'NG=F Close', color: '#00d4ff', emphasis: true,
+      getPoint: param => dataLookup.get(typeof param.time === 'string' ? param.time : ''),
+      formatValue: v => '$' + v.toFixed(3) }],
+    getTitle: param => formatDailyDate(typeof param.time === 'string' ? param.time : ''),
+    getMetrics: () => {
+      if (!stats) return [];
+      return [
+        { label: '52W High', value: stats.high52w ? '$' + stats.high52w.toFixed(3) : '\u2014' },
+        { label: '52W Low', value: stats.low52w ? '$' + stats.low52w.toFixed(3) : '\u2014' },
+        { label: '21D RV', value: stats.rv21 ? stats.rv21.toFixed(1) + '%' : '\u2014' },
+      ];
+    },
+  });
+}
+
+function _renderSpreadPanel(ngData) {
+  const chipsEl = document.getElementById('daily-spread-chips');
+  const chartEl = document.getElementById('daily-spread-chart');
+  if (!chipsEl || !chartEl) return;
+
+  const ttfHistorical = getTTFSpreadData();
+  if (!ttfHistorical.length) {
+    chipsEl.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">TTF data unavailable</span>';
+    chartEl.innerHTML = '';
+    return;
+  }
+
+  const ttfByDate = new Map(ttfHistorical.map(p => [p.date, p.p]));
+  const spreadSeries = ngData
+    .filter(p => ttfByDate.has(p.date))
+    .map(p => ({ time: p.date, value: +(p.p - ttfByDate.get(p.date)).toFixed(3) }))
+    .slice(-365);
+
+  const ngLast = ngData[ngData.length - 1].p;
+  const ttfLast = ttfByDate.get(ngData[ngData.length - 1].date);
+  const spread = ttfLast != null ? ngLast - ttfLast : null;
+  const spreadColor = spread != null && spread >= 0 ? 'var(--positive)' : 'var(--negative)';
+
+  chipsEl.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:12px;">' +
+    '<span style="color:var(--text-muted);">NG: <strong style="color:var(--accent-hh);">$' + ngLast.toFixed(3) + '</strong></span>' +
+    (ttfLast != null ? '<span style="color:var(--text-muted);">TTF: <strong style="color:#ff8c00;">' + ttfLast.toFixed(3) + '</strong></span>' : '') +
+    (spread != null ? '<span style="font-weight:700;color:' + spreadColor + ';">Spread: ' + (spread >= 0 ? '+' : '') + spread.toFixed(3) + '</span>' : '') +
+    '</div>';
+
+  if (spreadSeries.length < 2) {
+    chartEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px;">Insufficient overlapping data</div>';
+    return;
+  }
+
+  const spreadChart = createManagedChart('daily', 'spread', chartEl);
+  const zeroLine = spreadChart.addLineSeries({ color: 'rgba(255,255,255,0.1)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  zeroLine.setData([{ time: spreadSeries[0].time, value: 0 }, { time: spreadSeries[spreadSeries.length - 1].time, value: 0 }]);
+  const sSeries = spreadChart.addLineSeries({
+    color: '#a78bfa', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4,
+    priceFormat: { type: 'custom', formatter: v => (v >= 0 ? '+' : '') + v.toFixed(3), minMove: 0.001 },
+  });
+  sSeries.setData(spreadSeries);
+  applyChartTimeScaleOptions(spreadChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(600 / spreadSeries.length)), fixLeftEdge: true, fixRightEdge: true });
+  spreadChart.timeScale().fitContent();
+}
+
+function _renderExpiryCalendar(now) {
+  const el = document.getElementById('daily-calendar');
+  if (!el) return;
+  let html = '<div class="card-title" style="padding:10px 14px 6px;">Upcoming Expirations</div><div style="padding:0 12px 10px;">';
   for (let offset = 1; offset <= 12; offset++) {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const month = MONTHS[d.getMonth()];
     const code = MONTH_CODES[month];
     const yr = d.getFullYear() % 100;
     const pad = yr < 10 ? '0' + yr : '' + yr;
-    const ticker = `NG${code}${pad}`;
-    // Approximate expiry: 3 business days before first day of contract month
-    const expiry = new Date(d.getFullYear(), d.getMonth(), -3);
-    const expiryStr = expiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const isActive = offset <= 2;
-    calHtml += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:12px;">
-      <span style="color:${isActive ? 'var(--accent-hh)' : 'var(--text-secondary)'};">${ticker}</span>
-      <span style="color:var(--text-muted);">${month} ${d.getFullYear()}</span>
-      <span style="color:var(--text-secondary);">${expiryStr}</span>
-    </div>`;
+    const ticker = 'NG' + code + pad;
+    const expiry = computeNGExpiry(d.getFullYear(), d.getMonth());
+    const daysUntil = Math.round((expiry.getTime() - now.getTime()) / 86400000);
+    const expiryStr = expiry.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const isPrompt = offset === 1;
+    const isClose = daysUntil >= 0 && daysUntil <= 7;
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:11px;gap:4px;">' +
+      '<span style="color:' + (isPrompt ? 'var(--accent-hh)' : 'var(--text-secondary)') + ';font-weight:' + (isPrompt ? '700' : '400') + ';">' + ticker + '</span>' +
+      '<span style="color:var(--text-muted);">' + expiryStr + '</span>' +
+      '<span style="color:' + (daysUntil < 0 ? 'var(--text-muted)' : isClose ? 'var(--negative)' : 'var(--text-secondary)') + ';">' + (daysUntil < 0 ? 'expired' : 'in ' + daysUntil + 'd') + '</span>' +
+      '</div>';
   }
-  document.getElementById('daily-calendar').innerHTML = calHtml;
+  html += '</div>';
+  el.innerHTML = html;
+}
 
-  // Weekly % change analysis
+function _renderVolatilityChart(data) {
+  const el = document.getElementById('daily-vol-chart');
+  if (!el) return;
+  if (data.length < 22) { el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px;">Need 22+ sessions</div>'; return; }
+
+  const rv21Series = [], rv63Series = [];
+  for (let i = 21; i < data.length; i++) {
+    const rv21 = computeRealizedVol(data.slice(0, i + 1), 21);
+    if (rv21 != null) rv21Series.push({ time: data[i].date, value: rv21 });
+    if (i >= 63) {
+      const rv63 = computeRealizedVol(data.slice(0, i + 1), 63);
+      if (rv63 != null) rv63Series.push({ time: data[i].date, value: rv63 });
+    }
+  }
+
+  const chart = createManagedChart('daily', 'vol', el);
+  const s21 = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4,
+    priceFormat: { type: 'custom', formatter: v => v.toFixed(1) + '%', minMove: 0.1 } });
+  s21.setData(rv21Series);
+  if (rv63Series.length) {
+    const s63 = chart.addLineSeries({ color: 'rgba(245,158,11,0.38)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      priceFormat: { type: 'custom', formatter: v => v.toFixed(1) + '%', minMove: 0.1 } });
+    s63.setData(rv63Series);
+  }
+  applyChartTimeScaleOptions(chart, { formatter: undefined, fixLeftEdge: true, fixRightEdge: true });
+  chart.timeScale().fitContent();
+}
+
+function _renderWeeklyChart(data) {
   const weekly = computeWeeklyChanges(data);
-  document.getElementById('daily-weekly-subtitle').textContent = `${weekly.length} weeks`;
+  const subtitle = document.getElementById('daily-weekly-subtitle');
+  if (subtitle) subtitle.textContent = weekly.length + ' weeks';
+  if (weekly.length < 2) return;
 
-  // Chart
-  const wChart = createManagedChart('daily', 'weekly', document.getElementById('daily-weekly-chart'));
-  const zeroline = wChart.addLineSeries({ color:'rgba(255,255,255,0.15)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  zeroline.setData([{ time: weekly[0].date, value:0 }, { time: weekly[weekly.length-1].date, value:0 }]);
-  const wSeries = wChart.addLineSeries({ color:'rgba(100,160,255,0.5)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:true, crosshairMarkerRadius:4 });
-  wSeries.setData(weekly.map(w => ({ time: w.date, value: w.pct })));
-  wSeries.setMarkers(weekly.map(w => ({ time: w.date, position:'inBar', shape:'circle', color: w.pct >= 0 ? 'var(--positive)' : 'var(--negative)', size:0 })));
-  applyChartTimeScaleOptions(wChart, { barSpacing: Math.max(4, Math.floor(800 / weekly.length)) });
+  const chartEl = document.getElementById('daily-weekly-chart');
+  const wChart = createManagedChart('daily', 'weekly', chartEl);
+
+  const zl = wChart.addLineSeries({ color: 'rgba(255,255,255,0.12)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  zl.setData([{ time: weekly[0].date, value: 0 }, { time: weekly[weekly.length - 1].date, value: 0 }]);
+
+  const hSeries = wChart.addHistogramSeries({
+    priceFormat: { type: 'custom', formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%', minMove: 0.01 },
+    priceLineVisible: false, lastValueVisible: false,
+  });
+  hSeries.setData(weekly.map(w => ({ time: w.date, value: w.pct, color: w.pct >= 0 ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)' })));
+  applyChartTimeScaleOptions(wChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(800 / weekly.length)), fixLeftEdge: true, fixRightEdge: true });
   wChart.timeScale().fitContent();
+
   const wLookup = new Map(weekly.map(w => [w.date, w]));
-  attachChartTooltip({ chart: wChart, container: document.getElementById('daily-weekly-chart'), titleColor:'#f5f7fb',
-    seriesConfigs:[{ series: wSeries, label:'Weekly Δ%', color:'#60a5fa', emphasis:true,
+  attachChartTooltip({ chart: wChart, container: chartEl, titleColor: '#f5f7fb',
+    seriesConfigs: [{ series: hSeries, label: 'Weekly \u0394%', color: '#00ff88', emphasis: true,
       getPoint: p => wLookup.get(typeof p.time === 'string' ? p.time : ''),
-      formatValue: v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%` }],
-    getTitle: p => { const w = wLookup.get(typeof p.time==='string'?p.time:''); return w ? formatDisplayDate(w.date) : ''; },
+      formatValue: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%' }],
+    getTitle: p => { const w = wLookup.get(typeof p.time === 'string' ? p.time : ''); return w ? formatDailyDate(w.date) : ''; },
     getMetrics: () => [
-      { label:'Pos weeks', value: weekly.filter(w=>w.pct>=0).length },
-      { label:'Neg weeks', value: weekly.filter(w=>w.pct<0).length },
-      { label:'Max', value:`+${Math.max(...weekly.map(w=>w.pct)).toFixed(2)}%` },
-      { label:'Min', value:`${Math.min(...weekly.map(w=>w.pct)).toFixed(2)}%` },
+      { label: 'Pos weeks', value: weekly.filter(w => w.pct >= 0).length },
+      { label: 'Neg weeks', value: weekly.filter(w => w.pct < 0).length },
+      { label: 'Best', value: '+' + Math.max(...weekly.map(w => w.pct)).toFixed(2) + '%' },
+      { label: 'Worst', value: Math.min(...weekly.map(w => w.pct)).toFixed(2) + '%' },
     ],
   });
 
-  // Frequency distribution
-  const BUCKETS = [[-Infinity,-20],[-20,-15],[-15,-10],[-10,-5],[-5,0],[0,5],[5,10],[10,15],[15,20],[20,Infinity]];
-  const BUCKET_LABELS = ['< -20%','-20 to -15%','-15 to -10%','-10 to -5%','-5 to 0%','0 to 5%','5 to 10%','10 to 15%','15 to 20%','> 20%'];
-  const counts = BUCKETS.map(([lo,hi]) => weekly.filter(w => w.pct >= lo && w.pct < hi).length);
+  // Distribution
+  const BUCKETS = [[-Infinity,-15],[-15,-10],[-10,-5],[-5,-2],[-2,0],[0,2],[2,5],[5,10],[10,15],[15,Infinity]];
+  const BLABELS = ['<-15%','-15 to -10%','-10 to -5%','-5 to -2%','-2 to 0%','0 to 2%','2 to 5%','5 to 10%','10 to 15%','>15%'];
+  const counts = BUCKETS.map(([lo, hi]) => weekly.filter(w => w.pct >= lo && w.pct < hi).length);
   const maxCount = Math.max(...counts, 1);
   const posCount = weekly.filter(w => w.pct >= 0).length;
-  const negCount = weekly.length - posCount;
+  const mean = weekly.reduce((s, w) => s + w.pct, 0) / weekly.length;
+  const stddev = Math.sqrt(weekly.reduce((s, w) => s + (w.pct - mean) ** 2, 0) / weekly.length);
 
-  let distHtml = `<div class="card-title" style="padding:12px 16px 8px;">Frequency Distribution</div><div style="padding:0 16px 12px;">`;
+  const distEl = document.getElementById('daily-dist');
+  if (!distEl) return;
+  let distHtml = '<div class="card-title" style="padding:10px 14px 0;">Return Distribution</div><div style="padding:6px 14px 12px;font-family:var(--font-mono);font-size:11px;">';
   counts.forEach((c, i) => {
     const isPos = BUCKETS[i][0] >= 0;
-    const barColor = isPos ? 'var(--positive)' : 'var(--negative)';
     const barW = (c / maxCount * 100).toFixed(1);
-    distHtml += `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-family:var(--font-mono);font-size:11px;">
-      <span style="width:110px;text-align:right;color:var(--text-secondary);flex-shrink:0;">${BUCKET_LABELS[i]}</span>
-      <div style="flex:1;background:var(--bg-primary);border-radius:2px;height:14px;position:relative;">
-        <div style="width:${barW}%;height:100%;background:${barColor};opacity:0.7;border-radius:2px;"></div>
-      </div>
-      <span style="width:24px;text-align:right;color:var(--text-primary);font-weight:600;">${c}</span>
-    </div>`;
+    distHtml += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
+      '<span style="width:88px;text-align:right;color:var(--text-secondary);flex-shrink:0;">' + BLABELS[i] + '</span>' +
+      '<div style="flex:1;background:var(--bg-primary);border-radius:2px;height:11px;">' +
+      '<div style="width:' + barW + '%;height:100%;background:' + (isPos ? 'rgba(0,255,136,0.65)' : 'rgba(255,68,85,0.65)') + ';border-radius:2px;"></div>' +
+      '</div><span style="width:18px;text-align:right;color:var(--text-primary);font-weight:600;">' + c + '</span></div>';
   });
-  distHtml += '</div>';
-  document.getElementById('daily-dist').innerHTML = distHtml;
-
-  const posPct = weekly.length ? (posCount/weekly.length*100).toFixed(1) : 0;
-  const negPct = weekly.length ? (negCount/weekly.length*100).toFixed(1) : 0;
-  document.getElementById('daily-posnegtable').innerHTML = `
-    <div class="card-title" style="padding:12px 16px 8px;">Territory Split</div>
-    <div style="padding:0 16px 12px;display:flex;flex-direction:column;gap:8px;">
-      <div style="background:rgba(0,255,136,0.1);border:1px solid var(--positive);border-radius:6px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="color:var(--positive);font-weight:600;font-size:13px;">Positive Territory</span>
-        <span style="font-family:var(--font-mono);font-weight:700;">${posCount} <span style="color:var(--positive);">${posPct}%</span></span>
-      </div>
-      <div style="background:rgba(255,68,85,0.1);border:1px solid var(--negative);border-radius:6px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="color:var(--negative);font-weight:600;font-size:13px;">Negative Territory</span>
-        <span style="font-family:var(--font-mono);font-weight:700;">${negCount} <span style="color:var(--negative);">${negPct}%</span></span>
-      </div>
-      <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);padding-top:4px;">
-        <div>Avg weekly Δ: <span style="color:var(--text-primary);">${(weekly.reduce((s,w)=>s+w.pct,0)/weekly.length).toFixed(2)}%</span></div>
-        <div>Std dev: <span style="color:var(--text-primary);">${Math.sqrt(weekly.reduce((s,w)=>s+(w.pct-weekly.reduce((a,b)=>a+b.pct,0)/weekly.length)**2,0)/weekly.length).toFixed(2)}%</span></div>
-        <div>Best week: <span style="color:var(--positive);">+${Math.max(...weekly.map(w=>w.pct)).toFixed(2)}%</span></div>
-        <div>Worst week: <span style="color:var(--negative);">${Math.min(...weekly.map(w=>w.pct)).toFixed(2)}%</span></div>
-      </div>
-    </div>`;
+  distHtml += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap;">' +
+    '<span>Pos: <strong style="color:var(--positive);">' + posCount + ' (' + (posCount/weekly.length*100).toFixed(1) + '%)</strong></span>' +
+    '<span>Mean: <strong style="color:var(--text-primary);">' + (mean >= 0 ? '+' : '') + mean.toFixed(2) + '%</strong></span>' +
+    '<span>\u03C3: <strong style="color:var(--text-primary);">' + stddev.toFixed(2) + '%</strong></span>' +
+    '</div></div>';
+  distEl.innerHTML = distHtml;
 }
 
-function computeWeeklyChanges(data) {
-  // Get last trading day close per ISO week — pure NG=F, no contract mixing
-  const weekMap = new Map();
-  data.forEach(pt => {
-    const d = new Date(pt.date + 'T00:00:00');
-    // Key: ISO year-week (Monday-based)
-    const day = d.getDay() || 7; // 1=Mon..7=Sun
-    const mon = new Date(d); mon.setDate(d.getDate() - day + 1);
-    const key = mon.toISOString().slice(0, 10);
-    weekMap.set(key, pt); // overwrite = keeps last day of week
+function _renderDailyPriceLog(data) {
+  const el = document.getElementById('daily-table');
+  if (!el) return;
+  const reversed = [...data].reverse();
+  const allPrices = reversed.map(p => p.p);
+  const pMin = Math.min(...allPrices), pMax = Math.max(...allPrices), pRange = pMax - pMin || 1;
+  const th = (label, extra) => '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;' + (label === 'Date' ? 'text-align:left;' : '') + (extra || '') + '">' + label + '</th>';
+  let html = '<div class="card-title" style="padding:10px 14px 6px;">Price Log &mdash; NG=F <span style="font-size:11px;color:var(--text-muted);font-weight:400;">' + data.length + ' sessions</span></div>';
+  html += '<div style="overflow-y:auto;max-height:480px;"><table><thead><tr>' + th('Date') + th('Close') + th('Day \u0394%') + th('Range') + '</tr></thead><tbody>';
+  reversed.forEach((pt, i) => {
+    const prevPt = i < reversed.length - 1 ? reversed[i + 1] : pt;
+    const delta = (pt.p - prevPt.p) / prevPt.p * 100;
+    const barW = ((pt.p - pMin) / pRange * 56).toFixed(1);
+    html += '<tr>' +
+      '<td style="text-align:left;">' + formatDailyDate(pt.date) + '</td>' +
+      '<td style="font-family:var(--font-mono);">$' + pt.p.toFixed(3) + '</td>' +
+      '<td class="' + (delta >= 0 ? 'positive' : 'negative') + '">' + (i === reversed.length - 1 ? '\u2014' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%') + '</td>' +
+      '<td><div style="width:' + barW + 'px;height:3px;background:var(--accent-hh);border-radius:2px;opacity:0.55;"></div></td>' +
+      '</tr>';
   });
-  const weeks = [...weekMap.values()].sort((a, b) => a.date.localeCompare(b.date));
-  const changes = [];
-  for (let i = 1; i < weeks.length; i++) {
-    const pct = (weeks[i].p - weeks[i-1].p) / weeks[i-1].p * 100;
-    changes.push({ date: weeks[i].date, pct });
-  }
-  return changes;
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
 }
+
 </script>
 
 <script>

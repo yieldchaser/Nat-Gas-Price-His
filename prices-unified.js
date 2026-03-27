@@ -1,6 +1,6 @@
 const PRICE_INSTRUMENT_META = {
   hh: { key: 'hh', label: 'Henry Hub', stamp: 'HH futures', tone: 'hh', color: '#00d4ff', currency: '$', unit: 'USD/MMBtu', prefix: 'NG' },
-  ttf: { key: 'ttf', label: 'Dutch TTF', stamp: 'TTF futures', tone: 'ttf', color: '#ff8c00', currency: 'EUR ', unit: 'EUR/MWh', prefix: 'TG' },
+  ttf: { key: 'ttf', label: 'Dutch TTF', stamp: 'TTF futures', tone: 'ttf', color: '#ff8c00', currency: 'EUR', unit: 'EUR/MWh', prefix: 'TG' },
   spot: { key: 'spot', label: 'Henry Hub Spot', stamp: 'Daily spot', tone: 'spot', color: '#a78bfa', currency: '$', unit: 'USD/MMBtu', prefix: 'SPOT' },
 };
 
