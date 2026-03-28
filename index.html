@@ -2585,6 +2585,17 @@ function renderSpreadTab() {
                 <button class="segment-btn" data-mode="current">Current</button>
               </div>
             </div>
+            <div class="ctrl-toolbar" style="padding:8px 14px;border-top:1px solid var(--border);">
+              <div class="ctrl-group">
+                <div class="ctrl-group-label">Front Leg</div>
+                <select id="resolution-front">${MONTHS.map((m,i)=>`<option value="${m}" ${i===10?'selected':''}>${m}</option>`).join('')}</select>
+              </div>
+              <div class="ctrl-sep"></div>
+              <div class="ctrl-group">
+                <div class="ctrl-group-label">Back Leg</div>
+                <select id="resolution-back">${MONTHS.map((m,i)=>`<option value="${m}" ${i===0?'selected':''}>${m}</option>`).join('')}</select>
+              </div>
+            </div>
             <div id="spread-resolution-legend" style="padding:10px 14px 6px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid var(--border);"></div>
             <div class="chart-wrap" id="spread-resolution-chart" style="height:300px;"></div>
             <div id="resolution-kpi" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 14px;border-top:1px solid var(--border);"></div>
@@ -3269,8 +3280,8 @@ function renderSpreadResolutionChart() {
   const container = document.getElementById('spread-resolution-chart');
   if (!container) return;
 
-  const front = document.getElementById('spread-front').value;
-  const back = document.getElementById('spread-back').value;
+  const front = document.getElementById('resolution-front').value;
+  const back = document.getElementById('resolution-back').value;
   const year = parseInt(document.getElementById('spread-year').value);
   if (!year) return;
   const instrument = getSpreadInstrument();
@@ -3561,8 +3572,8 @@ function updateResolutionKPI(start, end) {
   const kpiEl = document.getElementById('resolution-kpi');
   if (!kpiEl || !STATE._resolutionYearData) return;
   const visYears = STATE.resolutionVisibleYears || new Set();
-  const front = document.getElementById('spread-front')?.value;
-  const back  = document.getElementById('spread-back')?.value;
+  const front = document.getElementById('resolution-front')?.value;
+  const back  = document.getElementById('resolution-back')?.value;
   const instrument = document.getElementById('spread-instrument')?.value || 'hh';
   const selectedYear = parseInt(document.getElementById('spread-year')?.value, 10);
   const items = [];
@@ -3674,8 +3685,8 @@ function initSpreadResolutionEvents() {
       if (_resolutionMode === 'current') {
         const year = parseInt(document.getElementById('spread-year').value);
         const instrument = getSpreadInstrument();
-        const front = document.getElementById('spread-front').value;
-        const back = document.getElementById('spread-back').value;
+        const front = document.getElementById('resolution-front').value;
+        const back = document.getElementById('resolution-back').value;
         const sp = computeSpread(front, back, year, instrument).points;
         if (sp.length) {
           STATE.resolutionView = { rangeStart: sp[0].d, rangeEnd: sp[sp.length - 1].d };
@@ -3687,6 +3698,19 @@ function initSpreadResolutionEvents() {
       renderSpreadResolutionChart();
     });
   }
+
+  const resFront = document.getElementById('resolution-front');
+  const resBack  = document.getElementById('resolution-back');
+  if (resFront) resFront.addEventListener('change', () => {
+    STATE.resolutionPairKey = null;
+    STATE.resolutionPinnedYears = null;
+    renderSpreadResolutionChart();
+  });
+  if (resBack) resBack.addEventListener('change', () => {
+    STATE.resolutionPairKey = null;
+    STATE.resolutionPinnedYears = null;
+    renderSpreadResolutionChart();
+  });
 
   const startSlider = document.getElementById('resolution-window-start');
   const endSlider = document.getElementById('resolution-window-end');
