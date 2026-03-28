@@ -4,102 +4,153 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 
 ---
 
-## 📊 Dashboard Modules
+## Dashboard Modules
 
-### 1. Henry Hub (HH) & Dutch TTF Contracts
-- **Seasonal Contract Charts**: Overlays current contract price against historical seasonal bands.
-- **Compare Mode**: Interactive multi-series comparison (Shift+Click years).
-- **Contract Statistics**: Dynamic chips showing Open, High, Low, Close, and Volume delta.
-- **Instrument Switcher**: Seamlessly toggle between Henry Hub (NYMEX) and Dutch TTF (ICE) benchmarks.
+### 1. Prices Tab — HH & TTF Contracts
 
-### 2. Spot Prices
-- **Daily Cash History**: Long-term Henry Hub spot price logging.
-- **Price Statistics**: Historical distribution and range analysis for any selected year.
+- **Lifecycle Chart**: Price history plotted on either a Calendar Date or T-Day axis (Day 1–519 of the 519-trading-day contract lifecycle)
+- **5Y Seasonal Band**: Min/max/avg band from the last 5 **completed** contract years (excludes current year to avoid self-reference). Dynamically shows actual contributing year count (e.g. "3Y avg") when fewer than 5 years exist
+- **Pre-Window View**: Contracts more than 519 trading days from expiry are outside the lifecycle analysis window. They show a candlestick chart on a calendar-date axis with basic stats, labeled "PRE-ANALYSIS WINDOW"
+- **Contract Statistics**: Trading Days (with progress bar), Days to Expiry (calendar days remaining), Trading Days Elapsed, vs NY Seasonal Avg, Range Position (percentile), High/Low/Avg, From Contract Open %, Status
+- **Same Month History**: Sidebar table of all same-month contracts with expiry prices ranked all-time
+- **T-Day Filter**: Slider to restrict chart and viewport to the last N trading days
+- **Compare Mode**: Multi-series overlay (Shift+Click years)
+- **Instrument Switcher**: Toggle between Henry Hub (NYMEX, USD/MMBtu) and Dutch TTF (ICE, EUR/MWh)
 
-### 3. Spreads & Seasonality
-- **Spread History**: Custom front/back leg spread builder with historical data.
-- **Seasonality Heatmap**: Average calendar spread matrix (Last 5 Years) for identifying contango/backwardation patterns.
-- **Term Structure**: Forward curve visualization from historical closing prices.
+### 2. Spreads Tab
 
-### 4. Forward Curve (Live)
-- **Interactive Curve**: Real-time strip view of the next 72 months (Henry Hub) and 36 months (Dutch TTF) of delivery.
-- **Cal Strip Averages**: Cal 2026/2027, Summer/Winter strip averages with Avg Price, vs Front, and Structure (Contango/Back) columns.
-- **Compare Curve**: Overlay the active curve against 1 Week, 1 Month, 3 Months, or 1 Year ago using dashed reference lines.
-- **Fallback Logic**: Robust priority chain (Live -> Historical -> Missing) ensures visual continuity during Yahoo Finance throttling.
-- **Status Dashboard**: Real-time `HH: X/72 · TTF: Y/36` quoted counter with a `🟡 PARTIAL DATA` badge for low-coverage events.
-- **Quote Table**: Granular list of every contract month; click any row to navigate directly to the Prices tab for that contract.
+- **Spread Builder**: Custom front/back leg calendar spread with per-year historical overlays
+- **Spread Statistics**: AT-519, AT-PENULT, AT-90D, AT-10D milestone columns; all-time avg and 5-completed-year avg footer rows
+- **Seasonality Heatmap**: Average calendar spread matrix across the last 5 completed years for identifying contango/backwardation patterns
+- **Lifecycle Resolution Chart**: Multi-year spread vs. T-Day comparison with year pills and T-Day range slider
 
-### 5. Expiry Settlement Prices
-- **Settlement Matrix**: Monthly final settlement prices spanning 20+ years.
-- **Relative Heatmapping**: Color-coded cells comparing prices against the filtered window's average (Green = Strong, Red = Weak).
-- **YoY% Analysis**: Trailing year-over-year percentage change for every contract month.
-- **Averages Row**: Cross-sectional averages for the visible window, last 5 years, and last 3 years.
-- **Month Profile Chart**: Click any month label (Jan–Dec) to open a line chart of that month's expiry history across all years, with all-years avg and 5Y avg dashed lines.
-- **Seasonal Bar Chart**: 12-bar seasonal expiry profile below the table, color-coded by season (winter/summer/shoulder), filterable by All/10Y/5Y/3Y.
-- **Per-Cell Tooltips**: Hover any settlement price cell to see rank (#X/N all time), vs 5Y avg %, and YoY % from prior year.
-- **Cross-Tab Navigation**: Click any settlement price cell to jump to the Prices tab with that contract loaded.
+### 3. Forward Curve Tab
 
-### 6. Spreads
-- **AT-Snapshot Columns**: AT-519, AT-PENULT, AT-90D, AT-10D columns in the spread history table capture spread value at key lifecycle milestones.
-- **Summary Stats Row**: All-time avg and Last 5Y avg for each column at the bottom of the spread table.
-- **Lifecycle Resolution Chart**: Multi-year spread vs. trading day comparison with **interactive year pills (HH 37yr / TTF 9yr)** and a custom **T-Day range slider (T-518 to T-0)**.
+- **Live Strip**: Next 72 HH months and 36 TTF months, spaced equally on a pseudo-date axis
+- **Price Source**: Each slot reads directly from raw live data (bypasses the lifecycle filter so far-out pre-window contracts are correctly shown as quoted)
+- **Cal Strip Averages**: Cal year, Summer, Winter strip averages with vs-front delta and contango/backwardation structure
+- **Compare Curve**: Overlay against 1W / 1M / 3M / 1Y ago reference curves
+- **Quote Counter**: `HH: X/72 · TTF: Y/36` with PARTIAL DATA badge on low coverage
+- **Quote Table**: Every contract month listed; click to navigate to Prices tab
 
-### 7. Daily Tracker & Data Engine (v2.0)
-- **High-Fidelity History**: Built from a 9,000+ session continuous `NG=F` foundation (1990–2026).
-- **Zero-Lag Seeding**: STATE.liveData['NG=F'] is pre-seeded with historical data on first paint.
-- **Resilient Data Architecture**:
-  - **Proxy Rotation**: Automatic failover across multiple CORS proxies (`corsproxy.io`, `allorigins`, `codetabs`).
-  - **Retry Logic**: 3-layer fetch attempts with exponential backoff.
-  - **Staggered Batching**: Throttling-resistant fetching of 100+ tickers in 8-contract batches with 300ms staggers.
-  - **Graceful Fallback**: Active **🟡 STALE** detection and **🟡 PARTIAL DATA** badges when API availability is compromised.
-- **Institutional Analytics**:
-  - **Pill-Toggle Series**: Toggleable overlays for `52W High`, `52W Low`, and `360D Average`.
-  - **NG vs TTF Spread (Dynamic FX)**: Real-time nominal spread using live **EURUSD=X** conversion.
-  - **Extended Ranges**: Fully synchronized presets for `1M`, `3M`, `1Y`, `2Y`, `3Y`, `5Y`, `10Y`, and `ALL`.
-- **Recent Stability & UI Fixes**:
-  - **Weekly % Change Chart**: Resolved a crash on slider/preset interaction by ensuring `STATE.dailyWeeklyView` is correctly initialized.
-  - **NG vs TTF Spread KPIs**: Corrected container targeting to ensure KPI cards are visible in the Daily Tracker tab using a new `#daily-spread-kpis` element.
-  - **Spread Chart Reference Lines**: Added toggleable dashed lines for 52W High and 52W Low of the spread value, with dedicated legend pills.
+### 4. Expiry Prices Tab
 
-### 8. Data Reliability & Caching
-To resolve "blank-on-refresh" issues, the dashboard implements a `localStorage` caching layer:
-- **Persistence**: KPI stats and contract price points are cached for **24 hours**.
-- **Instant Rendering**: Charts and data chips populate immediately from cache upon page load.
-- **Freshness Indicators**:
-  - `🟡 CACHED (xh ago)`: Data loaded from cache, still within 24h window.
-  - `⚠️ STALE CACHE (xh ago)`: Cached data is older than 24h (better than a blank screen).
-- **Background Refresh**: Live Yahoo Finance fetches run silently in the background. Once resolved, the cache is updated, and status badges are cleared automatically.
-- **Optimized Footprint**: Contract history is slimmed to the latest price point for caching, keeping the `localStorage` usage < 20KB.
+- **Settlement Matrix**: Monthly final settlement prices across 20+ years
+- **5Y / 3Y Averages**: Computed from 5 or 3 **completed** years only (excludes current year and future years). Tooltips make this explicit
+- **Seasonal Bar Chart**: 12-bar seasonal profile using only settled (expired) contracts — excludes current/future year prices which are live market prices, not settlements
+- **Month Profile Chart**: Click any month label to open expiry history across all years with all-years and 5Y-completed avg lines
+- **Heat-map**: Cell colors relative to the visible window's average
+- **Per-cell Tooltips**: Rank (all-time), vs 5Y avg %, YoY%
 
-### 9. Prices Tab
-- **X-Axis Mode Toggle**: Cal Date / T-Day segment switch to view contract price history on calendar dates or by trading day number (Day 1 to Day 519).
-- **Same Month History**: Clickable rows — click any year in the sidebar to instantly load that contract into the chart (highlighted in cyan/orange).
-- **Cross-Tab Navigation**: Expiry price cells and Forward Curve contract rows both navigate directly to the Prices tab with the correct contract pre-loaded.
+### 5. Daily Tracker Tab
+
+- **Continuous NG=F**: 9,000+ session foundation (1990–present) spliced with live Yahoo Finance data
+- **KPI Chips**: 52W High/Low, vs 52W High/Low %, 30D Avg, YTD Δ%
+- **NG vs TTF Spread**: Nominal spread with live EURUSD=X conversion
+- **Monthly Seasonality**: Average monthly return heatmap
+- **Annual Returns**: Year-by-year ranked return table
+- **Upcoming Expiries**: Next contracts with days-to-expiry using correct NYMEX 3-biz-day rule
 
 ---
 
-## 🛠 Tech Stack & Architecture
+## Data Pipeline
 
-- **UI/Layout**: HTML5 & Vanilla CSS (Mobile Responsive).
-- **Charts**: [Lightweight Charts](https://github.com/tradingview/lightweight-charts) (Canvas-based).
-- **Data Pipeline**: 
-  - `index.html` (Logic/UI)
-  - `prices-unified.js` (Metadata & Ticker logic)
-  - `data/` (Historical JSON storage)
-  - `build_data.py` (Local processing script for CSV → JSON)
-- **Live Data**: Fetched at runtime from Yahoo Finance API with proxy-first fallback.
+### Automated Archiving (GitHub Actions)
 
----
+A daily workflow (`.github/workflows/archive-contracts.yml`) keeps the contract database current with no manual steps:
 
-## 🚀 Running Locally
+1. Runs `python archive_contract.py --update` at 06:00 UTC daily
+2. **Missing contracts**: auto-detects any HH contract in the 2.5-year window not yet in `Cleaned_Database/` and fetches from Yahoo
+3. **Stale contracts**: detects expired contracts archived before expiry (fewer than 519 rows) and re-fetches now-complete history from Yahoo
+4. Rebuilds all `data/` JSON files via `build_data.py`
+5. Commits and pushes only if data changed
 
-The app uses `fetch()`, so it must be served over HTTP.
+Can also be triggered manually via GitHub Actions → `workflow_dispatch`.
 
-```powershell
-# In the project root
-python -m http.server 4173
 ```
-Then visit `http://127.0.0.1:4173`.
+archive_contract.py --update    # full automated update (CI uses this)
+archive_contract.py --auto      # archive missing contracts only
+archive_contract.py NGK26       # archive a specific ticker
+archive_contract.py --force NGK26  # overwrite existing CSV
+```
 
-## 📦 Deployment
-Automatic deployment via GitHub Actions to GitHub Pages on every push to `main`.
+### Build Pipeline
+
+```
+Cleaned_Database/               # raw CSVs from Yahoo Finance
+  Henry Hub/Monthwise/          # NGK26.csv, NGM26.csv, etc.
+  Dutch TTF/Monthwise/          # TGFK26.csv, etc.
+  Henry Hub/Yearwise/           # for continuous NG=F series
+
+build_data.py                   # CSV → JSON
+  data/hh/hh_jan.json           # contract price history per month
+  data/ttf/ttf_jan.json
+  data/spot/spot_jan.json       # EIA Henry Hub daily spot
+  data/expiry_prices.json       # last price per contract (settlement for expired, current for active)
+  data/ng_continuous.json       # continuous front-month NG=F series
+```
+
+### T-Day Lifecycle Framework
+
+Each NYMEX HH contract trades for exactly **519 trading days** before expiry:
+- **T-Day 1**: ~519 trading days (~727 calendar days) before expiry — lifecycle window opens
+- **T-Day 519**: expiry day (3 business days before 1st of delivery month)
+
+T-Day positioning is anchored to expiry via `approxTradingDaysTo(date, expiry) = round(calendarDays × 5/7)`. For **active contracts** (not yet expired), all CSV row numbers are re-anchored to this formula regardless of when or how much data Yahoo returned — this corrects for pre-window rows that Yahoo includes for far-dated contracts.
+
+---
+
+## Caching Architecture
+
+### Per-Ticker localStorage Cache
+- Key: `live_px_v1_{ticker}` (e.g. `live_px_v1_NGK26.NYM`)
+- Pre-populates `STATE.liveData` on page load so charts render immediately from cache
+- Updated after each successful Yahoo fetch; `STATE.contractCache` invalidated on update
+- NG=F cached separately as `live_px_v1_NG=F` (Yahoo portion only; historical foundation loaded from JSON)
+- TTL: 24 hours
+
+### Forward Curve Cache
+- `fc_cache_hh` / `fc_cache_ttf`: last quoted price per ticker for the curve display
+
+### Status Badges
+- `ACTIVE — LIVE DATA`: fresh Yahoo data loaded
+- `CACHED (Xh ago)`: served from localStorage, within 24h
+- `STALE CACHE (Xh ago)`: cached data older than 24h
+
+---
+
+## Technical Notes
+
+### NYMEX Expiry Rule
+3 business days before the 1st calendar day of the delivery month. Both `estimateContractExpiry()` (T-Day anchoring) and `computeNGExpiry()` (Days to Expiry display) implement this consistently.
+
+### 5Y Seasonal Band Definition
+"5Y" always means the last **5 completed contract years** (`currentYear-5` through `currentYear-1` inclusive). The current running year is excluded to prevent the band from being self-referential — the contract being analyzed would be pulling the band toward its own trajectory. This definition is applied consistently across:
+- Seasonal band chart and stats panel
+- Expiry table 5Y/3Y avg columns
+- Spread table 5-year avg footer row
+- Lifecycle Resolution 5Y filter
+- Expiry seasonal bar
+
+### Spread T-Day Axis
+The spread chart X-axis uses the **front leg's** T-Day position. Both legs are priced on the same calendar date (joined by date), ensuring no mixing of different settlement days. The crosshair label says "T-Day (front leg)" to make this explicit.
+
+---
+
+## Tech Stack
+
+- **UI**: HTML5, Vanilla CSS, mobile responsive
+- **Charts**: [Lightweight Charts](https://github.com/tradingview/lightweight-charts) (Canvas-based, TradingView)
+- **Live Data**: Yahoo Finance v8 API, fetched at runtime with proxy-first CORS fallback and retry logic
+- **No build step**: single `index.html` + static JSON files
+
+## Running Locally
+
+```bash
+python -m http.server 4173
+# visit http://127.0.0.1:4173
+```
+
+## Deployment
+
+GitHub Actions deploys to GitHub Pages on every push to `main`. The daily archive workflow also pushes updated data to `main` automatically.
