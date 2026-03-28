@@ -1625,7 +1625,7 @@ function getContractData(ticker) {
     const processedHist = isActive ? anchorPts(hist) : hist;
     const lastHistPoint = processedHist[processedHist.length - 1];
     const lastHistDate = lastHistPoint && lastHistPoint.date;
-    const newLive = lastHistDate ? live.filter(pt => pt.date > lastHistDate) : [];
+    const newLive = lastHistDate ? live.filter(pt => pt.date > lastHistDate) : live;
     const baseD = lastHistPoint && lastHistPoint.d ? lastHistPoint.d : processedHist.length;
     const liveExt = (isActive && expiry)
       ? anchorPts(newLive)
@@ -1682,7 +1682,7 @@ function getTTFContractData(ticker) {
     const processedHist = isActive ? anchorPts(hist) : hist;
     const lastHistPoint = processedHist[processedHist.length - 1];
     const lastHistDate = lastHistPoint && lastHistPoint.date;
-    const newLive = lastHistDate ? live.filter(pt => pt.date > lastHistDate) : [];
+    const newLive = lastHistDate ? live.filter(pt => pt.date > lastHistDate) : live;
     const baseD2 = lastHistPoint && lastHistPoint.d ? lastHistPoint.d : processedHist.length;
     const liveExt = (isActive && expiry)
       ? anchorPts(newLive)

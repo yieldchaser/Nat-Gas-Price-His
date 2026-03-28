@@ -9,12 +9,12 @@ Usage
   python archive_contract.py NGK26 NGM26 NGN26
   python archive_contract.py TGK26 TGM26         # Dutch TTF
 
-# Auto-detect HH contracts missing from Cleaned_Database (past ~2.5 years):
+# Auto-detect HH and TTF contracts missing from Cleaned_Database (past ~2.5 years):
   python archive_contract.py --auto
 
 # Full automated update (recommended for cron / CI):
-#   - archives any missing contracts in the 2.5-year window
-#   - re-fetches recently expired contracts that still have incomplete data
+#   - archives any missing HH and TTF contracts in the 2.5-year window
+#   - re-fetches recently expired HH and TTF contracts that still have incomplete data
 #   - rebuilds all dashboard JSON
   python archive_contract.py --update
 
@@ -271,6 +271,28 @@ def auto_detect_missing_hh() -> list[str]:
     return missing
 
 
+def _existing_ttf_tickers() -> set[str]:
+    found = set()
+    for month_dir in os.listdir(TTF_DIR):
+        full = os.path.join(TTF_DIR, month_dir)
+        if not os.path.isdir(full):
+            continue
+        for f in os.listdir(full):
+            if f.endswith('.csv'):
+                found.add(f.replace('.csv', '').upper())
+    return found
+
+
+def auto_detect_missing_ttf() -> list[str]:
+    existing = _existing_ttf_tickers()
+    expected = {t.replace('NG', 'TG') for t in _contracts_in_window()}
+    missing  = sorted(
+        expected - existing,
+        key=lambda t: (_full_year(t[3:]), list(MONTH_CODES).index(t[2]))
+    )
+    return missing
+
+
 # ---------------------------------------------------------------------------
 # Stale detection: expired contracts archived before they had complete data
 # ---------------------------------------------------------------------------
@@ -319,6 +341,46 @@ def find_stale_hh() -> list[str]:
     return sorted(stale, key=lambda t: (_full_year(t[3:]), list(MONTH_CODES).index(t[2])))
 
 
+def find_stale_ttf() -> list[str]:
+    """
+    Return TTF tickers that:
+      1. Have already expired (expiry < today) — uses same NYMEX rule as HH
+      2. Are within Yahoo's history window (expired < STALE_WINDOW_DAYS ago)
+      3. Have fewer than FULL_LIFECYCLE_DAYS rows in their CSV
+    """
+    today = date.today()
+    stale = []
+
+    for month_dir in os.listdir(TTF_DIR):
+        full = os.path.join(TTF_DIR, month_dir)
+        if not os.path.isdir(full):
+            continue
+        for f in os.listdir(full):
+            if not f.endswith('.csv'):
+                continue
+            ticker = f.replace('.csv', '').upper()
+            # Convert TG prefix to NG to reuse the NYMEX expiry rule as a proxy
+            hh_equiv = 'NG' + ticker[2:]
+            try:
+                expiry = _contract_expiry(hh_equiv)
+            except (KeyError, ValueError):
+                continue
+
+            if expiry >= today:
+                continue
+
+            days_since_expiry = (today - expiry).days
+            if days_since_expiry > STALE_WINDOW_DAYS:
+                continue
+
+            path = os.path.join(full, f)
+            rows = _csv_row_count(path)
+            if rows < FULL_LIFECYCLE_DAYS:
+                stale.append(ticker)
+
+    return sorted(stale, key=lambda t: (_full_year(t[3:]), list(MONTH_CODES).index(t[2])))
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -350,16 +412,28 @@ def main() -> None:
 
     # --- Step 1: auto-detect missing contracts ---
     if args.auto:
-        missing = auto_detect_missing_hh()
-        if missing:
-            print(f'Auto-detected {len(missing)} missing HH contract(s):')
-            for t in missing:
+        missing_hh = auto_detect_missing_hh()
+        if missing_hh:
+            print(f'Auto-detected {len(missing_hh)} missing HH contract(s):')
+            for t in missing_hh:
                 month_name, _ = MONTH_CODES[t[2]]
                 print(f'  {t}  ({month_name} {_full_year(t[3:])})')
             print()
         else:
             print('No missing HH contracts detected.')
-        tickers = missing + [t for t in tickers if t not in missing]
+
+        missing_ttf = auto_detect_missing_ttf()
+        if missing_ttf:
+            print(f'Auto-detected {len(missing_ttf)} missing TTF contract(s):')
+            for t in missing_ttf:
+                month_name, _ = MONTH_CODES[t[2]]
+                print(f'  {t}  ({month_name} {_full_year(t[3:])})')
+            print()
+        else:
+            print('No missing TTF contracts detected.')
+
+        auto_detected = missing_hh + missing_ttf
+        tickers = auto_detected + [t for t in tickers if t not in auto_detected]
 
     # --- Step 2 (--update only): find stale expired contracts ---
     force_tickers: set[str] = set()
@@ -367,10 +441,10 @@ def main() -> None:
         force_tickers = set(tickers)
 
     if args.update:
-        stale = find_stale_hh()
-        if stale:
-            print(f'Found {len(stale)} stale expired contract(s) to refresh:')
-            for t in stale:
+        stale_hh = find_stale_hh()
+        if stale_hh:
+            print(f'Found {len(stale_hh)} stale expired HH contract(s) to refresh:')
+            for t in stale_hh:
                 expiry = _contract_expiry(t)
                 csv_path_check = os.path.join(
                     HH_DIR, _month_folder(t[2])[1], f'{t.lower()}.csv'
@@ -378,12 +452,29 @@ def main() -> None:
                 rows = _csv_row_count(csv_path_check) if os.path.exists(csv_path_check) else 0
                 print(f'  {t}  (expired {expiry}, {rows} rows → re-fetching)')
             print()
-            # These need force-delete so archive_hh won't skip them
-            force_tickers |= set(stale)
-            # Prepend stale before other tickers (process them first)
-            tickers = [t for t in stale if t not in tickers] + tickers
         else:
             print('All archived HH contracts have complete data.')
+
+        stale_ttf = find_stale_ttf()
+        if stale_ttf:
+            print(f'Found {len(stale_ttf)} stale expired TTF contract(s) to refresh:')
+            for t in stale_ttf:
+                hh_equiv = 'NG' + t[2:]
+                expiry = _contract_expiry(hh_equiv)
+                csv_path_check = os.path.join(
+                    TTF_DIR, _month_folder(t[2])[1], f'{t.lower()}.csv'
+                )
+                rows = _csv_row_count(csv_path_check) if os.path.exists(csv_path_check) else 0
+                print(f'  {t}  (expired {expiry}, {rows} rows → re-fetching)')
+            print()
+        else:
+            print('All archived TTF contracts have complete data.')
+
+        stale = stale_hh + stale_ttf
+        # These need force-delete so archive_hh/ttf won't skip them
+        force_tickers |= set(stale)
+        # Prepend stale before other tickers (process them first)
+        tickers = [t for t in stale if t not in tickers] + tickers
 
     if not tickers:
         parser.print_help()

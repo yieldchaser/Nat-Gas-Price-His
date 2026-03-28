@@ -390,7 +390,7 @@ function getComparePriceSeries(view) {
 function finalizePriceSeasonalBucket(cache) {
   Object.keys(cache).forEach(key => {
     const entry = cache[key];
-    entry.avg = entry.sum / entry.count;
+    entry.avg = entry.count > 0 ? entry.sum / entry.count : 0;
     if (entry.min === Infinity) entry.min = 0;
     if (entry.max === -Infinity) entry.max = 0;
   });
@@ -1127,8 +1127,8 @@ function renderPricesHistoryTable(context) {
     });
 
     const allPrices = rowData.map(r => r.price).filter(Number.isFinite);
-    const priceMin = Math.min(...allPrices);
-    const priceMax = Math.max(...allPrices);
+    const priceMin = allPrices.length ? Math.min(...allPrices) : 0;
+    const priceMax = allPrices.length ? Math.max(...allPrices) : 0;
     const priceRange = priceMax - priceMin || 1;
     const sortedDesc = [...allPrices].sort((a, b) => b - a);
     rowData.forEach(r => { r.rank = Number.isFinite(r.price) ? sortedDesc.indexOf(r.price) + 1 : null; });
@@ -1182,8 +1182,8 @@ function renderPricesHistoryTable(context) {
     });
 
     const allPrices = rowData.map(r => r.price).filter(Number.isFinite);
-    const priceMin = Math.min(...allPrices);
-    const priceMax = Math.max(...allPrices);
+    const priceMin = allPrices.length ? Math.min(...allPrices) : 0;
+    const priceMax = allPrices.length ? Math.max(...allPrices) : 0;
     const priceRange = priceMax - priceMin || 1;
     const sortedDesc = [...allPrices].sort((a, b) => b - a);
     rowData.forEach(r => { r.rank = Number.isFinite(r.price) ? sortedDesc.indexOf(r.price) + 1 : null; });

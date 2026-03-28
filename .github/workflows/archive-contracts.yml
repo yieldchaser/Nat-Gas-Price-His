@@ -1,8 +1,8 @@
 name: Archive Expiring Contracts
 
 # Runs automatically to keep the contract price history complete:
-#   1. Archives any new HH contracts that entered the 2.5-year window
-#   2. Re-fetches recently expired contracts that were archived before expiry
+#   1. Archives any new HH and TTF contracts that entered the 2.5-year window
+#   2. Re-fetches recently expired HH and TTF contracts that were archived before expiry
 #      (i.e., have fewer than 519 trading days — their complete lifecycle)
 #   3. Rebuilds all dashboard JSON files
 #   4. Commits and pushes only if data actually changed
@@ -36,6 +36,7 @@ jobs:
 
       - name: Commit and push if data changed
         run: |
+          set -e
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Cleaned_Database/ data/
