@@ -3303,12 +3303,12 @@ function renderSpreadResolutionChart() {
     STATE.resolutionPairKey = pairKey;
     const defaults = new Set();
     STATE._resolutionAvailableYears.filter(y => y < currentYear).slice(0, 4).forEach(y => defaults.add(y));
+    defaults.add(year); // Include selected year as pinned by default
     STATE.resolutionPinnedYears = defaults;
     STATE.resolutionView = null; // reset — will be set after visible extent is computed
   }
 
   STATE.resolutionVisibleYears = new Set(STATE.resolutionPinnedYears || []);
-  STATE.resolutionVisibleYears.add(year);
   STATE.resolutionSeriesMap = new Map();
   STATE._resolutionChart = chart;
   STATE._resolutionYearData = new Map();
@@ -3585,23 +3585,18 @@ function updateResolutionKPI(start, end) {
 
 function toggleResolutionYear(yr) {
   yr = parseInt(yr);
-  const yearSelect = document.getElementById('spread-year');
-  const selectedYear = parseInt(yearSelect?.value, 10);
-  
-  if (yr === selectedYear) return;
   
   if (!STATE.resolutionPinnedYears) STATE.resolutionPinnedYears = new Set();
-  if (STATE.resolutionPinnedYears.has(yr)) {
-    STATE.resolutionPinnedYears.delete(yr);
-  } else {
+  
+  const on = !STATE.resolutionPinnedYears.has(yr);
+  if (on) {
     STATE.resolutionPinnedYears.add(yr);
+  } else {
+    STATE.resolutionPinnedYears.delete(yr);
   }
   
-  if (!STATE.resolutionVisibleYears) STATE.resolutionVisibleYears = new Set();
   STATE.resolutionVisibleYears = new Set(STATE.resolutionPinnedYears);
-  STATE.resolutionVisibleYears.add(selectedYear);
   
-  const on = STATE.resolutionPinnedYears.has(yr);
   const series = STATE.resolutionSeriesMap && STATE.resolutionSeriesMap.get(yr);
   if (series) series.applyOptions({ visible: on });
   
@@ -3612,8 +3607,33 @@ function toggleResolutionYear(yr) {
     chip.style.background = on ? `${color}22` : 'transparent';
     chip.style.border = `1px solid ${on ? color : 'rgba(255,255,255,0.15)'}`;
   }
-  const view = STATE.resolutionView || {};
-  updateResolutionKPI(view.rangeStart || 1, view.rangeEnd || 519);
+
+  // Recalculate available scroll bounds for visible series so Slider/Chart correctly map future active plots
+  let _visMinD = 519, _visMaxD = 1;
+  const activeEntries = [...STATE._resolutionYearData.entries()].filter(([y]) => STATE.resolutionVisibleYears.has(y));
+  activeEntries.forEach(([, sp]) => sp.forEach(pt => {
+    if (pt.d < _visMinD) _visMinD = pt.d;
+    if (pt.d > _visMaxD) _visMaxD = pt.d;
+  }));
+  if (activeEntries.length === 0 || _visMinD > _visMaxD) {
+    _visMinD = 1; _visMaxD = 519;
+  }
+  
+  STATE._resolutionDataMinD = Math.max(1, _visMinD);
+  STATE._resolutionDataMaxD = Math.min(519, _visMaxD);
+  
+  // Update zero-line bounds organically without full re-render
+  if (STATE._resolutionChart) {
+    const palette = getNeutralChartPalette();
+    const zeroLineSeries = [...STATE._resolutionChart.series()].find(s => s.options().color === palette.zero);
+    if (zeroLineSeries) {
+      const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
+      const _resTimeStr = d => new Date(_zeroBase + d * 86400000).toISOString().split('T')[0];
+      zeroLineSeries.setData([{ time: _resTimeStr(STATE._resolutionDataMinD), value: 0 }, { time: _resTimeStr(STATE._resolutionDataMaxD), value: 0 }]);
+    }
+  }
+
+  syncResolutionRangeFooter();
 }
 
 function toggleAllResolutionYears(on) {

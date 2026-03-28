@@ -656,6 +656,7 @@ function attachChartTooltip(options) {
     const rows = [];
     seriesConfigs.forEach(config => {
       if (!config || !config.series) return;
+      if (typeof config.series.options === 'function' && !config.series.options().visible) return;
       const rawPoint = param.seriesData.get(config.series);
       const resolvedPoint = typeof config.getPoint === 'function' ? config.getPoint(param, rawPoint) : null;
       let value = readSeriesValue(rawPoint);
