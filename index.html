@@ -5829,7 +5829,11 @@ function _renderSpreadPanel(ngData) {
   STATE._dailySpreadSeries = sSeries;
   STATE._dailySpreadHighSeries = sHighSeries;
   STATE._dailySpreadLowSeries = sLowSeries;
-  
+
+  spreadChart.timeScale().subscribeVisibleTimeRangeChange(() => {
+    requestAnimationFrame(() => _syncDailySpreadSliderFromChart());
+  });
+
   const legendEl = document.getElementById('daily-spread-legend');
   if (legendEl) {
     if (STATE.dailySpreadVisible === undefined) STATE.dailySpreadVisible = true;
@@ -5918,6 +5922,41 @@ function syncDailySpreadRangeFooter() {
   chart.timeScale().setVisibleRange({ from: data[sIdx].time, to: data[eIdx].time });
 }
 
+function _syncDailySpreadSliderFromChart() {
+  const chart = STATE._dailySpreadChart;
+  const data = STATE._dailySpreadData;
+  if (!chart || !data || !data.length) return;
+
+  const range = chart.timeScale().getVisibleRange();
+  if (!range) return;
+
+  const fromTime = typeof range.from === 'string' ? range.from : new Date(range.from * 1000).toISOString().slice(0, 10);
+  const toTime   = typeof range.to   === 'string' ? range.to   : new Date(range.to   * 1000).toISOString().slice(0, 10);
+
+  let sIdx = data.findIndex(p => p.time >= fromTime);
+  let eIdx = data.findLastIndex(p => p.time <= toTime);
+  if (sIdx === -1) sIdx = 0;
+  if (eIdx === -1) eIdx = data.length - 1;
+
+  const pctS = (sIdx / (data.length - 1)) * 100;
+  const pctE = (eIdx / (data.length - 1)) * 100;
+
+  const startS = document.getElementById('daily-spread-slider-start');
+  const endS   = document.getElementById('daily-spread-slider-end');
+  const selection = document.getElementById('daily-spread-selection');
+  const readout   = document.getElementById('daily-spread-readout');
+
+  if (startS) startS.value = pctS;
+  if (endS)   endS.value   = pctE;
+  if (selection) {
+    selection.style.left  = `${pctS}%`;
+    selection.style.width = `${pctE - pctS}%`;
+  }
+  if (readout) readout.innerHTML = `<span>${data[sIdx].time}</span> <span style="color:var(--text-muted);font-size:10px;">TO</span> <span>${data[eIdx].time}</span>`;
+
+  STATE.dailySpreadView = { rangeStart: sIdx, rangeEnd: eIdx };
+}
+
 function toggleDailySpreadSeries(type) {
   if (type === 'high') {
     STATE.dailySpreadHighVisible = (STATE.dailySpreadHighVisible === undefined) ? false : !STATE.dailySpreadHighVisible;
@@ -5988,7 +6027,7 @@ function _renderWeeklyChart(data) {
     priceLineVisible: false, lastValueVisible: false,
   });
   hSeries.setData(weekly.map(w => ({ time: w.date, value: w.pct, color: w.pct >= 0 ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)' })));
-  applyChartTimeScaleOptions(wChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(800 / weekly.length)), fixLeftEdge: false, fixRightEdge: false });
+  applyChartTimeScaleOptions(wChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(800 / weekly.length)), fixLeftEdge: true, fixRightEdge: true });
   wChart.timeScale().fitContent();
 
   STATE._dailyWeeklyChart = wChart;
