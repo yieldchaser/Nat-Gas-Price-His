@@ -60,8 +60,8 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 A daily workflow (`.github/workflows/archive-contracts.yml`) keeps the contract database current with no manual steps:
 
 1. Runs `python archive_contract.py --update` at 06:00 UTC daily
-2. **Missing contracts**: auto-detects any HH contract in the 2.5-year window not yet in `Cleaned_Database/` and fetches from Yahoo
-3. **Stale contracts**: detects expired contracts archived before expiry (fewer than 519 rows) and re-fetches now-complete history from Yahoo
+2. **Missing contracts**: auto-detects any HH or TTF contract in the 2.5-year window not yet in `Cleaned_Database/` and fetches from Yahoo
+3. **Stale contracts**: detects expired HH and TTF contracts archived before expiry (fewer than 519 rows) and re-fetches now-complete history from Yahoo
 4. Rebuilds all `data/` JSON files via `build_data.py`
 5. Commits and pushes only if data changed
 
@@ -73,6 +73,10 @@ archive_contract.py --auto      # archive missing contracts only
 archive_contract.py NGK26       # archive a specific ticker
 archive_contract.py --force NGK26  # overwrite existing CSV
 ```
+
+### EIA Spot Refresh
+
+A separate workflow (`.github/workflows/refresh-spot.yml`) runs every Wednesday and Thursday at 18:00 UTC to pull the latest EIA Henry Hub daily spot prices. The download uses a 4-attempt exponential-backoff retry to handle transient network failures.
 
 ### Build Pipeline
 
