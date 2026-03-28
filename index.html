@@ -4782,6 +4782,12 @@ function updateCurveChart() {
     rightPriceScale: {
       scaleMargins: { top: 0.18, bottom: 0.12 },
     },
+    // The x-axis uses pseudo-dates (fake Jan–Apr 2000 timestamps) to achieve
+    // equal month spacing. The axis tickMarkFormatter translates these to real
+    // delivery month labels ("Apr '26", "Jun '30", etc.), but the crosshair
+    // time label bypasses the formatter and would show the raw pseudo-date
+    // (e.g. "12 Mar '00"). Hide it — the tooltip already shows the delivery month.
+    crosshair: { vertLine: { labelVisible: false } },
   });
 
   const lineSeries = chart.addLineSeries({
