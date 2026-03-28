@@ -1172,6 +1172,17 @@ async function loadLiveData() {
     Object.entries(cacheTTF.data).forEach(([t, d]) => { if (!STATE.liveData[t]) STATE.liveData[t] = d; });
     STATE.ttfCacheUsed = true; STATE.ttfCacheAgeH = cacheTTF.ageH; STATE.ttfCacheIsStale = cacheTTF.isStale;
   }
+
+  // Pre-populate full price history from per-ticker localStorage cache.
+  // This lets the Prices chart render immediately on page load without blanking
+  // while the live fetch is in progress. Fresh data replaces it when it arrives.
+  allTickers.forEach(t => {
+    if (!STATE.liveData[t]) {
+      const c = getCachedData(`live_px_v1_${t}`);
+      if (c) STATE.liveData[t] = c.data;
+    }
+  });
+
   if (STATE.activeTab === 'curve') updateCurveChart();
 
   // Fetch front month with '2y' for current daily density
@@ -1191,9 +1202,17 @@ async function loadLiveData() {
   for (let i = 0; i < allTickers.length; i += batchSize) {
     const batch = allTickers.slice(i, i + batchSize);
     const results = await Promise.all(batch.map(t => fetchYahoo(t).then(d => [t, d])));
-    results.forEach(([t, d]) => { 
+    results.forEach(([t, d]) => {
       if (d && d.length > 0) {
         STATE.liveData[t] = d;
+        // Persist full history so the chart renders instantly on the next page load.
+        setCachedData(`live_px_v1_${t}`, d);
+        // Clear the in-memory contract cache so getContractData re-evaluates
+        // with the fresh Yahoo data instead of the stale localStorage snapshot.
+        const internalTicker = t.startsWith('TTF')
+          ? 'TG' + t.slice(3).replace('.NYM', '')
+          : t.replace('.NYM', '');
+        delete STATE.contractCache[internalTicker];
         if (t.startsWith('NG')) STATE.hhLiveCount++;
         else if (t.startsWith('TTF')) STATE.ttfLiveCount++;
       }
@@ -2989,8 +3008,8 @@ function updateSpreadChart() {
     const isTTF = instrument === 'ttf';
     let badge = '';
     if ((isHH && STATE.hhCacheUsed) || (isTTF && STATE.ttfCacheUsed)) {
-      const isStale = isHH ? STATE.hhCacheStale : STATE.ttfCacheStale;
-      const age = isHH ? STATE.hhCacheAge : STATE.ttfCacheAge;
+      const isStale = isHH ? STATE.hhCacheIsStale : STATE.ttfCacheIsStale;
+      const age = isHH ? STATE.hhCacheAgeH : STATE.ttfCacheAgeH;
       badge = isStale 
         ? `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">⚠️ STALE CACHE (${age}h ago)</span>`
         : `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">🟡 CACHED (${age}h ago)</span>`;
