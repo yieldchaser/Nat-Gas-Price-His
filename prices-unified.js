@@ -141,10 +141,9 @@ function getRangeSelectionPercent(length, start, end) {
   if (length <= 1) return { left: 0, width: 100 };
   const left = (start / (length - 1)) * 100;
   const right = (end / (length - 1)) * 100;
-  return {
-    left,
-    width: Math.max(right - left, 1.25),
-  };
+  // Clamp width so left + width never exceeds 100% (prevents overflow of range-selection div)
+  const width = Math.min(Math.max(right - left, 1.25), 100 - left);
+  return { left, width };
 }
 
 function getRangeLabel(length, count) {

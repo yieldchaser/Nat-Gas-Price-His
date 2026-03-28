@@ -278,7 +278,7 @@ tr:hover td { background: var(--bg-card-hover); }
 .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
 
 /* Chart container */
-.chart-wrap { width: 100%; min-height: 400px; height: 60vh; border-radius: 6px; overflow: hidden; position: relative; }
+.chart-wrap { width: 100%; min-height: 400px; height: 60vh; border-radius: 6px; overflow: hidden; contain: paint; position: relative; }
 /* Hide TradingView branding */
 .chart-wrap a, .tv-lightweight-charts a, [class*="apply-common"] a { display: none !important; opacity: 0 !important; pointer-events: none !important; }
 .chart-wrap div[style*="position: absolute"][style*="bottom"] a { display: none !important; }
@@ -317,7 +317,6 @@ tr:hover td { background: var(--bg-card-hover); }
   position: absolute;
   left: 0;
   top: -8px;
-  transform: translate(-50%, -100%);
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
@@ -3842,6 +3841,8 @@ function renderCurveAnnotations() {
   const height = container.clientHeight || 0;
   // Clamp bottomInset so dots don't float too high on compact/narrow viewports
   const bottomInset = Math.max(20, Math.min(40, height * 0.06));
+  // Keep annotations within the plot area (exclude price scale on right, ~72px)
+  const plotRight = width - 72;
   const visiblePoints = slots
     .filter(slot => Number.isFinite(slot.price))
     .map(slot => ({
@@ -3853,7 +3854,7 @@ function renderCurveAnnotations() {
       Number.isFinite(point.x) &&
       Number.isFinite(point.y) &&
       point.x >= -24 &&
-      point.x <= width + 24 &&
+      point.x <= plotRight + 24 &&
       point.y >= -24 &&
       point.y <= height + 24
     );
@@ -3879,8 +3880,8 @@ function renderCurveAnnotations() {
   layer.innerHTML = visiblePoints.map((point, index) => {
     const dropHeight = Math.max(10, height - point.y - bottomInset);
     const isTurning = isCurveTurningPoint(visiblePoints, index);
-    
-    // Logic: 
+
+    // Logic:
     // 1. Always show first and last.
     // 2. Show turning points if they aren't too close to the previous label.
     // 3. Show stride points if they aren't too close to the previous label.
@@ -3900,10 +3901,16 @@ function renderCurveAnnotations() {
       lastLabelX = point.x;
     }
 
+    // Flip label to left-anchored when near the right edge to prevent overflow
+    const labelNearRight = point.x > plotRight - 60;
+    const labelTransform = labelNearRight
+      ? 'transform:translate(-100%,-100%)'
+      : 'transform:translate(-50%,-100%)';
+
     return `<div class="curve-annotation" style="left:${point.x.toFixed(2)}px;top:${point.y.toFixed(2)}px;">
       <div class="curve-drop-line" style="height:${dropHeight.toFixed(2)}px;"></div>
       <div class="curve-drop-dot"></div>
-      ${showLabel ? `<div class="curve-point-label">${formatCurvePointLabel(point.slot.price)}</div>` : ''}
+      ${showLabel ? `<div class="curve-point-label" style="${labelTransform}">${formatCurvePointLabel(point.slot.price)}</div>` : ''}
     </div>`;
   }).join('');
 }
