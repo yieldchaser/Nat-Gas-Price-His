@@ -57,7 +57,7 @@ TTF_DIR     = os.path.join(BASE_DIR, 'Cleaned_Database', 'Dutch TTF',  'Monthwis
 # Yahoo Finance fetch (no external dependencies)
 # ---------------------------------------------------------------------------
 
-def _yahoo_fetch(yahoo_ticker: str, period: str = '2y') -> list[dict]:
+def _yahoo_fetch(yahoo_ticker: str, period: str = '3y') -> list[dict]:
     """Return list of {date, close} from Yahoo Finance v8 API."""
     url = (
         'https://query2.finance.yahoo.com/v8/finance/chart/'
