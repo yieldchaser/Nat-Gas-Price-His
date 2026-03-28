@@ -2120,16 +2120,21 @@ function renderHHStats(data, month, year) {
     const monthIdx = MONTHS.indexOf(month); // convert month name to 0-based index
     const expDate = computeNGExpiry(year, monthIdx >= 0 ? monthIdx : 0);
     const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
     const daysLeft = Math.ceil((expDate - today) / 86400000);
     if (daysLeft > 0) {
       const elapsed = data.length;
       const total = 519;
       const elapsedPct = Math.min(100, Math.round(elapsed / total * 100));
+      // Convert calendar days remaining → approximate trading days for the progress bar.
+      // Using approxTradingDaysTo ensures same unit (trading days / 519) as elapsedPct.
+      const tradingDaysLeft = approxTradingDaysTo(todayStr, expDate);
+      const remainingPct = Math.max(0, Math.min(100, Math.round(tradingDaysLeft / total * 100)));
       expiryProgressHtml = `
         <div class="stat">
           <div class="stat-label">Days to Expiry</div>
-          <div class="stat-value" style="color:var(--accent-hh);">${daysLeft} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">days</span></div>
-          <div class="progress-bar" style="margin-top:4px;background:rgba(255,255,255,0.1);"><div class="progress-fill" style="width:${100-Math.max(0,Math.min(100,(daysLeft/519)*100))}%;background:var(--accent-hh);"></div></div>
+          <div class="stat-value" style="color:var(--accent-hh);">${daysLeft} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">calendar days</span></div>
+          <div class="progress-bar" style="margin-top:4px;background:rgba(255,255,255,0.1);"><div class="progress-fill" style="width:${100 - remainingPct}%;background:var(--accent-hh);"></div></div>
         </div>
         <div class="stat">
           <div class="stat-label">Trading Days Elapsed</div>
@@ -5525,6 +5530,10 @@ function buildExpirySeasonalBar(range) {
   const expiry = STATE.expiry;
   let years = Object.keys(expiry).sort((a, b) => +a - +b);
   const currentYear = new Date().getFullYear();
+  // Exclude current and future years: their contracts haven't settled yet,
+  // so their "prices" are current market prices, not true settlement values.
+  // Including them would skew the seasonal average.
+  years = years.filter(y => +y < currentYear);
   if (range !== 'all') {
     const n = parseInt(range) || 0;
     years = years.filter(y => +y >= currentYear - n);
@@ -5581,15 +5590,15 @@ const _origRenderExpiryTab = typeof renderExpiryTab === 'function' ? renderExpir
 // ─── DAILY TRACKER HELPERS ───────────────────────────────────────────────────
 
 function computeNGExpiry(year, month0) {
-  // CME rule: NG expires 4 business days before the 1st calendar day of
-  // the delivery month.
+  // NYMEX rule: NG expires 3 business days before the 1st calendar day of
+  // the delivery month.  Matches estimateContractExpiry() which is used for
+  // all T-Day anchoring.
   const d = new Date(Date.UTC(year, month0, 1));
   let bd = 0;
-  d.setUTCDate(d.getUTCDate() - 1);
-  while (bd < 4) {
+  while (bd < 3) {
+    d.setUTCDate(d.getUTCDate() - 1);
     const dow = d.getUTCDay();
     if (dow !== 0 && dow !== 6) bd++;
-    if (bd < 4) d.setUTCDate(d.getUTCDate() - 1);
   }
   return d;
 }
