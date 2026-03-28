@@ -1,0 +1,49 @@
+name: Archive Expiring Contracts
+
+# Runs automatically to keep the contract price history complete:
+#   1. Archives any new HH contracts that entered the 2.5-year window
+#   2. Re-fetches recently expired contracts that were archived before expiry
+#      (i.e., have fewer than 519 trading days — their complete lifecycle)
+#   3. Rebuilds all dashboard JSON files
+#   4. Commits and pushes only if data actually changed
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC (after US market open/settle the prior day)
+    - cron: '0 6 * * *'
+  workflow_dispatch:   # allow manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install xlrd
+
+      - name: Archive missing and stale contracts, rebuild JSON
+        run: python archive_contract.py --update
+
+      - name: Commit and push if data changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cleaned_Database/ data/
+          if git diff --staged --quiet; then
+            echo "No contract data changes — skipping commit"
+          else
+            SUMMARY=$(git diff --staged --stat | tail -1)
+            git commit -m "chore: auto-archive contract price history $(date -u '+%Y-%m-%d')"
+            git push origin main
+            echo "Pushed: $SUMMARY"
+          fi
