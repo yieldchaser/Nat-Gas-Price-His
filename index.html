@@ -825,6 +825,14 @@ function approxTradingDaysTo(dateStr, expiryDate) {
   return ms <= 0 ? 0 : Math.round(ms / 86400000 * 5 / 7);
 }
 
+// Return the approximate calendar date when a contract enters the 519-day lifecycle window.
+// 519 trading days ≈ 519 × 7/5 = 726.6 ≈ 727 calendar days before expiry.
+function contractWindowOpenDate(ticker) {
+  const expiry = estimateContractExpiry(ticker);
+  if (!expiry) return null;
+  return new Date(expiry.getTime() - Math.round(519 * 7 / 5) * 86400000);
+}
+
 function nextFrame() {
   return new Promise(resolve => requestAnimationFrame(resolve));
 }
@@ -1387,13 +1395,17 @@ function getContractData(ticker) {
   if (live && live.length > 0) {
     if (hist.length === 0) {
       // Only live data — anchor d to estimated expiry so T-day position is correct.
-      // Sequential i+1 would place all live-only contracts at T-518 regardless of
-      // how far into their lifecycle they actually are.
+      // Filter out data that falls before the 519-day lifecycle window (d < 1).
+      // Clamping to d=1 would falsely pile pre-window data at T-518 and corrupt
+      // the 5Y seasonal comparison for far-future contracts.
       const expiry = estimateContractExpiry(ticker);
       const liveOnly = live.map(pt => {
-        const d = expiry ? Math.max(1, Math.min(519, 519 - approxTradingDaysTo(pt.date, expiry))) : 1;
-        return { d, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
-      });
+        if (!expiry) return { d: 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
+        const daysLeft = approxTradingDaysTo(pt.date, expiry);
+        const d = 519 - daysLeft;
+        if (d < 1) return null; // Pre-window: contract not yet in the 519-day analysis frame
+        return { d: Math.min(519, d), p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
+      }).filter(Boolean);
       STATE.contractCache[ticker] = liveOnly;
       return liveOnly;
     }
@@ -1435,11 +1447,15 @@ function getTTFContractData(ticker) {
   if (live && live.length > 0) {
     if (hist.length === 0) {
       // Only live data — anchor d to estimated expiry so T-day position is correct.
+      // Filter out data before the 519-day lifecycle window (d < 1).
       const expiry = estimateContractExpiry(ticker);
       const liveOnly = live.map(pt => {
-        const d = expiry ? Math.max(1, Math.min(519, 519 - approxTradingDaysTo(pt.date, expiry))) : 1;
-        return { d, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
-      });
+        if (!expiry) return { d: 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
+        const daysLeft = approxTradingDaysTo(pt.date, expiry);
+        const d = 519 - daysLeft;
+        if (d < 1) return null; // Pre-window: exclude from lifecycle analysis
+        return { d: Math.min(519, d), p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
+      }).filter(Boolean);
       STATE.contractCache[ticker] = liveOnly;
       return liveOnly;
     }
@@ -1673,14 +1689,22 @@ function updateHHChart() {
   // Get data
   const data = getContractData(ticker);
   if (data.length === 0) {
-    removeChart('hh');
-    document.getElementById('hh-ticker').textContent = ticker;
-    document.getElementById('hh-desc').textContent = `${month} ${year}`;
-    document.getElementById('hh-price').textContent = 'No data';
-    document.getElementById('hh-change').textContent = '';
-    document.getElementById('hh-stats').innerHTML = '';
-    document.getElementById('hh-history-table').innerHTML = '';
-    document.getElementById('hh-seasonal-bar').textContent = '';
+    // Check for pre-window: contract exists on Yahoo but hasn't entered the
+    // 519-day lifecycle analysis window yet (too far from expiry).
+    const liveTicker = `NG${code}${pad}.NYM`;
+    const rawLive = STATE.liveData[liveTicker];
+    if (rawLive && rawLive.length > 0) {
+      renderHHPreWindowView(ticker, month, year, rawLive);
+    } else {
+      removeChart('hh');
+      document.getElementById('hh-ticker').textContent = ticker;
+      document.getElementById('hh-desc').textContent = `${month} ${year}`;
+      document.getElementById('hh-price').textContent = 'No data';
+      document.getElementById('hh-change').textContent = '';
+      document.getElementById('hh-stats').innerHTML = '';
+      document.getElementById('hh-history-table').innerHTML = '';
+      document.getElementById('hh-seasonal-bar').textContent = '';
+    }
     return;
   }
 
@@ -1706,6 +1730,82 @@ function updateHHChart() {
   renderHHStats(data, month, year);
   renderHHHistoryTable(month, year);
   renderHHSeasonalBar(data, month);
+}
+
+// Render a simplified view for contracts that are real and actively traded but have
+// not yet entered the 519-day lifecycle analysis window (more than 519 trading days
+// from expiry). Shows price history on a calendar-date axis without T-Day lifecycle
+// statistics or 5Y seasonal comparison, which would be meaningless at this stage.
+function renderHHPreWindowView(ticker, month, year, rawLive) {
+  // Header
+  const last  = rawLive[rawLive.length - 1];
+  const first = rawLive[0];
+  document.getElementById('hh-ticker').textContent = ticker;
+  document.getElementById('hh-desc').textContent   = `${month.toUpperCase()} ${year} contract`;
+  document.getElementById('hh-price').textContent  = `$${last.p.toFixed(3)}`;
+  const totalChange = (last.p - first.p) / first.p * 100;
+  const changeEl = document.getElementById('hh-change');
+  changeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}% from listing`;
+  changeEl.className = 'change ' + (totalChange >= 0 ? 'positive' : 'negative');
+
+  // Clear elements that don't apply pre-window
+  document.getElementById('hh-seasonal-bar').textContent = '';
+  document.getElementById('hh-history-table').innerHTML  = '';
+
+  // Simple Cal-Date price chart — no T-Day axis, no 5Y seasonal band
+  const chartContainer = document.getElementById('hh-chart-container');
+  const chart = createManagedChart('hh', 'main', chartContainer);
+  const series = chart.addCandlestickSeries({
+    upColor: 'var(--positive)', downColor: 'var(--negative)',
+    borderVisible: false,
+    wickUpColor: 'var(--positive)', wickDownColor: 'var(--negative)',
+  });
+  series.setData(rawLive.map(pt => ({
+    time:  pt.date,
+    open:  pt.o != null ? pt.o : pt.p,
+    high:  pt.h != null ? pt.h : pt.p,
+    low:   pt.l != null ? pt.l : pt.p,
+    close: pt.p,
+  })));
+
+  // Stats panel
+  const windowOpen    = contractWindowOpenDate(ticker);
+  const windowOpenStr = windowOpen
+    ? windowOpen.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : '—';
+  const { max: high, min: low, avg } = getSeriesStats(rawLive);
+  document.getElementById('hh-stats').innerHTML = `
+    <div class="card-title">Contract Statistics</div>
+    <div class="stat">
+      <div class="stat-label">Status</div>
+      <div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;
+        background:rgba(255,200,0,0.12);color:#ffc800;">
+        PRE-ANALYSIS WINDOW
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Analysis Window Opens</div>
+      <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">~${windowOpenStr}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Within 519 trading days of expiry</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Trading Days Since Listing</div>
+      <div style="font-family:var(--font-mono);font-size:14px;">${rawLive.length}
+        <span style="font-size:11px;color:var(--text-muted);">days</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">High / Low / Avg</div>
+      <div style="font-family:var(--font-mono);font-size:13px;">$${high.toFixed(3)} / $${low.toFixed(3)} / $${avg.toFixed(3)}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">vs 5Y Seasonal Avg</div>
+      <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);">N/A — not in analysis window</div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <button class="toggle-btn" onclick="cycleHHContract(-1)">&#9664; Prev Year</button>
+      <button class="toggle-btn" onclick="cycleHHContract(1)">Next Year &#9654;</button>
+    </div>
+  `;
 }
 
 function renderHHChartWidget(filtered, fullData, month, year, calendarMode, compareOn) {
@@ -2186,12 +2286,19 @@ function updateTTFChart() {
 
   const data = getTTFContractData(ticker);
   if (data.length === 0) {
-    removeChart('ttf');
-    document.getElementById('ttf-ticker').textContent = ticker;
-    document.getElementById('ttf-desc').textContent = `${month} ${year}`;
-    document.getElementById('ttf-price').textContent = 'No data';
-    document.getElementById('ttf-change').textContent = '';
-    document.getElementById('ttf-stats').innerHTML = '';
+    // Check for pre-window contract: traded but not yet within 519-day analysis window.
+    const liveTicker = 'TTF' + ticker.slice(2) + '.NYM';
+    const rawLive = STATE.liveData[liveTicker];
+    if (rawLive && rawLive.length > 0) {
+      renderTTFPreWindowView(ticker, month, year, rawLive);
+    } else {
+      removeChart('ttf');
+      document.getElementById('ttf-ticker').textContent = ticker;
+      document.getElementById('ttf-desc').textContent = `${month} ${year}`;
+      document.getElementById('ttf-price').textContent = 'No data';
+      document.getElementById('ttf-change').textContent = '';
+      document.getElementById('ttf-stats').innerHTML = '';
+    }
     return;
   }
 
@@ -2224,6 +2331,61 @@ function updateTTFChart() {
     <div class="stat"><div class="stat-label">High / Low / Avg</div><div style="font-family:var(--font-mono);font-size:13px;">€${high.toFixed(3)} / €${low.toFixed(3)} / €${avg.toFixed(3)}</div></div>
     <div class="stat"><div class="stat-label">From Contract Open</div><div style="font-family:var(--font-mono);font-size:13px;" class="${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '+' : ''}${change.toFixed(1)}%</div></div>
     <div class="stat"><div class="stat-label">Data Range</div><div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">2018 – present</div></div>
+  `;
+}
+
+function renderTTFPreWindowView(ticker, month, year, rawLive) {
+  const last  = rawLive[rawLive.length - 1];
+  const first = rawLive[0];
+  document.getElementById('ttf-ticker').textContent = ticker;
+  document.getElementById('ttf-desc').textContent   = `${month.toUpperCase()} ${year} contract`;
+  document.getElementById('ttf-price').textContent  = `€${last.p.toFixed(3)}`;
+  const totalChange = (last.p - first.p) / first.p * 100;
+  const changeEl = document.getElementById('ttf-change');
+  changeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}% from listing`;
+  changeEl.className = 'change ' + (totalChange >= 0 ? 'positive' : 'negative');
+
+  const chartContainer = document.getElementById('ttf-chart-container');
+  const chart = createManagedChart('ttf', 'main', chartContainer);
+  const series = chart.addCandlestickSeries({
+    upColor: 'var(--positive)', downColor: 'var(--negative)',
+    borderVisible: false,
+    wickUpColor: 'var(--positive)', wickDownColor: 'var(--negative)',
+  });
+  series.setData(rawLive.map(pt => ({
+    time:  pt.date,
+    open:  pt.o != null ? pt.o : pt.p,
+    high:  pt.h != null ? pt.h : pt.p,
+    low:   pt.l != null ? pt.l : pt.p,
+    close: pt.p,
+  })));
+
+  const windowOpen    = contractWindowOpenDate(ticker);
+  const windowOpenStr = windowOpen
+    ? windowOpen.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : '—';
+  const { max: high, min: low, avg } = getSeriesStats(rawLive);
+  document.getElementById('ttf-stats').innerHTML = `
+    <div class="card-title">Contract Statistics</div>
+    <div class="stat">
+      <div class="stat-label">Status</div>
+      <div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;
+        background:rgba(255,200,0,0.12);color:#ffc800;">PRE-ANALYSIS WINDOW</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Analysis Window Opens</div>
+      <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">~${windowOpenStr}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Within 519 trading days of expiry</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Trading Days Since Listing</div>
+      <div style="font-family:var(--font-mono);font-size:14px;">${rawLive.length}
+        <span style="font-size:11px;color:var(--text-muted);">days</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">High / Low / Avg</div>
+      <div style="font-family:var(--font-mono);font-size:13px;">€${high.toFixed(3)} / €${low.toFixed(3)} / €${avg.toFixed(3)}</div>
+    </div>
   `;
 }
 </script>
