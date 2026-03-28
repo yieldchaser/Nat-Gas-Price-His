@@ -3325,6 +3325,7 @@ function renderSpreadResolutionChart() {
     color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
   });
+  STATE._resolutionZeroLine = zeroLine;
 
   // Sync slider on drag/zoom
   chart.timeScale().subscribeVisibleTimeRangeChange(() => {
@@ -3625,7 +3626,7 @@ function toggleResolutionYear(yr) {
   // Update zero-line bounds organically without full re-render
   if (STATE._resolutionChart) {
     const palette = getNeutralChartPalette();
-    const zeroLineSeries = [...STATE._resolutionChart.series()].find(s => s.options().color === palette.zero);
+    const zeroLineSeries = STATE._resolutionZeroLine;
     if (zeroLineSeries) {
       const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
       const _resTimeStr = d => new Date(_zeroBase + d * 86400000).toISOString().split('T')[0];
