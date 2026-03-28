@@ -3337,7 +3337,22 @@ function renderSpreadResolutionChart() {
   STATE._resolutionDataMinD = _dataMinD;
   STATE._resolutionDataMaxD = _dataMaxD;
   chart.timeScale().subscribeVisibleTimeRangeChange(() => {
-    requestAnimationFrame(() => _syncResolutionSliderFromChart());
+    requestAnimationFrame(() => {
+      const range = chart.timeScale().getVisibleRange();
+      if (!range) return;
+      const _resBase2 = new Date('2000-01-01T00:00:00Z').getTime();
+      const _minT = new Date(_resBase2 + (STATE._resolutionDataMinD || 1) * 86400000).toISOString().split('T')[0];
+      const _maxT = new Date(_resBase2 + (STATE._resolutionDataMaxD || 519) * 86400000).toISOString().split('T')[0];
+      if (range.from < _minT || range.to > _maxT) {
+        // Clamp to data bounds — next event will call _syncResolutionSliderFromChart
+        chart.timeScale().setVisibleRange({
+          from: range.from < _minT ? _minT : range.from,
+          to:   range.to   > _maxT ? _maxT : range.to,
+        });
+        return;
+      }
+      _syncResolutionSliderFromChart();
+    });
   });
 
   let yearsToPlot = [...STATE._resolutionAvailableYears].sort((a, b) => a - b);
@@ -3588,6 +3603,8 @@ function toggleResolutionYear(yr) {
     chip.style.background = on ? `${color}22` : 'transparent';
     chip.style.border = `1px solid ${on ? color : 'rgba(255,255,255,0.15)'}`;
   }
+  const view = STATE.resolutionView || {};
+  updateResolutionKPI(view.rangeStart || 1, view.rangeEnd || 519);
 }
 
 function toggleAllResolutionYears(on) {
