@@ -3285,7 +3285,7 @@ function updateSpreadChart() {
           { label: 'Max', value: selectedStats.max.toFixed(3) },
           { label: 'Min', value: selectedStats.min.toFixed(3) },
           { label: 'Avg', value: selectedStats.avg.toFixed(3) },
-          { label: 'T-Day', value: String(point.d) },
+          { label: 'T-Day (front leg)', value: String(point.d) },
         ];
       },
       getNote: param => {
@@ -5141,8 +5141,8 @@ function buildExpiryTable(range) {
   years.forEach(y => { html += '<th>' + y + '</th>'; });
   html += '<th style="color:var(--text-muted);font-size:10px;">YoY%</th>' +
     '<th style="color:var(--accent-hh);">Avg(' + rangeLabel + ')</th>' +
-    '<th style="color:var(--accent-hh);">5Y Avg</th>' +
-    '<th style="color:var(--accent-hh);">3Y Avg</th>' +
+    '<th style="color:var(--accent-hh);" title="Average of 5 completed years (excludes current year)">5Y Avg</th>' +
+    '<th style="color:var(--accent-hh);" title="Average of 3 completed years (excludes current year)">3Y Avg</th>' +
     '</tr></thead><tbody>';
 
   // Pre-compute per-month all-years rank lookup (over all years in STATE.expiry, not just visible)
@@ -5343,7 +5343,7 @@ function showExpiryMonthProfile(month) {
     lineStyle: LightweightCharts.LineStyle.Dashed,
     priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
     priceFormat: { type: 'custom', formatter: v => '$' + v.toFixed(3), minMove: 0.001 },
-    title: '5Y Avg',
+    title: '5Y Avg (completed)',
   });
   avg5ySeries.setData(avg5ySeriesData);
 
@@ -5352,7 +5352,7 @@ function showExpiryMonthProfile(month) {
   pillRowEl.style.cssText = 'display:flex;gap:8px;padding:8px 14px 0;';
   pillRowEl.innerHTML = `
     <button class="series-pill active" data-key="allAvg" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.30);background:rgba(255,255,255,0.08);color:#f5f7fb;cursor:pointer;">All Avg</button>
-    <button class="series-pill active" data-key="avg5y" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,140,0,0.40);background:rgba(255,140,0,0.10);color:#ff8c00;cursor:pointer;">5Y Avg</button>
+    <button class="series-pill active" data-key="avg5y" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,140,0,0.40);background:rgba(255,140,0,0.10);color:#ff8c00;cursor:pointer;" title="Average of 5 completed years (excludes current year)">5Y Avg</button>
   `;
   profileEl.insertBefore(pillRowEl, chartEl);
 
@@ -5383,7 +5383,7 @@ function showExpiryMonthProfile(month) {
     getTitle: p => { const d = lookup.get(typeof p.time === 'string' ? p.time : ''); return d ? d.year.toString() : ''; },
     getMetrics: () => [
       { label: 'All Avg', value: '$' + avgAll.toFixed(3) },
-      { label: '5Y Avg', value: '$' + avg5y.toFixed(3) },
+      { label: '5Y Avg (completed)', value: '$' + avg5y.toFixed(3) },
     ],
   });
 
