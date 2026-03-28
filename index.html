@@ -5422,10 +5422,10 @@ function renderDailyTab() {
             const years = parseInt(range) || 5;
             const cutoff = new Date(now); cutoff.setFullYear(now.getFullYear() - years);
             const cutoffStr = cutoff.toISOString().slice(0, 10);
-            sIdx = data.findIndex(p => p.time >= cutoffStr);
+            sIdx = data.findIndex(p => p.date >= cutoffStr);
             if (sIdx === -1) sIdx = 0;
           }
-          
+
           STATE.dailyWeeklyView = { rangeStart: sIdx, rangeEnd: data.length - 1 };
           const startS = document.getElementById('daily-weekly-slider-start');
           const endS = document.getElementById('daily-weekly-slider-end');
@@ -5988,7 +5988,7 @@ function _renderWeeklyChart(data) {
     priceLineVisible: false, lastValueVisible: false,
   });
   hSeries.setData(weekly.map(w => ({ time: w.date, value: w.pct, color: w.pct >= 0 ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)' })));
-  applyChartTimeScaleOptions(wChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(800 / weekly.length)), fixLeftEdge: true, fixRightEdge: true });
+  applyChartTimeScaleOptions(wChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(800 / weekly.length)), fixLeftEdge: false, fixRightEdge: false });
   wChart.timeScale().fitContent();
 
   STATE._dailyWeeklyChart = wChart;
