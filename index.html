@@ -643,6 +643,148 @@ tr:hover td { background: var(--bg-card-hover); }
 }
 
 /* ═══════════════════════════════════════════════════════════
+   MOBILE  ≤ 640px
+   Desktop styles are completely untouched. !important is used
+   only to override inline styles that cannot be addressed
+   otherwise (e.g. width:300px or min-width:180px in JS-built HTML).
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  /* ── Nav: two-row layout ──────────────────────────────────
+     Row 1: brand (flex:1)  •  live price  •  freshness
+     Row 2: all 5 tab buttons sharing equal width
+  ────────────────────────────────────────────────────────── */
+  #nav {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 5px 10px 0;
+    column-gap: 0;
+    row-gap: 0;
+    align-items: center;
+  }
+  /* Brand — row 1, flex:1 so it expands and pushes live-price right */
+  #nav .brand {
+    order: 1;
+    flex: 1;
+    font-size: 12px;
+    margin-right: 0;
+    padding-bottom: 3px;
+  }
+  #nav .brand span { display: none; }
+  /* Remove spacer — brand already acts as the flex expander */
+  .nav-spacer { display: none; }
+  /* Live price — row 1, right side */
+  #nav .live-price {
+    order: 2;
+    font-size: 11px;
+    margin-right: 0;
+    padding-bottom: 3px;
+  }
+  /* Freshness indicator — row 1, after live price */
+  #nav .freshness {
+    order: 3;
+    font-size: 10px;
+    margin-left: 6px;
+    padding-bottom: 3px;
+  }
+  /* Tabs — row 2: each shares equal width via flex:1 */
+  .tab-btn {
+    order: 10;
+    flex: 1 1 0;
+    font-size: 10px;
+    padding: 7px 3px;
+    text-align: center;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 4px 4px 0 0;
+    white-space: nowrap;
+  }
+  /* Narrow the active underline to match smaller padding */
+  .tab-btn.active::after { left: 4px; right: 4px; }
+
+  /* ── Main content: account for taller two-row nav ─────── */
+  #main-content { margin-top: 70px; padding: 10px; }
+
+  /* ── Contract header ──────────────────────────────────── */
+  .contract-header { gap: 6px; padding-bottom: 8px; }
+  .contract-header .ticker { font-size: 16px; }
+  .contract-header .desc   { font-size: 13px; }
+  .contract-header .price  { font-size: 18px; }
+  .contract-header .change { font-size: 12px; }
+  #prices-header .price, #spread-header .price { font-size: 20px; }
+
+  /* ── Chart: shorter min-height on mobile ──────────────── */
+  .chart-wrap { min-height: 240px !important; height: 45vh !important; }
+  #daily-main-chart { height: 260px !important; }
+
+  /* ── Sidebar panels (inline style width:300px) ─────────
+     Override the fixed-width right panels on Prices/TTF/Spot
+     tabs so they stack below the chart as full-width cards.
+  ────────────────────────────────────────────────────────── */
+  div[style*="width:300px"] { width: 100% !important; }
+
+  /* ── T-Day range slider min-width override ────────────── */
+  div[style*="min-width:180px"] { min-width: 100% !important; }
+
+  /* ── Controls toolbar (Spread / Prices selects) ────────── */
+  .ctrl-toolbar {
+    flex-wrap: wrap;
+    min-height: auto;
+    gap: 8px 12px;
+  }
+  .ctrl-sep { display: none; }
+  .ctrl-group { padding: 0 !important; }
+
+  /* ── Segment switch ───────────────────────────────────── */
+  .segment-btn { font-size: 11px; padding: 5px 8px; }
+
+  /* ── Card padding (tighter on small screens) ──────────── */
+  .card { padding: 10px; }
+  .card-title { font-size: 12px; margin-bottom: 8px; }
+
+  /* ── Labels ───────────────────────────────────────────── */
+  label { font-size: 12px; }
+
+  /* ── Stat values: slightly smaller ───────────────────── */
+  .stat-value { font-size: 15px; }
+  .stat-label { font-size: 10px; }
+
+  /* ── Daily Tracker bottom cards: full width on mobile ── */
+  #daily-calendar {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
+  #daily-dist {
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+  }
+
+  /* ── Tables: horizontal scroll wrapper ────────────────── */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── Spread KPI bar: wrap chips onto multiple lines ───── */
+  #spread-kpis {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    padding: 8px 10px !important;
+  }
+
+  /* ── Range toolbar: stack info and scale on narrow ─────── */
+  .range-toolbar { flex-wrap: wrap; gap: 6px; }
+
+  /* ── Pill / zoom buttons: slightly larger tap targets ─── */
+  .pill-btn  { padding: 5px 10px; font-size: 11px; }
+  .zoom-btn  { padding: 4px 10px; font-size: 11px; }
+  .toggle-btn { padding: 6px 10px; font-size: 11px; }
+}
+
+/* ═══════════════════════════════════════════════════════════
    COMMAND PALETTE (Ctrl+K)
    ═══════════════════════════════════════════════════════════ */
 #cmd-palette {
