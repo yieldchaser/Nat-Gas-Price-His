@@ -1465,8 +1465,20 @@ function updatePricesChart({ skipDetails = false } = {}) {
   applyChartTimeScaleOptions(chart, {
     formatter: buildSmartAxisFormatter(filteredData, chartPixelWidth, useTradingAxis),
     barSpacing: getChartBarSpacing(filteredData.length),
+    fixLeftEdge: filteredData.length >= 5,
+    fixRightEdge: filteredData.length >= 5,
   });
   chart.timeScale().fitContent();
+  // For very sparse data (e.g. new TTF contract with only 1-2 live points), expand view to ±60 days
+  if (filteredData.length < 5 && filteredData.length > 0 && !useTradingAxis) {
+    const midDate = filteredData[Math.floor(filteredData.length / 2)].date;
+    if (midDate) {
+      const midMs = new Date(midDate).getTime();
+      const from = new Date(midMs - 60 * 86400000).toISOString().split('T')[0];
+      const to   = new Date(midMs + 60 * 86400000).toISOString().split('T')[0];
+      try { chart.timeScale().setVisibleRange({ from, to }); } catch (_) { /* ignore */ }
+    }
+  }
 
   attachChartTooltip({
     chart,

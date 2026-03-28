@@ -696,6 +696,12 @@ tr:hover td { background: var(--bg-card-hover); }
 .series-pill .swatch { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
 .series-pill.all-btn, .series-pill.none-btn { background:#111; color:#888; }
 .series-pill.all-btn:hover, .series-pill.none-btn:hover { color:#ccc; }
+/* ═══════════════════════════════════════════════════════════
+   PILL BUTTONS (range presets, profile presets)
+   ═══════════════════════════════════════════════════════════ */
+.pill-btn { font-family:var(--font-mono); font-size:11px; background:var(--bg-primary); color:var(--text-secondary); border:1px solid var(--border); border-radius:12px; padding:3px 10px; cursor:pointer; transition:all 0.15s ease; }
+.pill-btn:hover { border-color:var(--border-bright); color:var(--text-primary); }
+.pill-btn.active { background:rgba(0,212,255,0.1); color:var(--accent-hh); border-color:rgba(0,212,255,0.3); }
 </style>
 </head>
 <body>
@@ -1439,9 +1445,20 @@ async function init() {
     setLoadProgress(100, 'READY');
     STATE.loaded = true;
     hideLoading();
+    // Snapshot of newest historical year per instrument+month before live data loads.
+    // Used below to auto-advance the year selector when live data adds a newer contract year.
+    const _prelivePricesYear = STATE.priceView.year;
+
     // Fetch live data in background after UI is up
     loadLiveData().then(() => {
       invalidateDerivedCaches();
+      // Auto-advance year if live data added a contract newer than what was selected
+      const _liveYears = typeof getAvailableContractYears === 'function'
+        ? getAvailableContractYears(STATE.priceView.instrument, STATE.priceView.month) : [];
+      if (_liveYears.length && _liveYears[0] > (_prelivePricesYear || 0) && STATE.priceView.year === _prelivePricesYear) {
+        STATE.priceView.year = _liveYears[0];
+      }
+
       if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
         syncPriceViewState();
         renderPricesControls();
@@ -2571,6 +2588,7 @@ function renderSpreadTab() {
             </div>
             <div id="spread-resolution-legend" style="padding:10px 14px 6px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid var(--border);"></div>
             <div class="chart-wrap" id="spread-resolution-chart" style="height:300px;"></div>
+            <div id="resolution-kpi" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 14px;border-top:1px solid var(--border);"></div>
             <div class="card chart-footer" style="margin-top:0;border-top:1px solid var(--border);padding:10px 14px;">
               <div class="range-toolbar">
                 <div class="flex flex-col gap-sm">
@@ -3270,6 +3288,7 @@ function renderSpreadResolutionChart() {
   STATE.resolutionVisibleYears.add(year);
   STATE.resolutionSeriesMap = new Map();
   STATE._resolutionChart = chart;
+  STATE._resolutionYearData = new Map();
 
   let yearsToPlot = [...STATE._resolutionAvailableYears].sort((a, b) => a - b);
   // Filtering mode (All/5Y/Current) still restricts what's added to chart initially
@@ -3310,7 +3329,8 @@ function renderSpreadResolutionChart() {
     });
     series.setData(dataToPlot);
     STATE.resolutionSeriesMap.set(yr, series);
-    
+    STATE._resolutionYearData.set(yr, sp);
+
     seriesConfigs.push({
       series, label: `${yr}`, color, emphasis: isSelected,
       getPoint: p => localLookup.get(typeof p.time === 'string' ? p.time : ''),
@@ -3349,7 +3369,9 @@ function renderSpreadResolutionChart() {
       const d = (new Date(time).getTime() - new Date("2000-01-01T00:00:00Z").getTime()) / 86400000;
       return `T-${519 - Math.round(d)}`;
     },
-    barSpacing: 2
+    barSpacing: 2,
+    fixLeftEdge: false,
+    fixRightEdge: false
   });
   chart.timeScale().fitContent();
 
@@ -3419,6 +3441,37 @@ function syncResolutionRangeFooter() {
   } else {
     chart.timeScale().fitContent();
   }
+  updateResolutionKPI(start, end);
+}
+
+function updateResolutionKPI(start, end) {
+  const kpiEl = document.getElementById('resolution-kpi');
+  if (!kpiEl || !STATE._resolutionYearData) return;
+  const visYears = STATE.resolutionVisibleYears || new Set();
+  const front = document.getElementById('spread-front')?.value;
+  const back  = document.getElementById('spread-back')?.value;
+  const instrument = document.getElementById('spread-instrument')?.value || 'hh';
+  const selectedYear = parseInt(document.getElementById('spread-year')?.value, 10);
+  const items = [];
+  [...STATE._resolutionYearData.entries()]
+    .filter(([yr]) => visYears.has(yr))
+    .sort(([a], [b]) => b - a)
+    .forEach(([yr, sp]) => {
+      const pts = sp.filter(pt => pt.d >= start && pt.d <= end).map(pt => pt.value);
+      if (!pts.length) return;
+      const avg = pts.reduce((s, v) => s + v, 0) / pts.length;
+      const mn = Math.min(...pts);
+      const mx = Math.max(...pts);
+      const color = yr === selectedYear ? '#ffffff' : getSpreadYearColor(yr);
+      items.push(`<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;border:1px solid ${color}33;background:${color}11;">
+        <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+        <span style="font-family:var(--font-mono);font-size:11px;color:${color};font-weight:${yr===selectedYear?'700':'400'};">${yr}</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">avg</span>
+        <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-primary);">${formatSignedSpread(avg,3)}</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">${formatSignedSpread(mn,3)}/${formatSignedSpread(mx,3)}</span>
+      </div>`);
+    });
+  kpiEl.innerHTML = items.join('');
 }
 
 function toggleResolutionYear(yr) {
@@ -4015,9 +4068,9 @@ function renderCurveTable(curveData, windowContext) {
   let tableHtml = `<div class="card-title" style="padding:12px 16px 8px;">Contract Quotes <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${curveData.quotedSlots.length}/${curveData.slots.length} quoted total</span></div>`;
   tableHtml += `<div style="overflow-x:auto;"><table><thead><tr>
     <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Contract</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Price</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Last Quote</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Season</th>
+    <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;">Price</th>
+    <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;">Last Quote</th>
+    <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;">Season</th>
   </tr></thead><tbody>`;
 
   curveData.slots.forEach((slot, index) => {
@@ -4052,8 +4105,8 @@ function renderCurveTable(curveData, windowContext) {
         <div style="font-family:var(--font-mono);color:${meta.color};">${slot.ticker}</div>
         <div style="font-size:11px;color:var(--text-muted);">${slot.label}</div>
       </td>
-      <td>${priceHtml}</td>
-      <td style="font-family:var(--font-mono);font-size:12px;">${quoteHtml}</td>
+      <td style="text-align:center;">${priceHtml}</td>
+      <td style="text-align:center;font-family:var(--font-mono);font-size:12px;">${quoteHtml}</td>
       <td style="text-align:center;">${seasonHtml}</td>
     </tr>`;
   });
@@ -4230,6 +4283,7 @@ function renderCurveTab() {
             <div class="ctrl-toolbar" id="curve-metrics"></div>
           </div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="curve-table"></div>
+          <div class="card" style="margin-top:var(--gap);padding:0;" id="curve-strips"></div>
         </div>
       </div>
     `;
@@ -4855,6 +4909,8 @@ function showExpiryMonthProfile(month) {
       <div class="flex flex-col gap-sm">
         <span class="range-kicker">Year Range</span>
         <div class="flex gap-sm" id="expiry-profile-presets">
+          <button class="pill-btn" data-range="3">3Y</button>
+          <button class="pill-btn" data-range="5">5Y</button>
           <button class="pill-btn" data-range="10">10Y</button>
           <button class="pill-btn" data-range="20">20Y</button>
           <button class="pill-btn active" data-range="all">ALL</button>
