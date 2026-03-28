@@ -3297,28 +3297,6 @@ function renderSpreadResolutionChart() {
   const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
   STATE._resolutionAvailableYears = allYearsSorted.filter(y => computeSpread(front, back, y, instrument).points.length > 0);
 
-  // Compute actual data extent across all plotted years to anchor the zero line and fitContent correctly
-  const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
-  let _dataMinD = 519, _dataMaxD = 1;
-  STATE._resolutionAvailableYears.forEach(y => {
-    const sp = computeSpread(front, back, y, instrument).points;
-    sp.forEach(pt => {
-      if (pt.d < _dataMinD) _dataMinD = pt.d;
-      if (pt.d > _dataMaxD) _dataMaxD = pt.d;
-    });
-  });
-  _dataMinD = Math.max(1, _dataMinD);
-  _dataMaxD = Math.min(519, _dataMaxD);
-
-  // Draw zero line spanning only the actual data range so fitContent() fills the chart
-  const zeroLine = chart.addLineSeries({
-    color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
-  });
-  const _zeroStart = new Date(_zeroBase + _dataMinD * 86400000).toISOString().split('T')[0];
-  const _zeroEnd   = new Date(_zeroBase + _dataMaxD * 86400000).toISOString().split('T')[0];
-  zeroLine.setData([{ time: _zeroStart, value: 0 }, { time: _zeroEnd, value: 0 }]);
-
   // Init/reset pinned years on pair change
   const pairKey = `${instrument}|${front}|${back}`;
   if (STATE.resolutionPairKey !== pairKey) {
@@ -3326,30 +3304,43 @@ function renderSpreadResolutionChart() {
     const defaults = new Set();
     STATE._resolutionAvailableYears.filter(y => y < currentYear).slice(0, 4).forEach(y => defaults.add(y));
     STATE.resolutionPinnedYears = defaults;
-    STATE.resolutionView = { rangeStart: _dataMinD, rangeEnd: _dataMaxD };
+    STATE.resolutionView = null; // reset — will be set after visible extent is computed
   }
-  
+
   STATE.resolutionVisibleYears = new Set(STATE.resolutionPinnedYears || []);
   STATE.resolutionVisibleYears.add(year);
   STATE.resolutionSeriesMap = new Map();
   STATE._resolutionChart = chart;
   STATE._resolutionYearData = new Map();
-  STATE._resolutionDataMinD = _dataMinD;
-  STATE._resolutionDataMaxD = _dataMaxD;
+
+  const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
+  const _resTimeStr = d => new Date(_zeroBase + d * 86400000).toISOString().split('T')[0];
+  const _resTimeToD = t => {
+    const s = typeof t === 'string' ? t : new Date(t * 1000).toISOString().slice(0, 10);
+    return Math.round((new Date(s).getTime() - _zeroBase) / 86400000);
+  };
+
+  // Add the zero line (data set later once we know the visible extent)
+  const zeroLine = chart.addLineSeries({
+    color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
+  });
+
+  // Clamp subscription — prevents zoom-out past actual visible data bounds
   chart.timeScale().subscribeVisibleTimeRangeChange(() => {
     requestAnimationFrame(() => {
       const range = chart.timeScale().getVisibleRange();
-      if (!range) return;
-      const _resBase2 = new Date('2000-01-01T00:00:00Z').getTime();
-      const _minT = new Date(_resBase2 + (STATE._resolutionDataMinD || 1) * 86400000).toISOString().split('T')[0];
-      const _maxT = new Date(_resBase2 + (STATE._resolutionDataMaxD || 519) * 86400000).toISOString().split('T')[0];
-      if (range.from < _minT || range.to > _maxT) {
-        // Clamp to data bounds — next event will call _syncResolutionSliderFromChart
+      if (!range || !STATE._resolutionDataMinD) return;
+      const minT = _resTimeStr(STATE._resolutionDataMinD);
+      const maxT = _resTimeStr(STATE._resolutionDataMaxD);
+      const fromD = _resTimeToD(range.from);
+      const toD   = _resTimeToD(range.to);
+      if (fromD < STATE._resolutionDataMinD || toD > STATE._resolutionDataMaxD) {
         chart.timeScale().setVisibleRange({
-          from: range.from < _minT ? _minT : range.from,
-          to:   range.to   > _maxT ? _maxT : range.to,
+          from: fromD < STATE._resolutionDataMinD ? minT : _resTimeStr(fromD),
+          to:   toD   > STATE._resolutionDataMaxD ? maxT : _resTimeStr(toD),
         });
-        return;
+        return; // next event will sync the slider
       }
       _syncResolutionSliderFromChart();
     });
@@ -3428,17 +3419,45 @@ function renderSpreadResolutionChart() {
     `;
   }
   
+  // Compute visible extent from VISIBLE years only (not all available years, which include old contracts
+  // with full T-518 history that would force the chart to show the entire 519-day axis)
+  let _visMinD = 519, _visMaxD = 1;
+  [...STATE._resolutionYearData.entries()]
+    .filter(([yr]) => STATE.resolutionVisibleYears.has(yr))
+    .forEach(([, sp]) => sp.forEach(pt => {
+      if (pt.d < _visMinD) _visMinD = pt.d;
+      if (pt.d > _visMaxD) _visMaxD = pt.d;
+    }));
+  // Fall back to all plotted years if visible set is empty
+  if (_visMinD > _visMaxD) {
+    [...STATE._resolutionYearData.values()].forEach(sp => sp.forEach(pt => {
+      if (pt.d < _visMinD) _visMinD = pt.d;
+      if (pt.d > _visMaxD) _visMaxD = pt.d;
+    }));
+  }
+  _visMinD = Math.max(1, _visMinD);
+  _visMaxD = Math.min(519, _visMaxD);
+  STATE._resolutionDataMinD = _visMinD;
+  STATE._resolutionDataMaxD = _visMaxD;
+
+  // Set zero line to match the visible data extent so fitContent() lands on the correct range
+  zeroLine.setData([{ time: _resTimeStr(_visMinD), value: 0 }, { time: _resTimeStr(_visMaxD), value: 0 }]);
+
+  if (!STATE.resolutionView) {
+    STATE.resolutionView = { rangeStart: _visMinD, rangeEnd: _visMaxD };
+  }
+
   applyChartTimeScaleOptions(chart, {
     formatter: time => {
-      // Convert time back to T-Day
-      const d = (new Date(time).getTime() - new Date("2000-01-01T00:00:00Z").getTime()) / 86400000;
+      const d = (new Date(time).getTime() - _zeroBase) / 86400000;
       return `T-${519 - Math.round(d)}`;
     },
     barSpacing: 2,
     fixLeftEdge: false,
     fixRightEdge: false
   });
-  chart.timeScale().fitContent();
+  // Explicitly fit to the visible data range (not just fitContent which respects all series including zero line)
+  chart.timeScale().setVisibleRange({ from: _resTimeStr(_visMinD), to: _resTimeStr(_visMaxD) });
 
   if (seriesConfigs.length) {
     attachChartTooltip({
@@ -3533,13 +3552,16 @@ function syncResolutionRangeFooter() {
     helper.textContent = isFullRange ? 'Full lifecycle' : `${count} days selected`;
   }
 
-  // Use same consecutive-day formula as renderSpreadResolutionChart (NOT dayToTime which skips weekends)
   const _resBase = new Date("2000-01-01T00:00:00Z").getTime();
   const resolutionDayToTime = d => new Date(_resBase + d * 86400000).toISOString().split('T')[0];
   if (!isFullRange) {
     chart.timeScale().setVisibleRange({ from: resolutionDayToTime(start), to: resolutionDayToTime(end) });
   } else {
-    chart.timeScale().fitContent();
+    // Use the actual visible data extent, not fitContent() which includes old-year series up to T-518
+    chart.timeScale().setVisibleRange({
+      from: resolutionDayToTime(_fullMinD),
+      to:   resolutionDayToTime(_fullMaxD),
+    });
   }
   updateResolutionKPI(start, end);
 }
