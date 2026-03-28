@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Convert CSV price data to JSON for the dashboard."""
-import csv, json, os, glob, urllib.request, tempfile
+import csv, json, os, glob, urllib.request, tempfile, time
 
 MONTH_CODES = {
     '01': ('Jan', 'F'), '02': ('Feb', 'G'), '03': ('Mar', 'H'),
@@ -112,7 +112,16 @@ def build_spot_from_eia(out_dir):
     print(f"  Downloading {EIA_SPOT_URL} ...")
     with tempfile.NamedTemporaryFile(suffix='.xls', delete=False) as tmp:
         tmp_path = tmp.name
-    urllib.request.urlretrieve(EIA_SPOT_URL, tmp_path)
+    for attempt in range(4):
+        try:
+            urllib.request.urlretrieve(EIA_SPOT_URL, tmp_path)
+            break
+        except Exception as exc:
+            if attempt == 3:
+                raise RuntimeError(f'EIA download failed after 4 attempts: {exc}') from exc
+            wait = 2 ** attempt
+            print(f'  EIA download failed, retry in {wait}s ({exc})')
+            time.sleep(wait)
 
     wb = xlrd.open_workbook(tmp_path)
     ws = wb.sheet_by_name('Data 1')
@@ -120,17 +129,22 @@ def build_spot_from_eia(out_dir):
     # month_data[month_name][year] = list of {d, p, date}
     month_data = {m: {} for m in MONTH_NAMES}
 
+    seen_dates: set[str] = set()
     for r in range(3, ws.nrows):
         serial = ws.cell(r, 0).value
         price  = ws.cell(r, 1).value
         if not isinstance(serial, float) or not isinstance(price, float):
             continue
         dt = xlrd.xldate_as_datetime(serial, wb.datemode).date()
+        iso = dt.isoformat()
+        if iso in seen_dates:
+            continue
+        seen_dates.add(iso)
         m_name = MONTH_NAMES[dt.month - 1]
         yr = str(dt.year)
         if yr not in month_data[m_name]:
             month_data[m_name][yr] = []
-        month_data[m_name][yr].append({'p': round(price, 4), 'date': dt.isoformat()})
+        month_data[m_name][yr].append({'p': round(price, 4), 'date': iso})
 
     os.makedirs(os.path.join(out_dir, 'spot'), exist_ok=True)
     for m_name, years in month_data.items():

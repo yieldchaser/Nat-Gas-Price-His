@@ -1127,8 +1127,8 @@ function renderPricesHistoryTable(context) {
     });
 
     const allPrices = rowData.map(r => r.price).filter(Number.isFinite);
-    const priceMin = Math.min(...allPrices);
-    const priceMax = Math.max(...allPrices);
+    const priceMin = allPrices.length ? Math.min(...allPrices) : 0;
+    const priceMax = allPrices.length ? Math.max(...allPrices) : 0;
     const priceRange = priceMax - priceMin || 1;
     const sortedDesc = [...allPrices].sort((a, b) => b - a);
     rowData.forEach(r => { r.rank = Number.isFinite(r.price) ? sortedDesc.indexOf(r.price) + 1 : null; });
@@ -1182,8 +1182,8 @@ function renderPricesHistoryTable(context) {
     });
 
     const allPrices = rowData.map(r => r.price).filter(Number.isFinite);
-    const priceMin = Math.min(...allPrices);
-    const priceMax = Math.max(...allPrices);
+    const priceMin = allPrices.length ? Math.min(...allPrices) : 0;
+    const priceMax = allPrices.length ? Math.max(...allPrices) : 0;
     const priceRange = priceMax - priceMin || 1;
     const sortedDesc = [...allPrices].sort((a, b) => b - a);
     rowData.forEach(r => { r.rank = Number.isFinite(r.price) ? sortedDesc.indexOf(r.price) + 1 : null; });
