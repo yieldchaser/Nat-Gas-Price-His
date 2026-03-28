@@ -390,7 +390,7 @@ function getComparePriceSeries(view) {
 function finalizePriceSeasonalBucket(cache) {
   Object.keys(cache).forEach(key => {
     const entry = cache[key];
-    entry.avg = entry.sum / entry.count;
+    entry.avg = entry.count > 0 ? entry.sum / entry.count : 0;
     if (entry.min === Infinity) entry.min = 0;
     if (entry.max === -Infinity) entry.max = 0;
   });
