@@ -203,8 +203,12 @@ function formatAxisDateLabel(value, tickMarkType) {
 function buildDateAxisFormatter(resolvePoint) {
   return (time, tickMarkType) => {
     const point = typeof resolvePoint === 'function' ? resolvePoint(time) : null;
-    const dateValue = point && point.date ? point.date : time;
-    return formatAxisDateLabel(dateValue, tickMarkType);
+    // If no matching data point found, the tick sits at a pseudo-date position
+    // (year/month boundary in the fake 2000-era date space) with no real-date
+    // equivalent. Returning '' suppresses the spurious "2000" and "5" labels
+    // that would otherwise appear when the pseudo-date leaks through the formatter.
+    if (!point || !point.date) return '';
+    return formatAxisDateLabel(point.date, tickMarkType);
   };
 }
 
