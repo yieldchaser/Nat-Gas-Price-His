@@ -5012,6 +5012,32 @@ function updateCurveChart() {
   });
   anchorSeries.setData(buildCurveAnchorData(slots));
 
+  // Y-axis minimum visible range enforcement.
+  // When the forward curve is very flat (e.g. TTF $54.18–$54.98, range $0.80),
+  // auto-scaling compresses that tiny range across the full chart height, making
+  // a minor variation look like a huge move. We enforce a minimum visible price
+  // range of 5% of the mid-price by injecting two invisible anchor points at the
+  // expanded min/max. LightweightCharts includes these in the scale without
+  // drawing anything visible, so the curve appears proportionate.
+  (function enforceCurveMinRange() {
+    const quotedPrices = slots.filter(s => Number.isFinite(s.price)).map(s => s.price);
+    if (quotedPrices.length < 2 || slots.length < 2) return;
+    const dataMin = Math.min(...quotedPrices);
+    const dataMax = Math.max(...quotedPrices);
+    const mid = (dataMin + dataMax) / 2;
+    const minRange = mid * 0.05; // 5% of mid price as minimum visible span
+    if (dataMax - dataMin >= minRange) return; // range already wide enough
+    const pad = (minRange - (dataMax - dataMin)) / 2;
+    const rangeSeries = chart.addLineSeries({
+      color: 'rgba(0,0,0,0)', lineWidth: 0,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    });
+    rangeSeries.setData([
+      { time: slots[0].time, value: dataMin - pad },
+      { time: slots[slots.length - 1].time, value: dataMax + pad },
+    ]);
+  })();
+
   const comparePeriod = document.getElementById('curve-compare') ? document.getElementById('curve-compare').value : 'none';
   let histLookup = new Map();
   if (comparePeriod !== 'none') {
