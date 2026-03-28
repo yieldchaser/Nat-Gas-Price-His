@@ -3326,22 +3326,9 @@ function renderSpreadResolutionChart() {
     priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
   });
 
-  // Clamp subscription — prevents zoom-out past actual visible data bounds
+  // Sync slider on drag/zoom
   chart.timeScale().subscribeVisibleTimeRangeChange(() => {
     requestAnimationFrame(() => {
-      const range = chart.timeScale().getVisibleRange();
-      if (!range || !STATE._resolutionDataMinD) return;
-      const minT = _resTimeStr(STATE._resolutionDataMinD);
-      const maxT = _resTimeStr(STATE._resolutionDataMaxD);
-      const fromD = _resTimeToD(range.from);
-      const toD   = _resTimeToD(range.to);
-      if (fromD < STATE._resolutionDataMinD || toD > STATE._resolutionDataMaxD) {
-        chart.timeScale().setVisibleRange({
-          from: fromD < STATE._resolutionDataMinD ? minT : _resTimeStr(fromD),
-          to:   toD   > STATE._resolutionDataMaxD ? maxT : _resTimeStr(toD),
-        });
-        return; // next event will sync the slider
-      }
       _syncResolutionSliderFromChart();
     });
   });
@@ -3453,8 +3440,8 @@ function renderSpreadResolutionChart() {
       return `T-${519 - Math.round(d)}`;
     },
     barSpacing: 2,
-    fixLeftEdge: false,
-    fixRightEdge: false
+    fixLeftEdge: true,
+    fixRightEdge: true
   });
   // Explicitly fit to the visible data range (not just fitContent which respects all series including zero line)
   chart.timeScale().setVisibleRange({ from: _resTimeStr(_visMinD), to: _resTimeStr(_visMaxD) });
