@@ -1534,10 +1534,57 @@ function updatePricesChart({ skipDetails = false } = {}) {
     },
   });
 
+  // Store for chart→slider sync on mouse-wheel zoom
+  STATE._pricesChart = chart;
+  STATE._pricesFullData = fullData;
+  STATE._pricesUseTradingAxis = useTradingAxis;
+  chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+    requestAnimationFrame(() => _syncPricesSliderFromChart());
+  });
+
   updatePricesRangeFooter(fullData, filteredData);
   renderPricesSummaryBar({ instrument: view.instrument, fullData, filteredData, changePct, stats: windowStats, focusPoint, seasonal: focusSeasonalPoint });
   if (!skipDetails) {
     renderPricesStats({ instrument: view.instrument, meta, fullData, changePct, currentPoint, stats: fullStats, ticker, view, seasonal: currentSeasonalPoint });
     renderPricesHistoryTable({ instrument: view.instrument, view });
   }
+}
+
+function _syncPricesSliderFromChart() {
+  const fullData = STATE._pricesFullData;
+  const useTradingAxis = STATE._pricesUseTradingAxis;
+  const chart = STATE._pricesChart;
+  if (!chart || !fullData || !fullData.length) return;
+  const range = chart.timeScale().getVisibleRange();
+  if (!range) return;
+  const fromStr = typeof range.from === 'string' ? range.from : new Date(range.from * 1000).toISOString().slice(0,10);
+  const toStr   = typeof range.to   === 'string' ? range.to   : new Date(range.to   * 1000).toISOString().slice(0,10);
+  let sIdx, eIdx;
+  if (useTradingAxis) {
+    sIdx = fullData.findIndex(pt => dayToTime(pt.d) >= fromStr);
+    eIdx = fullData.findLastIndex(pt => dayToTime(pt.d) <= toStr);
+  } else {
+    sIdx = fullData.findIndex(pt => pt.date >= fromStr);
+    eIdx = fullData.findLastIndex(pt => pt.date <= toStr);
+  }
+  if (sIdx === -1) sIdx = 0;
+  if (eIdx === -1) eIdx = fullData.length - 1;
+  const maxIdx = fullData.length - 1;
+  const startSlider = document.getElementById('prices-window-start');
+  const endSlider   = document.getElementById('prices-window-end');
+  const selection   = document.getElementById('prices-range-selection');
+  const readoutEl   = document.getElementById('prices-range-readout');
+  const helperEl    = document.getElementById('prices-range-helper');
+  if (!startSlider) return;
+  startSlider.value = String(sIdx); endSlider.value = String(eIdx);
+  const pct = getRangeSelectionPercent(fullData.length, sIdx, eIdx);
+  if (selection) { selection.style.left=`${pct.left}%`; selection.style.width=`${pct.width}%`; }
+  const count = eIdx - sIdx + 1;
+  if (helperEl) helperEl.textContent = count >= fullData.length ? 'Full span across available history' : `${count} days selected · drag handles to move or resize`;
+  if (readoutEl) {
+    const start = fullData[sIdx]; const end = fullData[eIdx];
+    readoutEl.innerHTML = `<span>${formatDisplayDate(start.date)}</span><span style="color:var(--text-muted);">to</span><span>${formatDisplayDate(end.date)}</span><span style="color:var(--text-muted);">|</span><span>${count}/${fullData.length} points</span>`;
+  }
+  STATE.priceView.rangeStart = sIdx;
+  STATE.priceView.rangeEnd = eIdx;
 }
