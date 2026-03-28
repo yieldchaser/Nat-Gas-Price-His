@@ -187,6 +187,7 @@ label {
   border-radius: 8px; padding: 7px 12px; cursor: pointer; transition: all 0.15s ease;
 }
 .segment-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+.segment-btn.active { color: var(--accent-hh); border-color: rgba(0,212,255,0.25); background: rgba(0,212,255,0.08); }
 .segment-btn.active[data-tone="hh"] { color: var(--accent-hh); border-color: rgba(0,212,255,0.25); background: rgba(0,212,255,0.08); }
 .segment-btn.active[data-tone="ttf"] { color: var(--accent-ttf); border-color: rgba(255,140,0,0.25); background: rgba(255,140,0,0.08); }
 .segment-btn.active[data-tone="spot"] { color: var(--accent-spot); border-color: rgba(167,139,250,0.25); background: rgba(167,139,250,0.12); }
@@ -219,10 +220,11 @@ table { width: 100%; border-collapse: collapse; }
 th {
   font-family: var(--font-ui); font-size: 11px; font-weight: 600;
   color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
-  text-align: left; padding: 8px 10px;
+  text-align: right; padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   position: sticky; top: 0; background: var(--bg-card); z-index: 1;
 }
+th:first-child { text-align: left; }
 td {
   font-family: var(--font-mono); font-size: 13px;
   padding: 6px 10px; border-bottom: 1px solid rgba(30,30,46,0.5);
@@ -1444,7 +1446,12 @@ async function init() {
         syncPriceViewState();
         renderPricesControls();
         updatePricesChart();
-      } else if (STATE.activeTab === 'spread' && STATE.renderedTabs.spread) {
+      } else if (STATE.renderedTabs.prices) {
+        // Prices tab is rendered but not active — reset so next visit
+        // re-renders with all live contract years (2027+) in selector
+        STATE.renderedTabs.prices = false;
+      }
+      if (STATE.activeTab === 'spread' && STATE.renderedTabs.spread) {
         populateSpreadYears();
         scheduleSpreadChartUpdate(true);
         scheduleSpreadHeatmap(true);
@@ -2851,15 +2858,13 @@ function updateSpreadChart() {
     const last = sp[sp.length - 1].value;
     
     const getValAt = d => { const pt = sp.find(p => p.d === d); return pt ? pt.value : null; };
-    const getPenult = () => sp.length >= 2 ? sp[1].value : null; // T-Day array is reverse ordered? Wait, what is order of sp?
-    // In computeSpread, sp is pushing based on d1 which is chronologically oldest to newest. But d is remaining days. d goes from 519 down to 0/1. 
-    // Wait, let's just find by d directly.
+    const getPenult = () => getValAt(518); // T-Day 518 (penultimate contract day)
     tableRows.push({ 
       yr, last, max: spreadResult.stats.max, min: spreadResult.stats.min, avg: spreadResult.stats.avg, days: sp.length,
       at519: getValAt(519),
       at90: getValAt(90),
       at10: getValAt(10),
-      penult: sp.length >= 2 ? sp[sp.length - 2].value : null
+      penult: getValAt(518)
     });
 
   });
@@ -3406,8 +3411,11 @@ function syncResolutionRangeFooter() {
     helper.textContent = count >= 519 ? 'Full lifecycle' : `${count} days selected`;
   }
   
+  // Use same consecutive-day formula as renderSpreadResolutionChart (NOT dayToTime which skips weekends)
+  const _resBase = new Date("2000-01-01T00:00:00Z").getTime();
+  const resolutionDayToTime = d => new Date(_resBase + d * 86400000).toISOString().split('T')[0];
   if (start > 1 || end < 519) {
-    chart.timeScale().setVisibleRange({ from: dayToTime(start), to: dayToTime(end) });
+    chart.timeScale().setVisibleRange({ from: resolutionDayToTime(start), to: resolutionDayToTime(end) });
   } else {
     chart.timeScale().fitContent();
   }
@@ -3744,7 +3752,7 @@ function renderCurveAnnotations() {
   const lastVisibleIndex = visiblePoints.length - 1;
 
   let lastLabelX = -1000;
-  const LABEL_MIN_DISTANCE = 50;
+  const LABEL_MIN_DISTANCE = 36;
 
   layer.innerHTML = visiblePoints.map((point, index) => {
     const dropHeight = Math.max(10, height - point.y - bottomInset);
@@ -3755,8 +3763,12 @@ function renderCurveAnnotations() {
     // 2. Show turning points if they aren't too close to the previous label.
     // 3. Show stride points if they aren't too close to the previous label.
     let showLabel = index === 0 || index === lastVisibleIndex;
-    
-    if (!showLabel && (isTurning || index % labelStride === 0)) {
+    // Always show turning points (peaks/troughs) regardless of distance — critical price levels must be visible
+    if (!showLabel && isTurning) {
+      if (Math.abs(point.x - lastLabelX) > 28) {
+        showLabel = true;
+      }
+    } else if (!showLabel && index % labelStride === 0) {
       if (Math.abs(point.x - lastLabelX) > LABEL_MIN_DISTANCE) {
         showLabel = true;
       }
@@ -4115,10 +4127,10 @@ function renderCurveStrips(curveData) {
     return;
   }
 
-  const th = label => '<th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">' + label + '</th>';
+  const th = (label, left = false) => '<th style="text-align:' + (left ? 'left' : 'center') + ';position:sticky;top:0;background:var(--bg-card);z-index:2;">' + label + '</th>';
   let html = '<div class="card-title" style="padding:12px 16px 8px;">Strip Averages</div>';
   html += '<div style="overflow-x:auto;"><table><thead><tr>' +
-    th('Strip') + th('Contracts') + th('Avg Price') + th('vs Front') + th('Structure') +
+    th('Strip', true) + th('Contracts', true) + th('Avg Price') + th('vs Front') + th('Structure') +
     '</tr></thead><tbody>';
 
   strips.forEach(strip => {
@@ -4132,9 +4144,9 @@ function renderCurveStrips(curveData) {
     html += '<tr>' +
       '<td style="text-align:left;font-weight:600;">' + strip.label + '</td>' +
       '<td style="text-align:left;color:var(--text-muted);">' + strip.desc + missingStr + '</td>' +
-      '<td style="text-align:left;font-family:var(--font-mono);">' + avgStr + '</td>' +
-      '<td style="text-align:left;font-family:var(--font-mono);' + vsFrontColor + '">' + vsFrontStr + '</td>' +
-      '<td style="text-align:left;">' + getStruct(s.avg) + '</td>' +
+      '<td style="text-align:center;font-family:var(--font-mono);">' + avgStr + '</td>' +
+      '<td style="text-align:center;font-family:var(--font-mono);' + vsFrontColor + '">' + vsFrontStr + '</td>' +
+      '<td style="text-align:center;">' + getStruct(s.avg) + '</td>' +
       '</tr>';
   });
 
@@ -4528,10 +4540,10 @@ function renderExpiryTab() {
           <div class="ctrl-group">
             <div class="ctrl-group-label">Time Window</div>
             <div class="segment-switch" id="expiry-range-switch">
-              <button class="segment-btn active" data-range="all" onclick="filterExpiry(this)">All Years</button>
-              <button class="segment-btn" data-range="10" onclick="filterExpiry(this)">10Y</button>
-              <button class="segment-btn" data-range="5" onclick="filterExpiry(this)">5Y</button>
-              <button class="segment-btn" data-range="3" onclick="filterExpiry(this)">3Y</button>
+              <button class="segment-btn active" data-range="all" data-tone="hh" onclick="filterExpiry(this)">All</button>
+              <button class="segment-btn" data-range="10" data-tone="hh" onclick="filterExpiry(this)">10Y</button>
+              <button class="segment-btn" data-range="5" data-tone="hh" onclick="filterExpiry(this)">5Y</button>
+              <button class="segment-btn" data-range="3" data-tone="hh" onclick="filterExpiry(this)">3Y</button>
             </div>
           </div>
         </div>
@@ -4623,7 +4635,11 @@ function buildExpiryTable(range) {
       if (vs5y != null) ttParts.push((vs5y >= 0 ? '+' : '') + vs5y.toFixed(1) + '% vs 5Y avg');
       if (yoyCell != null) ttParts.push('YoY: ' + (yoyCell >= 0 ? '+' : '') + yoyCell.toFixed(1) + '% from ' + priorYr);
       const tooltipTitle = ttParts.join(' | ');
-      const rankSup = rank <= 3 ? '<sup style="font-size:8px;color:var(--accent-hh);vertical-align:super;">#' + rank + '</sup>' : '';
+      const rankSup = rank <= 3
+        ? '<sup style="font-size:8px;color:var(--accent-hh);vertical-align:super;">#' + rank + '</sup>'
+        : rank >= rankN - 2
+          ? '<sup style="font-size:8px;color:var(--negative);vertical-align:super;">#' + rank + '</sup>'
+          : '';
       html += '<td style="background:' + bg + ';cursor:pointer;position:relative;" title="' + tooltipTitle + '" onclick="navigateTo(\'prices\',{month:\'' + m + '\',year:\'' + yr + '\'})">' +
         '$' + v.toFixed(3) + rankSup + '</td>';
     });
@@ -4764,16 +4780,56 @@ function showExpiryMonthProfile(month) {
   });
   lineSeries.setData(seriesData.map(d => ({ time: d.year + '-01-01', value: d.value })));
 
-  // All-time avg line
-  try { lineSeries.createPriceLine({ price: avgAll, color: 'rgba(255,255,255,0.5)', lineStyle: 2, title: 'All Avg', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
-  // 5Y avg line
-  try { lineSeries.createPriceLine({ price: avg5y, color: '#ff8c00', lineStyle: 2, title: '5Y Avg', lineWidth: 1, axisLabelVisible: true }); } catch (_) {}
+  // Build flat horizontal data for avg lines (needs same time domain as seriesData)
+  const avgAllSeriesData = seriesData.map(d => ({ time: d.year + '-01-01', value: avgAll }));
+  const avg5ySeriesData  = seriesData.map(d => ({ time: d.year + '-01-01', value: avg5y }));
 
+  const avgAllSeries = chart.addLineSeries({
+    color: 'rgba(255,255,255,0.50)', lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+    priceFormat: { type: 'custom', formatter: v => '$' + v.toFixed(3), minMove: 0.001 },
+    title: 'All Avg',
+  });
+  avgAllSeries.setData(avgAllSeriesData);
+
+  const avg5ySeries = chart.addLineSeries({
+    color: '#ff8c00', lineWidth: 1,
+    lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+    priceFormat: { type: 'custom', formatter: v => '$' + v.toFixed(3), minMove: 0.001 },
+    title: '5Y Avg',
+  });
+  avg5ySeries.setData(avg5ySeriesData);
+
+  // Pill toggle row above chart
+  const pillRowEl = document.createElement('div');
+  pillRowEl.style.cssText = 'display:flex;gap:8px;padding:8px 14px 0;';
+  pillRowEl.innerHTML = `
+    <button class="series-pill active" data-key="allAvg" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.30);background:rgba(255,255,255,0.08);color:#f5f7fb;cursor:pointer;">All Avg</button>
+    <button class="series-pill active" data-key="avg5y" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,140,0,0.40);background:rgba(255,140,0,0.10);color:#ff8c00;cursor:pointer;">5Y Avg</button>
+  `;
+  profileEl.insertBefore(pillRowEl, chartEl);
+
+  pillRowEl.addEventListener('click', ev => {
+    const pill = ev.target.closest('.series-pill');
+    if (!pill) return;
+    pill.classList.toggle('active');
+    const on = pill.classList.contains('active');
+    if (pill.dataset.key === 'allAvg') {
+      avgAllSeries.applyOptions({ visible: on });
+      pill.style.opacity = on ? '1' : '0.38';
+    } else {
+      avg5ySeries.applyOptions({ visible: on });
+      pill.style.opacity = on ? '1' : '0.38';
+    }
+  });
+
+  // Build year lookup for tooltip and apply time axis
+  const lookup = new Map(seriesData.map(d => [d.year + '-01-01', d]));
   applyChartTimeScaleOptions(chart, { formatter: undefined, barSpacing: Math.max(8, Math.floor(800 / seriesData.length)), fixLeftEdge: true, fixRightEdge: true });
   chart.timeScale().fitContent();
 
-  // build year lookup for tooltip
-  const lookup = new Map(seriesData.map(d => [d.year + '-01-01', d]));
   attachChartTooltip({
     chart, container: chartEl, titleColor: '#f5f7fb',
     seriesConfigs: [{ series: lineSeries, label: month + ' Settlement', color: '#00d4ff', emphasis: true,
@@ -5213,6 +5269,7 @@ function renderDailyTab() {
               <div class="flex flex-col gap-sm">
                 <span class="range-kicker">Date Range</span>
                 <div class="flex gap-sm" id="daily-weekly-presets">
+                  <button class="pill-btn" data-range="3Y">3Y</button>
                   <button class="pill-btn" data-range="5Y">5Y</button>
                   <button class="pill-btn" data-range="10Y">10Y</button>
                   <button class="pill-btn active" data-range="ALL">ALL</button>
@@ -5532,6 +5589,10 @@ function updateDailyMainChart(range) {
   STATE._dailyMainChart = chart;
   STATE._dailyMainAllData = data;
   requestAnimationFrame(() => _syncDailyMainSlider());
+  // Fix 5.1: Keep slider synced when user mouse-zooms / pans the chart
+  chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+    requestAnimationFrame(() => _syncDailyMainSlider());
+  });
 
   const dataLookup = new Map(data.map(p => [p.date, p]));
   attachChartTooltip({
@@ -5874,6 +5935,16 @@ function _renderWeeklyChart(data) {
   applyChartTimeScaleOptions(wChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(800 / weekly.length)), fixLeftEdge: true, fixRightEdge: true });
   wChart.timeScale().fitContent();
 
+  STATE._dailyWeeklyChart = wChart;
+  STATE._dailyWeeklyData = weekly;
+  if (!STATE.dailyWeeklyView) {
+    STATE.dailyWeeklyView = { rangeStart: 0, rangeEnd: weekly.length - 1 };
+  }
+  
+  wChart.timeScale().subscribeVisibleTimeRangeChange(() => {
+    requestAnimationFrame(() => _syncDailyWeeklySliderFromChart());
+  });
+
   const wLookup = new Map(weekly.map(w => [w.date, w]));
   attachChartTooltip({ chart: wChart, container: chartEl, titleColor: '#f5f7fb',
     seriesConfigs: [{ series: hSeries, label: 'Weekly \u0394%', color: '#00ff88', emphasis: true,
@@ -5915,6 +5986,101 @@ function _renderWeeklyChart(data) {
     '<span>\u03C3: <strong style="color:var(--text-primary);">' + stddev.toFixed(2) + '%</strong></span>' +
     '</div></div>';
   distEl.innerHTML = distHtml;
+  distEl.innerHTML = distHtml;
+}
+
+function onDailyWeeklySlider() {
+  const chart = STATE._dailyWeeklyChart;
+  const data = STATE._dailyWeeklyData;
+  if (!chart || !data || !data.length) return;
+  
+  let start = parseInt(document.getElementById('daily-weekly-slider-start').value);
+  let end   = parseInt(document.getElementById('daily-weekly-slider-end').value);
+  
+  if (start >= end) {
+    end = Math.min(100, start + 1);
+    document.getElementById('daily-weekly-slider-end').value = end;
+  }
+  
+  const sIdx = Math.floor((start / 100) * (data.length - 1));
+  const eIdx = Math.min(data.length - 1, Math.floor((end / 100) * (data.length - 1)));
+  
+  // Deactivate preset buttons if slider is moved manually
+  document.querySelectorAll('#daily-weekly-presets .pill-btn').forEach(b => b.classList.remove('active'));
+  
+  STATE.dailyWeeklyView = { rangeStart: sIdx, rangeEnd: eIdx };
+  syncDailyWeeklyRangeFooter();
+}
+
+function syncDailyWeeklyRangeFooter() {
+  const chart = STATE._dailyWeeklyChart;
+  const data = STATE._dailyWeeklyData;
+  if (!chart || !data || !data.length) return;
+  
+  const startS = document.getElementById('daily-weekly-slider-start');
+  const selection = document.getElementById('daily-weekly-selection');
+  const readout = document.getElementById('daily-weekly-readout');
+  const minL = document.getElementById('daily-weekly-min-label');
+  const maxL = document.getElementById('daily-weekly-max-label');
+
+  if (!startS) return;
+  
+  const view = STATE.dailyWeeklyView || { rangeStart: 0, rangeEnd: data.length - 1 };
+  const sIdx = view.rangeStart;
+  const eIdx = view.rangeEnd;
+  
+  const pctS = (sIdx / (data.length - 1)) * 100;
+  const pctE = (eIdx / (data.length - 1)) * 100;
+  
+  if (selection) {
+    selection.style.left = `${pctS}%`;
+    selection.style.width = `${pctE - pctS}%`;
+  }
+  
+  const sDate = data[sIdx].date;
+  const eDate = data[eIdx].date;
+  
+  if (minL) minL.textContent = data[0].date;
+  if (maxL) maxL.textContent = data[data.length - 1].date;
+  if (readout) readout.textContent = `${sDate} TO ${eDate} (${eIdx - sIdx + 1} weeks)`;
+  
+  chart.timeScale().setVisibleRange({ from: sDate, to: eDate });
+}
+
+function _syncDailyWeeklySliderFromChart() {
+  const chart = STATE._dailyWeeklyChart;
+  const data = STATE._dailyWeeklyData;
+  if (!chart || !data || !data.length) return;
+  
+  const range = chart.timeScale().getVisibleRange();
+  if (!range) return;
+  
+  const fromTime = typeof range.from === 'string' ? range.from : (new Date(range.from * 1000).toISOString().slice(0,10));
+  const toTime = typeof range.to === 'string' ? range.to : (new Date(range.to * 1000).toISOString().slice(0,10));
+  
+  let sIdx = data.findIndex(p => p.date >= fromTime);
+  let eIdx = data.findLastIndex(p => p.date <= toTime);
+  if (sIdx === -1) sIdx = 0;
+  if (eIdx === -1) eIdx = data.length - 1;
+  
+  const pctS = (sIdx / (data.length - 1)) * 100;
+  const pctE = (eIdx / (data.length - 1)) * 100;
+  
+  const startS = document.getElementById('daily-weekly-slider-start');
+  const endS = document.getElementById('daily-weekly-slider-end');
+  const selection = document.getElementById('daily-weekly-selection');
+  
+  if (startS) startS.value = pctS;
+  if (endS) endS.value = pctE;
+  if (selection) {
+    selection.style.left = `${pctS}%`;
+    selection.style.width = `${pctE - pctS}%`;
+  }
+  
+  STATE.dailyWeeklyView = { rangeStart: sIdx, rangeEnd: eIdx };
+  
+  const readout = document.getElementById('daily-weekly-readout');
+  if (readout) readout.textContent = `${data[sIdx].date} TO ${data[eIdx].date} (${eIdx - sIdx + 1} weeks)`;
 }
 
 const _priceLogState = { page: 0, data: [], pageSize: 100 };
