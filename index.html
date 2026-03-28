@@ -4027,17 +4027,20 @@ function buildCurveSlot(baseDate, offset, instrument = 'hh') {
   const histDataExists = histData && histData.length > 0;
 
   let source = 'missing';
-  let data = [];
-  
+  let last = null;
+
   if (liveDataExists) {
     source = 'live';
-    data = instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker);
+    // Read last price directly from raw Yahoo data.  getContractData/getTTFContractData
+    // filter out points before the 519-day lifecycle window, which makes pre-window
+    // contracts (>519 trading days from expiry) return [] and appear unquoted on the
+    // curve.  The Forward Curve only needs the last traded price, so bypass the filter.
+    const rawLive = STATE.liveData[liveTicker];
+    last = rawLive && rawLive.length ? rawLive[rawLive.length - 1] : null;
   } else if (histDataExists) {
     source = 'historical';
-    data = histData;
+    last = histData[histData.length - 1] || null;
   }
-
-  const last = data.length ? data[data.length - 1] : null;
 
   return {
     ticker,
@@ -4048,8 +4051,8 @@ function buildCurveSlot(baseDate, offset, instrument = 'hh') {
     label: `${month.slice(0, 3)} ${String(yr).slice(2)}`,
     price: last && Number.isFinite(last.p) ? last.p : null,
     quoteDate: last && last.date ? last.date : null,
-    pointCount: data.length,
-    source, // 'live', 'historical', or 'missing'
+    pointCount: last ? 1 : 0,
+    source,
   };
 }
 
