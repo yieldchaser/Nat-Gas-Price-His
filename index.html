@@ -1328,20 +1328,20 @@ async function buildSeasonalCache() {
       const ticker = `NG${MONTH_CODES[month]}${pad}`;
       const rawData = contracts[ticker];
       if (!rawData) continue;
-      // Re-anchor d values for incomplete contracts (< 519 rows): the CSV may
-      // include pre-window rows before the 519-day lifecycle window opened,
-      // shifting all row numbers and corrupting the T-Day seasonal buckets.
+      // Always re-anchor d values using expiry so seasonal cache keys match
+      // the re-anchored d values used by active contracts. Without this,
+      // expired 519-row contracts keep sequential CSV d numbers which don't
+      // align with re-anchored active contract d values, causing seasonal
+      // lookups (seasonal[currentDay]) to silently miss and show "—".
       let data = rawData;
-      if (rawData.length < 519) {
-        const expiry = estimateContractExpiry(ticker);
-        if (expiry) {
-          data = rawData.map(pt => {
-            const daysLeft = approxTradingDaysTo(pt.date, expiry);
-            const d = 519 - daysLeft;
-            if (d < 1) return null;
-            return { d: Math.min(519, d), p: pt.p, date: pt.date };
-          }).filter(Boolean);
-        }
+      const expiry = estimateContractExpiry(ticker);
+      if (expiry) {
+        data = rawData.map(pt => {
+          const daysLeft = approxTradingDaysTo(pt.date, expiry);
+          const d = 519 - daysLeft;
+          if (d < 1) return null;
+          return { d: Math.min(519, d), p: pt.p, date: pt.date };
+        }).filter(Boolean);
       }
       data.forEach(pt => {
         if (!cache[pt.d]) cache[pt.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
@@ -1377,18 +1377,16 @@ async function buildTTFSeasonalCache() {
       const ticker = `TG${MONTH_CODES[month]}${pad}`;
       const rawData = contracts[ticker];
       if (!rawData) continue;
-      // Re-anchor d values for incomplete contracts (same fix as buildSeasonalCache)
+      // Always re-anchor d values using expiry (same fix as buildSeasonalCache)
       let data = rawData;
-      if (rawData.length < 519) {
-        const expiry = estimateContractExpiry(ticker);
-        if (expiry) {
-          data = rawData.map(pt => {
-            const daysLeft = approxTradingDaysTo(pt.date, expiry);
-            const d = 519 - daysLeft;
-            if (d < 1) return null;
-            return { d: Math.min(519, d), p: pt.p, date: pt.date };
-          }).filter(Boolean);
-        }
+      const expiry = estimateContractExpiry(ticker);
+      if (expiry) {
+        data = rawData.map(pt => {
+          const daysLeft = approxTradingDaysTo(pt.date, expiry);
+          const d = 519 - daysLeft;
+          if (d < 1) return null;
+          return { d: Math.min(519, d), p: pt.p, date: pt.date };
+        }).filter(Boolean);
       }
       data.forEach(pt => {
         if (!cache[pt.d]) cache[pt.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
@@ -1822,10 +1820,15 @@ function renderHHPreWindowView(ticker, month, year, rawLive) {
   document.getElementById('hh-ticker').textContent = ticker;
   document.getElementById('hh-desc').textContent   = `${month.toUpperCase()} ${year} contract`;
   document.getElementById('hh-price').textContent  = `$${last.p.toFixed(3)}`;
-  const totalChange = (last.p - first.p) / first.p * 100;
   const changeEl = document.getElementById('hh-change');
-  changeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}% from listing`;
-  changeEl.className = 'change ' + (totalChange >= 0 ? 'positive' : 'negative');
+  if (first.p && first.p !== 0) {
+    const totalChange = (last.p - first.p) / first.p * 100;
+    changeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}% from listing`;
+    changeEl.className = 'change ' + (totalChange >= 0 ? 'positive' : 'negative');
+  } else {
+    changeEl.textContent = '';
+    changeEl.className = 'change';
+  }
 
   // Clear elements that don't apply pre-window
   document.getElementById('hh-seasonal-bar').textContent = '';
