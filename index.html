@@ -1326,8 +1326,23 @@ async function buildSeasonalCache() {
       const yy = yr % 100;
       const pad = yy < 10 ? '0' + yy : '' + yy;
       const ticker = `NG${MONTH_CODES[month]}${pad}`;
-      const data = contracts[ticker];
-      if (!data) continue;
+      const rawData = contracts[ticker];
+      if (!rawData) continue;
+      // Re-anchor d values for incomplete contracts (< 519 rows): the CSV may
+      // include pre-window rows before the 519-day lifecycle window opened,
+      // shifting all row numbers and corrupting the T-Day seasonal buckets.
+      let data = rawData;
+      if (rawData.length < 519) {
+        const expiry = estimateContractExpiry(ticker);
+        if (expiry) {
+          data = rawData.map(pt => {
+            const daysLeft = approxTradingDaysTo(pt.date, expiry);
+            const d = 519 - daysLeft;
+            if (d < 1) return null;
+            return { d: Math.min(519, d), p: pt.p, date: pt.date };
+          }).filter(Boolean);
+        }
+      }
       data.forEach(pt => {
         if (!cache[pt.d]) cache[pt.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
         cache[pt.d].sum += pt.p;
@@ -1360,8 +1375,21 @@ async function buildTTFSeasonalCache() {
       const yy = yr % 100;
       const pad = yy < 10 ? '0' + yy : '' + yy;
       const ticker = `TG${MONTH_CODES[month]}${pad}`;
-      const data = contracts[ticker];
-      if (!data) continue;
+      const rawData = contracts[ticker];
+      if (!rawData) continue;
+      // Re-anchor d values for incomplete contracts (same fix as buildSeasonalCache)
+      let data = rawData;
+      if (rawData.length < 519) {
+        const expiry = estimateContractExpiry(ticker);
+        if (expiry) {
+          data = rawData.map(pt => {
+            const daysLeft = approxTradingDaysTo(pt.date, expiry);
+            const d = 519 - daysLeft;
+            if (d < 1) return null;
+            return { d: Math.min(519, d), p: pt.p, date: pt.date };
+          }).filter(Boolean);
+        }
+      }
       data.forEach(pt => {
         if (!cache[pt.d]) cache[pt.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
         cache[pt.d].sum += pt.p;
@@ -1773,7 +1801,7 @@ function updateHHChart() {
   document.getElementById('hh-price').textContent = `$${last.p.toFixed(3)}`;
   const totalChange = ((last.p - first.p) / first.p * 100);
   const changeEl = document.getElementById('hh-change');
-  changeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}% from open`;
+  changeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}% from contract open`;
   changeEl.className = 'change ' + (totalChange >= 0 ? 'positive' : 'negative');
 
   // Build chart
@@ -2066,10 +2094,13 @@ function renderHHStats(data, month, year) {
 
   let vs5yAvg = '—';
   let percentile = '—';
+  let seasonalYLabel = '5Y';
   if (seasonal && seasonal[currentDay]) {
     const s = seasonal[currentDay];
+    // s.count = how many prior-year contracts contributed; may be < 5 for new TTF months
+    seasonalYLabel = s.count < 5 ? `${s.count}Y` : '5Y';
     const delta = ((last.p - s.avg) / s.avg * 100);
-    vs5yAvg = `<span class="${delta >= 0 ? 'positive' : 'negative'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}%</span> vs 5Y avg`;
+    vs5yAvg = `<span class="${delta >= 0 ? 'positive' : 'negative'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}%</span> vs ${seasonalYLabel} avg`;
     if (s.max !== s.min) {
       const pct = Math.round(((last.p - s.min) / (s.max - s.min)) * 100);
       percentile = `${pct}th percentile`;
@@ -2119,11 +2150,11 @@ function renderHHStats(data, month, year) {
     </div>`}
     ${expiryProgressHtml}
     <div class="stat">
-      <div class="stat-label">vs 5Y Seasonal Avg</div>
+      <div class="stat-label">vs ${seasonalYLabel} Seasonal Avg</div>
       <div style="font-family:var(--font-mono);font-size:14px;">${vs5yAvg}</div>
     </div>
     <div class="stat">
-      <div class="stat-label">5Y Range Position</div>
+      <div class="stat-label">${seasonalYLabel} Range Position</div>
       <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${percentile}</div>
     </div>
     <div class="stat">
@@ -2223,17 +2254,17 @@ function renderHHSeasonalBar(data, month) {
   const last = data[data.length - 1];
   const s = seasonal[last.d];
   if (!s) { bar.textContent = ''; return; }
+  const yLabel = s.count < 5 ? `${s.count}Y` : '5Y';
   const delta = ((last.p - s.avg) / s.avg * 100);
   const pct = s.max !== s.min ? Math.round(((last.p - s.min) / (s.max - s.min)) * 100) : 50;
-  const stddev = s.count > 1 ? Math.sqrt(s.count) : 1; // simplified
   bar.innerHTML = `
-    <span>vs 5Y Avg: <span class="${delta >= 0 ? 'positive' : 'negative'}">${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%</span></span>
+    <span>vs ${yLabel} Avg: <span class="${delta >= 0 ? 'positive' : 'negative'}">${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%</span></span>
     <span style="color:var(--text-muted);">|</span>
     <span>Percentile: <span style="color:var(--accent-hh);">${pct}th</span></span>
     <span style="color:var(--text-muted);">|</span>
-    <span>5Y Range: $${s.min.toFixed(3)} – $${s.max.toFixed(3)}</span>
+    <span>${yLabel} Range: $${s.min.toFixed(3)} – $${s.max.toFixed(3)}</span>
     <span style="color:var(--text-muted);">|</span>
-    <span>5Y Avg: $${s.avg.toFixed(3)}</span>
+    <span>${yLabel} Avg: $${s.avg.toFixed(3)}</span>
   `;
 }
 </script>
@@ -2363,7 +2394,7 @@ function updateTTFChart() {
   document.getElementById('ttf-price').textContent = `€${last.p.toFixed(3)}`;
   const change = ((last.p - first.p) / first.p * 100);
   const changeEl = document.getElementById('ttf-change');
-  changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(1)}% from open`;
+  changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(1)}% from contract open`;
   changeEl.className = 'change ' + (change >= 0 ? 'positive' : 'negative');
 
   // Chart
@@ -3334,7 +3365,7 @@ function updateSpreadChart() {
     return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
   };
   const calcAvg5y = key => {
-    const vals = tableRows.filter(r => r.yr > currentYear - 5 && r.yr <= currentYear).map(r => r[key]).filter(Number.isFinite);
+    const vals = tableRows.filter(r => r.yr >= currentYear - 5 && r.yr < currentYear).map(r => r[key]).filter(Number.isFinite);
     return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
   };
 
@@ -3357,7 +3388,7 @@ function updateSpreadChart() {
       <td>${data.at10 != null ? data.at10.toFixed(3) : '—'}</td>
     </tr>
   `;
-  html = html.replace('</tbody>', mkRow('Avg (All Time)', sums.all) + mkRow('Avg (Last 5Y)', sums.y5) + '</tbody>');
+  html = html.replace('</tbody>', mkRow('Avg (All Time)', sums.all) + mkRow('Avg (5 Completed Yrs)', sums.y5) + '</tbody>');
 
   html += `</tbody></table></div>`;
   document.getElementById('spread-table').innerHTML = html;
@@ -3601,7 +3632,7 @@ function renderSpreadResolutionChart() {
   let yearsToPlot = [...STATE._resolutionAvailableYears].sort((a, b) => a - b);
   // Filtering mode (All/5Y/Current) still restricts what's added to chart initially
   if (_resolutionMode === '5y') {
-    yearsToPlot = yearsToPlot.filter(y => y > currentYear - 5 && y <= currentYear);
+    yearsToPlot = yearsToPlot.filter(y => y >= currentYear - 5 && y < currentYear);
   } else if (_resolutionMode === 'current') {
     yearsToPlot = [year];
   }
@@ -5094,8 +5125,8 @@ function buildExpiryTable(range) {
       const v = expiry[yr] && expiry[yr][m];
       if (v == null) return;
       sv += v; cv++;
-      if (parseInt(yr) >= currentYear - 5) { s5 += v; c5++; }
-      if (parseInt(yr) >= currentYear - 3) { s3 += v; c3++; }
+      if (parseInt(yr) >= currentYear - 5 && parseInt(yr) < currentYear) { s5 += v; c5++; }
+      if (parseInt(yr) >= currentYear - 3 && parseInt(yr) < currentYear) { s3 += v; c3++; }
     });
     avgVisible[m] = cv ? sv / cv : null;
     avg5y[m]      = c5 ? s5 / c5 : null;
@@ -5187,8 +5218,8 @@ function buildExpiryTable(range) {
   html += '<td style="color:' + (yoyAvg == null ? 'var(--text-muted)' : yoyAvg >= 0 ? 'var(--positive)' : 'var(--negative)') + ';font-style:italic;font-weight:600;">' +
     (yoyAvg == null ? '\u2014' : (yoyAvg >= 0 ? '+' : '') + yoyAvg.toFixed(1) + '%') + '</td>';
   const visAll = yearAvgs.filter(v => v != null);
-  const v5 = yearAvgs.slice(-5).filter(v => v != null);
-  const v3 = yearAvgs.slice(-3).filter(v => v != null);
+  const v5 = years.map((yr, i) => parseInt(yr) >= currentYear - 5 && parseInt(yr) < currentYear ? yearAvgs[i] : null).filter(v => v != null);
+  const v3 = years.map((yr, i) => parseInt(yr) >= currentYear - 3 && parseInt(yr) < currentYear ? yearAvgs[i] : null).filter(v => v != null);
   const visAllAvg = visAll.length ? visAll.reduce((s, v) => s + v, 0) / visAll.length : null;
   const vis5Avg   = v5.length   ? v5.reduce((s, v) => s + v, 0)   / v5.length   : null;
   const vis3Avg   = v3.length   ? v3.reduce((s, v) => s + v, 0)   / v3.length   : null;
@@ -5257,11 +5288,13 @@ function showExpiryMonthProfile(month) {
     return;
   }
 
+  const currentYear = new Date().getFullYear();
   const prices = seriesData.map(d => d.value);
   const avgAll = prices.reduce((s, v) => s + v, 0) / prices.length;
+  // 5Y avg: last 5 completed years (same definition as seasonal band — exclude current year)
   const avg5y = (() => {
-    const last5 = prices.slice(-5);
-    return last5.reduce((s, v) => s + v, 0) / last5.length;
+    const p5 = seriesData.filter(d => d.year >= currentYear - 5 && d.year < currentYear).map(d => d.value);
+    return p5.length ? p5.reduce((s, v) => s + v, 0) / p5.length : avgAll;
   })();
 
   profileEl.style.display = 'block';
