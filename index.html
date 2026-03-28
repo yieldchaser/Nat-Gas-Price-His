@@ -3275,16 +3275,6 @@ function renderSpreadResolutionChart() {
   const chart = createManagedChart('spread', 'resolution', container);
   const palette = getNeutralChartPalette();
 
-  // Draw zero line
-  const zeroLine = chart.addLineSeries({
-    color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
-  });
-  const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
-  const _zeroStart = new Date(_zeroBase + 1 * 86400000).toISOString().split('T')[0];
-  const _zeroEnd   = new Date(_zeroBase + 519 * 86400000).toISOString().split('T')[0];
-  zeroLine.setData([{ time: _zeroStart, value: 0 }, { time: _zeroEnd, value: 0 }]);
-
   // Gather years based on mode
   const currentYear = new Date().getFullYear();
   const allYearsSet = new Set();
@@ -3303,9 +3293,31 @@ function renderSpreadResolutionChart() {
     const yr = parseInt(t.slice(yrStart, yrStart + 2));
     if (Number.isFinite(yr)) allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
   });
-  
+
   const allYearsSorted = [...allYearsSet].sort((a, b) => b - a);
   STATE._resolutionAvailableYears = allYearsSorted.filter(y => computeSpread(front, back, y, instrument).points.length > 0);
+
+  // Compute actual data extent across all plotted years to anchor the zero line and fitContent correctly
+  const _zeroBase = new Date('2000-01-01T00:00:00Z').getTime();
+  let _dataMinD = 519, _dataMaxD = 1;
+  STATE._resolutionAvailableYears.forEach(y => {
+    const sp = computeSpread(front, back, y, instrument).points;
+    sp.forEach(pt => {
+      if (pt.d < _dataMinD) _dataMinD = pt.d;
+      if (pt.d > _dataMaxD) _dataMaxD = pt.d;
+    });
+  });
+  _dataMinD = Math.max(1, _dataMinD);
+  _dataMaxD = Math.min(519, _dataMaxD);
+
+  // Draw zero line spanning only the actual data range so fitContent() fills the chart
+  const zeroLine = chart.addLineSeries({
+    color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false
+  });
+  const _zeroStart = new Date(_zeroBase + _dataMinD * 86400000).toISOString().split('T')[0];
+  const _zeroEnd   = new Date(_zeroBase + _dataMaxD * 86400000).toISOString().split('T')[0];
+  zeroLine.setData([{ time: _zeroStart, value: 0 }, { time: _zeroEnd, value: 0 }]);
 
   // Init/reset pinned years on pair change
   const pairKey = `${instrument}|${front}|${back}`;
@@ -3314,7 +3326,7 @@ function renderSpreadResolutionChart() {
     const defaults = new Set();
     STATE._resolutionAvailableYears.filter(y => y < currentYear).slice(0, 4).forEach(y => defaults.add(y));
     STATE.resolutionPinnedYears = defaults;
-    STATE.resolutionView = { rangeStart: 1, rangeEnd: 519 };
+    STATE.resolutionView = { rangeStart: _dataMinD, rangeEnd: _dataMaxD };
   }
   
   STATE.resolutionVisibleYears = new Set(STATE.resolutionPinnedYears || []);
@@ -3322,6 +3334,8 @@ function renderSpreadResolutionChart() {
   STATE.resolutionSeriesMap = new Map();
   STATE._resolutionChart = chart;
   STATE._resolutionYearData = new Map();
+  STATE._resolutionDataMinD = _dataMinD;
+  STATE._resolutionDataMaxD = _dataMaxD;
   chart.timeScale().subscribeVisibleTimeRangeChange(() => {
     requestAnimationFrame(() => _syncResolutionSliderFromChart());
   });
@@ -3472,9 +3486,11 @@ function onResolutionSlider() {
 function syncResolutionRangeFooter() {
   const chart = STATE._resolutionChart;
   if (!chart) return;
-  if (!STATE.resolutionView) STATE.resolutionView = { rangeStart: 1, rangeEnd: 519 };
+  const _fullMinD = STATE._resolutionDataMinD || 1;
+  const _fullMaxD = STATE._resolutionDataMaxD || 519;
+  if (!STATE.resolutionView) STATE.resolutionView = { rangeStart: _fullMinD, rangeEnd: _fullMaxD };
   const view = STATE.resolutionView;
-  
+
   const startSlider = document.getElementById('resolution-window-start');
   const endSlider   = document.getElementById('resolution-window-end');
   const selection   = document.getElementById('resolution-range-selection');
@@ -3485,26 +3501,27 @@ function syncResolutionRangeFooter() {
 
   const start = view.rangeStart;
   const end = view.rangeEnd;
-  
+
   const pctStart = ((start - 1) / 518) * 100;
   const pctEnd = ((end - 1) / 518) * 100;
   if (selection) {
     selection.style.left = `${pctStart}%`;
-    selection.style.width = `${pctEnd - pctStart}%`;
+    selection.style.width = `${Math.max(pctEnd - pctStart, 0)}%`;
   }
-  
+
   const count = end - start + 1;
+  const isFullRange = start <= _fullMinD && end >= _fullMaxD;
   if (readout) {
     readout.innerHTML = `<span>T-${519 - start}</span> <span style="color:var(--text-muted);">to</span> <span>T-${519 - end}</span> <span style="color:var(--text-muted);">|</span> <span>${count} days</span>`;
   }
   if (helper) {
-    helper.textContent = count >= 519 ? 'Full lifecycle' : `${count} days selected`;
+    helper.textContent = isFullRange ? 'Full lifecycle' : `${count} days selected`;
   }
-  
+
   // Use same consecutive-day formula as renderSpreadResolutionChart (NOT dayToTime which skips weekends)
   const _resBase = new Date("2000-01-01T00:00:00Z").getTime();
   const resolutionDayToTime = d => new Date(_resBase + d * 86400000).toISOString().split('T')[0];
-  if (start > 1 || end < 519) {
+  if (!isFullRange) {
     chart.timeScale().setVisibleRange({ from: resolutionDayToTime(start), to: resolutionDayToTime(end) });
   } else {
     chart.timeScale().fitContent();
