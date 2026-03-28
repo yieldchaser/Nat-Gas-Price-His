@@ -1183,6 +1183,18 @@ async function loadLiveData() {
     }
   });
 
+  // NG=F is fetched separately (not in the batch loop).  Pre-merge the cached
+  // Yahoo portion with the historical foundation so the Daily Tracker and the
+  // front-month header already show a full chart while the fresh fetch runs.
+  const ngFCached = getCachedData('live_px_v1_NG=F');
+  if (ngFCached && ngFCached.data.length > 0) {
+    const hist = STATE._ngContinuous || [];
+    const recMap = new Map(ngFCached.data.map(p => [p.date, p]));
+    const baseFiltered = hist.filter(p => !recMap.has(p.date));
+    STATE.liveData['NG=F'] = [...baseFiltered, ...ngFCached.data]
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   if (STATE.activeTab === 'curve') updateCurveChart();
 
   // Fetch front month with '2y' for current daily density
@@ -1264,6 +1276,8 @@ async function loadLiveData() {
     const baseFiltered = fm.filter(p => !recMap.has(p.date));
     fm = [...baseFiltered, ...fmRec].sort((a, b) => a.date.localeCompare(b.date));
     STATE.dailyCacheUsed = false;
+    // Cache the Yahoo portion so the next page load can pre-merge without waiting
+    setCachedData('live_px_v1_NG=F', fmRec);
   } else {
     // If Yahoo fetch failed, use our continuous foundation as the only source
     isStale = true;
