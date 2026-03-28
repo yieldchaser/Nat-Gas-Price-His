@@ -2709,13 +2709,16 @@ function computeSpread(frontMonth, backMonth, year, instrument = 'hh') {
     STATE.spreadCache[cacheKey] = empty;
     return empty;
   }
-  // Build map for d2
+  // Build map for d2 keyed by calendar date so both legs are priced on the same day.
+  // Joining on the sequential trading-day number (d) is wrong because the front and
+  // back contracts have different listing dates, so d=1 of each corresponds to a
+  // different calendar date (e.g. Nov contract lists ~41 trading days before Jan).
   const d2map = {};
-  d2.forEach(pt => { d2map[pt.d] = pt.p; });
+  d2.forEach(pt => { if (pt.date) d2map[pt.date] = pt.p; });
   const spread = [];
   d1.forEach(pt => {
-    if (d2map[pt.d] !== undefined) {
-      spread.push({ d: pt.d, date: pt.date, value: pt.p - d2map[pt.d] });
+    if (pt.date && d2map[pt.date] !== undefined) {
+      spread.push({ d: pt.d, date: pt.date, value: pt.p - d2map[pt.date] });
     }
   });
   const result = {
