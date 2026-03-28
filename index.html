@@ -801,6 +801,29 @@ function setCachedData(key, data) {
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_CODES = {Jan:'F',Feb:'G',Mar:'H',Apr:'J',May:'K',Jun:'M',Jul:'N',Aug:'Q',Sep:'U',Oct:'V',Nov:'X',Dec:'Z'};
 const CODE_TO_MONTH = Object.fromEntries(Object.entries(MONTH_CODES).map(([m,c])=>[c,m]));
+// code letter → calendar month number (1–12)
+const CODE_TO_DELIVERY_MONTH = Object.fromEntries(Object.entries(MONTH_CODES).map(([m,c])=>[c,MONTHS.indexOf(m)+1]));
+
+// Estimate a futures contract's last trading day from its ticker (e.g. 'NGX26').
+// NYMEX HH rule: terminates 3 business days prior to 1st calendar day of delivery month.
+// Used as an approximation for TTF and other instruments too.
+function estimateContractExpiry(ticker) {
+  const code = ticker.charAt(2);
+  const yrShort = parseInt(ticker.slice(3), 10);
+  const deliveryMonth = CODE_TO_DELIVERY_MONTH[code];
+  if (!deliveryMonth || !Number.isFinite(yrShort)) return null;
+  const fullYear = yrShort < 50 ? 2000 + yrShort : 1900 + yrShort;
+  let date = new Date(Date.UTC(fullYear, deliveryMonth - 1, 1)); // 1st of delivery month
+  let biz = 3;
+  while (biz > 0) { date.setUTCDate(date.getUTCDate() - 1); const dow = date.getUTCDay(); if (dow !== 0 && dow !== 6) biz--; }
+  return date;
+}
+
+// Approximate trading days from a date string (YYYY-MM-DD) to expiryDate.
+function approxTradingDaysTo(dateStr, expiryDate) {
+  const ms = expiryDate - new Date(dateStr + 'T00:00:00Z');
+  return ms <= 0 ? 0 : Math.round(ms / 86400000 * 5 / 7);
+}
 
 function nextFrame() {
   return new Promise(resolve => requestAnimationFrame(resolve));
@@ -1363,8 +1386,14 @@ function getContractData(ticker) {
   const live = STATE.liveData[liveTicker];
   if (live && live.length > 0) {
     if (hist.length === 0) {
-      // Only live data — add trading day numbers
-      const liveOnly = live.map((pt, i) => ({ d: i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
+      // Only live data — anchor d to estimated expiry so T-day position is correct.
+      // Sequential i+1 would place all live-only contracts at T-518 regardless of
+      // how far into their lifecycle they actually are.
+      const expiry = estimateContractExpiry(ticker);
+      const liveOnly = live.map(pt => {
+        const d = expiry ? Math.max(1, Math.min(519, 519 - approxTradingDaysTo(pt.date, expiry))) : 1;
+        return { d, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
+      });
       STATE.contractCache[ticker] = liveOnly;
       return liveOnly;
     }
@@ -1405,8 +1434,12 @@ function getTTFContractData(ticker) {
   const live = STATE.liveData[liveTicker];
   if (live && live.length > 0) {
     if (hist.length === 0) {
-      // Only live data — assign sequential trading day numbers
-      const liveOnly = live.map((pt, i) => ({ d: i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
+      // Only live data — anchor d to estimated expiry so T-day position is correct.
+      const expiry = estimateContractExpiry(ticker);
+      const liveOnly = live.map(pt => {
+        const d = expiry ? Math.max(1, Math.min(519, 519 - approxTradingDaysTo(pt.date, expiry))) : 1;
+        return { d, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l };
+      });
       STATE.contractCache[ticker] = liveOnly;
       return liveOnly;
     }
@@ -3287,6 +3320,10 @@ function renderSpreadResolutionChart() {
   const instrument = getSpreadInstrument();
 
   const chart = createManagedChart('spread', 'resolution', container);
+  // The time axis uses pseudo-dates (base 2000-01-01 + d days); suppress the
+  // built-in crosshair time label which would show "02 Jan '00" instead of T-518.
+  // The custom tooltip already shows the correct T-day label.
+  chart.applyOptions({ crosshair: { vertLine: { labelVisible: false } } });
   const palette = getNeutralChartPalette();
 
   // Gather years based on mode
