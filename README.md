@@ -53,6 +53,46 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 
 ---
 
+## Statistical Analysis Features
+
+### 1. Conditional Probability (Streak Table)
+- **Tab**: Daily Tracker
+- **Tells you**: The historical probability and average return of the next period following a consecutive multi-day (or multi-week) winning/losing streak for the active contract month.
+
+### 2. Trough-to-Peak Analyzer
+- **Tab**: Daily Tracker
+- **Tells you**: The historically worst-case drawdown mapped onto a dynamic recovery cone, showing whether the active contract is oversold relative to prior years.
+
+### 3. Expiry Price Distribution
+- **Tab**: Expiry Prices
+- **Tells you**: A full settlement matrix with ranked heatmapping to immediately identify the historical context (percentile rank, vs 5Y average) of any given month's final close.
+
+### 4. Box Plots
+- **Tab**: Daily Tracker
+- **Tells you**: The statistical distribution (p5, p25, median, p75, p95) of returns for any given calendar month, exposing the variance and outliers around the mean return.
+
+### 5. Spread Convergence Cone
+- **Tab**: Spreads
+- **Tells you**: Where historical analogs of the active spread (matching on T-day progression and price shape) eventually settled upon contract expiration.
+
+### 6. Seasonality Drift Detection
+- **Tab**: Prices
+- **Tells you**: Whether the active contract is tracking closer to its 5Y, 15Y, or All-Time historical average trajectory via an adjustable dynamic seasonal baseline.
+
+### 7. Analog Year Clustering
+- **Tab**: Prices
+- **Tells you**: The top 5 historical contract years whose normalized price shapes most closely match the current year's trajectory, building a composite overlay of their forward paths.
+
+### 8. Butterfly Spread Builder
+- **Tab**: Spreads
+- **Tells you**: The absolute value and historical context of a 3-legged butterfly spread (Front + Back − 2×Middle) plotted against its 5Y and All-Time moving averages.
+
+### 9. Drawdown Heatmap
+- **Tab**: Prices
+- **Tells you**: Exactly which life-cycle window (in 50-T-day buckets) has historically concentrated the deepest maximum drawdowns from the running peak for the selected delivery month.
+
+---
+
 ## Data Pipeline
 
 ### Automated Archiving (GitHub Actions)
