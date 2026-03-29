@@ -7311,23 +7311,76 @@ function _renderDailyStatChips(stats, currentPrice) {
   }
 
   const s = chipData;
-  const chip = (label, value, color) =>
-    '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;">' +
-    '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">' + label + '</div>' +
-    '<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + value + '</div>' +
-    '</div>';
-  
+
+  // chip(label, valueHtml, color, tooltip, subHtml)
+  const chip = (label, value, color, tip, sub) =>
+    `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;" data-tooltip="${tip || ''}">` +
+    `<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>` +
+    `<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color || 'var(--text-primary)'};">${value}</div>` +
+    (sub ? `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);">${sub}</div>` : '') +
+    `</div>`;
+
   const curP = currentPrice || (s.lastPrice || 0);
   const pctFrom52h = s.high52w ? ((curP - s.high52w) / s.high52w * 100).toFixed(1) : null;
-  const pctFrom52l = s.low52w ? ((curP - s.low52w) / s.low52w * 100).toFixed(1) : null;
-  
+  const pctFrom52l = s.low52w  ? ((curP - s.low52w)  / s.low52w  * 100).toFixed(1) : null;
+
+  // 52W Range % — where current price sits between 52W low and 52W high
+  let rangeChip = '';
+  if (s.high52w && s.low52w && s.high52w > s.low52w) {
+    const rangePct  = Math.round((curP - s.low52w) / (s.high52w - s.low52w) * 100);
+    const rPctClamped = Math.max(0, Math.min(100, rangePct));
+    const rColor = rangePct >= 70 ? 'var(--positive)' : rangePct <= 30 ? 'var(--negative)' : 'var(--text-secondary)';
+    const rBar = `<div style="display:flex;align-items:center;gap:5px;">` +
+      `<span style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${rColor};">${rangePct}%</span>` +
+      `<div style="position:relative;width:48px;height:5px;background:var(--bg-page);border-radius:3px;overflow:hidden;flex-shrink:0;">` +
+      `<div style="position:absolute;top:0;left:0;width:${rPctClamped}%;height:100%;background:${rColor};border-radius:3px;"></div></div></div>`;
+    rangeChip = chip('52W Range', rBar, rColor,
+      `Where the current price sits within its 52-week high/low range. 100% = at the 52W high ($${s.high52w.toFixed(3)}), 0% = at the 52W low ($${s.low52w.toFixed(3)}). Helps gauge whether price is near historic highs or lows for the year.`);
+  }
+
+  // vs 52W H micro-bar
+  const hPct = pctFrom52h !== null ? parseFloat(pctFrom52h) : null;
+  const lPct = pctFrom52l !== null ? parseFloat(pctFrom52l) : null;
+  const hColor = hPct !== null && hPct >= 0 ? 'var(--positive)' : 'var(--negative)';
+  const lColor = lPct !== null && lPct >= 0 ? 'var(--positive)' : 'var(--negative)';
+  const hBarW = hPct !== null ? Math.min(Math.abs(hPct) / 80 * 36, 36) : 0;
+  const lBarW = lPct !== null ? Math.min(Math.abs(lPct) / 80 * 36, 36) : 0;
+
+  const vsHVal = hPct !== null
+    ? `<div style="display:flex;align-items:center;gap:4px;">` +
+      `<span style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${hColor};">${hPct >= 0 ? '+' : ''}${hPct}%</span>` +
+      `<div style="position:relative;width:36px;height:5px;background:var(--bg-page);border-radius:2px;overflow:hidden;flex-shrink:0;">` +
+      `<div style="position:absolute;top:0;${hPct >= 0 ? 'left:0' : `left:calc(100% - ${hBarW}px)`};width:${hBarW}px;height:100%;background:${hColor};border-radius:2px;"></div></div></div>`
+    : '\u2014';
+
+  const vsLVal = lPct !== null
+    ? `<div style="display:flex;align-items:center;gap:4px;">` +
+      `<span style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${lColor};">${lPct >= 0 ? '+' : ''}${lPct}%</span>` +
+      `<div style="position:relative;width:36px;height:5px;background:var(--bg-page);border-radius:2px;overflow:hidden;flex-shrink:0;">` +
+      `<div style="position:absolute;top:0;left:0;width:${lBarW}px;height:100%;background:${lColor};border-radius:2px;"></div></div></div>`
+    : '\u2014';
+
+  // 30D Avg sub-line: vs current price
+  const avg30dSub = (s.avg30d && curP)
+    ? (() => { const d = curP - s.avg30d; const c = d >= 0 ? 'var(--positive)' : 'var(--negative)'; return `vs now: <span style="color:${c}">${d >= 0 ? '+' : ''}${d.toFixed(3)}</span>`; })()
+    : null;
+
   el.innerHTML = [
-    chip('52W High', s.high52w ? '$' + s.high52w.toFixed(3) : '\u2014', '#ff8c00'),
-    chip('52W Low', s.low52w ? '$' + s.low52w.toFixed(3) : '\u2014', '#00d4ff'),
-    chip('vs 52W H', pctFrom52h ? pctFrom52h + '%' : '\u2014', parseFloat(pctFrom52h) >= 0 ? 'var(--positive)' : 'var(--negative)'),
-    chip('vs 52W L', pctFrom52l != null ? (parseFloat(pctFrom52l) >= 0 ? '+' : '') + pctFrom52l + '%' : '\u2014', parseFloat(pctFrom52l) >= 0 ? 'var(--positive)' : 'var(--negative)'),
-    chip('30D Avg', s.avg30d ? '$' + s.avg30d.toFixed(3) : '\u2014', 'var(--text-secondary)'),
-    chip('YTD \u0394%', s.ytdPct != null ? (s.ytdPct >= 0 ? '+' : '') + s.ytdPct.toFixed(1) + '%' : '\u2014', s.ytdPct != null && s.ytdPct >= 0 ? 'var(--positive)' : 'var(--negative)'),
+    chip('52W High', s.high52w ? '$' + s.high52w.toFixed(3) : '\u2014', '#ff8c00',
+      `Rolling 52-week high — the highest closing price over the last 252 trading sessions. Acts as a key resistance level.`),
+    chip('52W Low', s.low52w ? '$' + s.low52w.toFixed(3) : '\u2014', '#00d4ff',
+      `Rolling 52-week low — the lowest closing price over the last 252 trading sessions. Acts as a key support level.`),
+    rangeChip,
+    chip('vs 52W H', vsHVal, hColor,
+      `How far the current price is from the 52-week high, as a %. Negative = below the high. The larger the negative, the more price has pulled back from its annual peak.`),
+    chip('vs 52W L', vsLVal, lColor,
+      `How far the current price is above the 52-week low, as a %. Positive = price has bounced from the annual trough. The higher, the further from the low.`),
+    chip('30D Avg', s.avg30d ? '$' + s.avg30d.toFixed(3) : '\u2014', 'var(--text-secondary)',
+      `Simple average closing price over the last 30 calendar days. A short-term trend reference — price above = recent uptrend; below = downtrend.`,
+      avg30dSub),
+    chip('YTD \u0394%', s.ytdPct != null ? (s.ytdPct >= 0 ? '+' : '') + s.ytdPct.toFixed(1) + '%' : '\u2014',
+      s.ytdPct != null && s.ytdPct >= 0 ? 'var(--positive)' : 'var(--negative)',
+      `Year-to-date % return — price change from January 1st close to today's price.`),
     badge,
   ].join('');
 }
