@@ -7822,7 +7822,7 @@ function _renderExpiryCalendar(now) {
 function _renderWeeklyChart(data) {
   const weekly = computeWeeklyChanges(data);
   const subtitle = document.getElementById('daily-weekly-subtitle');
-  if (subtitle) subtitle.textContent = weekly.length + ' weeks';
+  if (subtitle) subtitle.textContent = weekly.length + ' weeks · close-to-close · green = up week · red = down week';
   if (weekly.length < 2) return;
 
   const chartEl = document.getElementById('daily-weekly-chart');
@@ -7865,31 +7865,58 @@ function _renderWeeklyChart(data) {
 
   // Distribution
   const BUCKETS = [[-Infinity,-15],[-15,-10],[-10,-5],[-5,-2],[-2,0],[0,2],[2,5],[5,10],[10,15],[15,Infinity]];
-  const BLABELS = ['<-15%','-15 to -10%','-10 to -5%','-5 to -2%','-2 to 0%','0 to 2%','2 to 5%','5 to 10%','10 to 15%','>15%'];
+  const BLABELS = ['←-15%','-15 to -10%','-10 to -5%','-5 to -2%','-2 to 0%','0 to 2%','2 to 5%','5 to 10%','10 to 15%','>15%'];
   const counts = BUCKETS.map(([lo, hi]) => weekly.filter(w => w.pct >= lo && w.pct < hi).length);
   const maxCount = Math.max(...counts, 1);
+  const total = weekly.length;
   const posCount = weekly.filter(w => w.pct >= 0).length;
-  const mean = weekly.reduce((s, w) => s + w.pct, 0) / weekly.length;
-  const stddev = Math.sqrt(weekly.reduce((s, w) => s + (w.pct - mean) ** 2, 0) / weekly.length);
+  const negCount = total - posCount;
+  const mean = weekly.reduce((s, w) => s + w.pct, 0) / total;
+  const stddev = Math.sqrt(weekly.reduce((s, w) => s + (w.pct - mean) ** 2, 0) / total);
+  const sorted = [...weekly].sort((a, b) => a.pct - b.pct);
+  const median = sorted.length % 2 === 0
+    ? (sorted[sorted.length / 2 - 1].pct + sorted[sorted.length / 2].pct) / 2
+    : sorted[Math.floor(sorted.length / 2)].pct;
+  const best  = Math.max(...weekly.map(w => w.pct));
+  const worst = Math.min(...weekly.map(w => w.pct));
 
   const distEl = document.getElementById('daily-dist');
   if (!distEl) return;
-  let distHtml = '<div class="card-title" style="padding:10px 14px 0;">Return Distribution</div><div style="padding:6px 14px 12px;font-family:var(--font-mono);font-size:11px;">';
+
+  let distHtml =
+    '<div style="padding:10px 14px 4px;border-bottom:1px solid var(--border);">' +
+      '<div class="card-title" style="padding:0;margin-bottom:2px;" data-tooltip="Frequency distribution of week-over-week % returns across the visible date range. Each row = one bucket. Bar width = relative frequency. Numbers = count and % of total weeks.">WEEKLY RETURN DISTRIBUTION</div>' +
+      '<div style="font-size:10px;color:var(--text-muted);">week-over-week close · ' + total + ' weeks · bar = relative frequency</div>' +
+    '</div>' +
+    '<div style="padding:8px 14px 4px;font-family:var(--font-mono);font-size:11px;">';
+
   counts.forEach((c, i) => {
     const isPos = BUCKETS[i][0] >= 0;
-    const barW = maxCount > 0 ? (c / maxCount * 100).toFixed(1) : '0.0';
-    distHtml += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
-      '<span style="width:88px;text-align:right;color:var(--text-secondary);flex-shrink:0;">' + BLABELS[i] + '</span>' +
-      '<div style="flex:1;background:var(--bg-primary);border-radius:2px;height:11px;">' +
-      '<div style="width:' + barW + '%;height:100%;background:' + (isPos ? 'rgba(0,255,136,0.65)' : 'rgba(255,68,85,0.65)') + ';border-radius:2px;"></div>' +
-      '</div><span style="width:18px;text-align:right;color:var(--text-primary);font-weight:600;">' + c + '</span></div>';
+    const barW = (c / maxCount * 100).toFixed(1);
+    const pct  = (c / total * 100).toFixed(1);
+    const tip  = BLABELS[i] + ': ' + c + ' weeks (' + pct + '% of total)';
+    distHtml +=
+      '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:default;" data-tooltip="' + tip + '">' +
+        '<span style="width:82px;text-align:right;color:' + (isPos ? 'rgba(0,255,136,0.8)' : 'rgba(255,68,85,0.8)') + ';flex-shrink:0;font-size:10px;">' + BLABELS[i] + '</span>' +
+        '<div style="flex:1;background:var(--bg-primary);border-radius:2px;height:10px;">' +
+          '<div style="width:' + barW + '%;height:100%;background:' + (isPos ? 'rgba(0,255,136,0.65)' : 'rgba(255,68,85,0.65)') + ';border-radius:2px;"></div>' +
+        '</div>' +
+        '<span style="width:26px;text-align:right;color:var(--text-primary);font-weight:600;">' + c + '</span>' +
+        '<span style="width:34px;text-align:right;color:var(--text-muted);font-size:10px;">' + pct + '%</span>' +
+      '</div>';
   });
-  distHtml += '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;color:var(--text-muted);display:flex;gap:12px;flex-wrap:wrap;">' +
-    '<span>Pos: <strong style="color:var(--positive);">' + posCount + ' (' + (posCount/weekly.length*100).toFixed(1) + '%)</strong></span>' +
-    '<span>Mean: <strong style="color:var(--text-primary);">' + (mean >= 0 ? '+' : '') + mean.toFixed(2) + '%</strong></span>' +
-    '<span>\u03C3: <strong style="color:var(--text-primary);">' + stddev.toFixed(2) + '%</strong></span>' +
-    '</div></div>';
-  distEl.innerHTML = distHtml;
+
+  distHtml +=
+    '</div>' +
+    '<div style="margin:0 14px;border-top:1px solid var(--border);padding:8px 0 10px;font-family:var(--font-mono);font-size:11px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;">' +
+      '<span data-tooltip="Weeks that closed higher than the prior week\'s close.">↑ Pos: <strong style="color:var(--positive);">' + posCount + ' (' + (posCount/total*100).toFixed(1) + '%)</strong></span>' +
+      '<span data-tooltip="Weeks that closed lower than the prior week\'s close.">↓ Neg: <strong style="color:var(--negative);">' + negCount + ' (' + (negCount/total*100).toFixed(1) + '%)</strong></span>' +
+      '<span data-tooltip="Arithmetic mean of all weekly returns in the visible range.">Mean: <strong style="color:var(--text-primary);">' + (mean >= 0 ? '+' : '') + mean.toFixed(2) + '%</strong></span>' +
+      '<span data-tooltip="Median weekly return — the middle value. Less sensitive to extreme outliers than the mean.">Median: <strong style="color:var(--text-primary);">' + (median >= 0 ? '+' : '') + median.toFixed(2) + '%</strong></span>' +
+      '<span data-tooltip="Standard deviation — measures how widely returns are dispersed around the mean. Higher σ = more volatile.">Std Dev: <strong style="color:var(--text-primary);">' + stddev.toFixed(2) + '%</strong></span>' +
+      '<span data-tooltip="Best and worst single week in the visible range.">Range: <strong style="color:var(--positive);">+' + best.toFixed(1) + '%</strong> / <strong style="color:var(--negative);">' + worst.toFixed(1) + '%</strong></span>' +
+    '</div>';
+
   distEl.innerHTML = distHtml;
 }
 
