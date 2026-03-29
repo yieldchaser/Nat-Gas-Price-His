@@ -846,6 +846,30 @@ tr:hover td { background: var(--bg-card-hover); }
 .pill-btn { font-family:var(--font-mono); font-size:11px; background:var(--bg-primary); color:var(--text-secondary); border:1px solid var(--border); border-radius:12px; padding:3px 10px; cursor:pointer; transition:all 0.15s ease; }
 .pill-btn:hover { border-color:var(--border-bright); color:var(--text-primary); }
 .pill-btn.active { background:rgba(0,212,255,0.1); color:var(--accent-hh); border-color:rgba(0,212,255,0.3); }
+
+/* ─── Global Tooltip ─── */
+#global-tooltip {
+  position: fixed;
+  z-index: 10000;
+  background: rgba(16, 17, 20, 0.97);
+  backdrop-filter: blur(8px);
+  color: #adbac7;
+  padding: 9px 13px;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 260px;
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.13s ease, transform 0.13s ease;
+  transform: translateY(8px);
+  font-family: var(--font-sans);
+  white-space: normal;
+}
+#global-tooltip.visible { opacity: 1; transform: translateY(0); }
+[data-tooltip] { cursor: help; }
 </style>
 </head>
 <body>
@@ -860,11 +884,11 @@ tr:hover td { background: var(--bg-card-hover); }
 <!-- NAV BAR -->
 <nav id="nav">
   <div class="brand">NG PRICE HISTORY <span>v1.0</span></div>
-  <button class="tab-btn active" data-tab="prices">Prices</button>
-  <button class="tab-btn" data-tab="spread">Spreads</button>
-  <button class="tab-btn" data-tab="curve">Forward Curve</button>
-  <button class="tab-btn" data-tab="expiry">Expiry Prices</button>
-  <button class="tab-btn" data-tab="daily">Daily Tracker</button>
+  <button class="tab-btn active" data-tab="prices" data-tooltip="Contract lifecycle charts — HH & TTF futures price history on a T-Day or calendar axis, with seasonal bands and stats panel.">Prices</button>
+  <button class="tab-btn" data-tab="spread" data-tooltip="Calendar spread builder — compute any front/back leg spread with historical overlays, convergence cone, and butterfly fly builder.">Spreads</button>
+  <button class="tab-btn" data-tab="curve" data-tooltip="Live forward strip — next 72 HH and 36 TTF months plotted on a pseudo-date axis directly from raw quote data.">Forward Curve</button>
+  <button class="tab-btn" data-tab="expiry" data-tooltip="Final settlement price heatmap — every contract month ranked all-time, with 5Y/3Y averages and era drift columns.">Expiry Prices</button>
+  <button class="tab-btn" data-tab="daily" data-tooltip="NG=F continuous front-month series — daily/weekly returns, streak probability table, box plots, and calendar seasonality.">Daily Tracker</button>
   <div class="nav-spacer"></div>
   <div class="live-price"><span class="label">NG FRONT</span> <span id="live-price-val">—</span></div>
   <div class="freshness"><span class="freshness-dot" id="freshness-dot"></span><span id="freshness-time">—</span></div>
@@ -1878,25 +1902,25 @@ function renderHHTab() {
           <select id="hh-year"></select>
         </div>
         <div class="flex flex-col gap-sm" style="min-width:180px;">
-          <label>T-Day Range: <span id="hh-tday-label">ALL</span></label>
+          <label data-tooltip="Restrict the chart and seasonal band to the last N trading days of the contract lifecycle — useful for focusing on the final approach to expiry.">T-Day Range: <span id="hh-tday-label">ALL</span></label>
           <input type="range" id="hh-tday" min="0" max="13" value="0">
         </div>
         <div class="flex flex-col gap-sm">
           <label>Axis Mode</label>
           <div class="segment-switch" id="hh-mode-switch">
-             <button class="segment-btn active" data-mode="cal">Calendar Date</button>
-             <button class="segment-btn" data-mode="tday">Trading Day</button>
+             <button class="segment-btn active" data-mode="cal" data-tooltip="Plot price on real calendar dates — useful for spotting news-driven moves on specific dates.">Calendar Date</button>
+             <button class="segment-btn" data-mode="tday" data-tooltip="Plot price on T-Day (1–519) — normalises all contracts to the same lifecycle axis for cross-year comparison.">Trading Day</button>
           </div>
         </div>
         <div class="flex flex-col gap-sm">
           <label>Seasonal Window</label>
           <div class="segment-switch" id="hh-seasonal-window">
-            <button class="segment-btn active" data-window="5y">5Y</button>
-            <button class="segment-btn" data-window="15y">15Y</button>
-            <button class="segment-btn" data-window="all">ALL</button>
+            <button class="segment-btn active" data-window="5y" data-tooltip="5-year seasonal band — min/max/avg from the last 5 completed contract years. Excludes current year to avoid self-reference.">5Y</button>
+            <button class="segment-btn" data-window="15y" data-tooltip="15-year seasonal band — built lazily on first click. Wider historical context covering multiple commodity cycles.">15Y</button>
+            <button class="segment-btn" data-window="all" data-tooltip="All-history seasonal band — every available year back to ~1990. Built lazily on first click.">ALL</button>
           </div>
         </div>
-        <button class="toggle-btn" id="hh-compare-toggle">Compare Mode</button>
+        <button class="toggle-btn" id="hh-compare-toggle" data-tooltip="Overlay a second contract year on the same chart — Shift+Click years in the history table for quick multi-series comparison.">Compare Mode</button>
         <div class="flex flex-col gap-sm" id="hh-compare-select" style="display:none;">
           <label>Compare Year</label>
           <select id="hh-compare-year"></select>
@@ -2357,9 +2381,10 @@ function computeZScore(price, s, len) {
 }
 
 function zScoreStatHtml(z, yLabel) {
+  const zTip = 'Standard deviations from the seasonal mean at this T-Day. ±1σ = notable; ±2σ = extreme. Computed from the same year window as the seasonal band.';
   if (z === null) return `
     <div class="stat">
-      <div class="stat-label">Seasonality (${yLabel}) Z-Score</div>
+      <div class="stat-label" data-tooltip="${zTip}">Seasonality (${yLabel}) Z-Score</div>
       <div class="stat-value" style="color:var(--text-secondary);">-</div>
     </div>`;
   const absZ = Math.abs(z);
@@ -2375,7 +2400,7 @@ function zScoreStatHtml(z, yLabel) {
   const icon = absZ >= 2 ? '⚡' : absZ >= 1 ? '◆' : '◇';
   return `
     <div class="stat">
-      <div class="stat-label">${yLabel} Z-Score</div>
+      <div class="stat-label" data-tooltip="${zTip}">${yLabel} Z-Score</div>
       <div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:${color};">
         ${icon} ${formatted}
         <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:4px;">
@@ -2464,26 +2489,26 @@ function renderHHStats(data, month, year) {
     </div>`}
     ${expiryProgressHtml}
     <div class="stat">
-      <div class="stat-label">vs ${seasonalYLabel} Seasonal Avg</div>
+      <div class="stat-label" data-tooltip="% deviation of the current price from the ${seasonalYLabel} seasonal average at this exact T-Day. Positive = trading above historical norm.">vs ${seasonalYLabel} Seasonal Avg</div>
       <div style="font-family:var(--font-mono);font-size:14px;">${vs5yAvg}</div>
     </div>
     <div class="stat">
-      <div class="stat-label">${seasonalYLabel} Range Position</div>
+      <div class="stat-label" data-tooltip="Where the current price sits within the ${seasonalYLabel} min–max band at this T-Day. 50th = at the historical midpoint; 100th = all-time high for this lifecycle window.">${seasonalYLabel} Range Position</div>
       <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${percentile}</div>
     </div>
     ${zScoreStatHtml(hhZScore, seasonalYLabel)}
     <div class="stat">
-      <div class="stat-label">High / Low / Avg</div>
+      <div class="stat-label" data-tooltip="Absolute price range over the contract's full traded history — High is the intra-contract peak, Low is the trough, Avg is the mean close.">High / Low / Avg</div>
       <div style="font-family:var(--font-mono);font-size:13px;">$${high.toFixed(3)} / $${low.toFixed(3)} / $${avg.toFixed(3)}</div>
     </div>
     <div class="stat">
-      <div class="stat-label">From Contract Open</div>
+      <div class="stat-label" data-tooltip="Total return from the contract's first traded day to today — measures how much the market has repriced this delivery month since it first listed.">From Contract Open</div>
       <div style="font-family:var(--font-mono);font-size:13px;" class="${last.p >= first.p ? 'positive' : 'negative'}">
         ${((last.p - first.p) / first.p * 100).toFixed(1)}%
       </div>
     </div>
     <div class="stat">
-      <div class="stat-label">Status</div>
+      <div class="stat-label" data-tooltip="Whether this contract is still actively trading (live quote from NYMEX) or has expired and is shown as a completed historical record.">Status</div>
       <div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;
         background:${isLive ? 'rgba(0,255,136,0.1)' : 'rgba(136,136,170,0.1)'};
         color:${isLive ? 'var(--positive)' : 'var(--text-muted)'};">
@@ -2693,7 +2718,7 @@ function renderHHForwardReturns(data, month, year) {
 
   el.innerHTML = `
     <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
-      <div class="card-title" style="padding:0;margin-bottom:2px;">T-DAY MATCHED FORWARD RETURNS</div>
+      <div class="card-title" style="padding:0;margin-bottom:2px;" data-tooltip="For each historical same-month contract, finds the price at the current T-Day (±12 days) and records returns at +10T, +20T, +60T horizons. Shows median, % positive, and sample size. Historical base rates only — not a forecast.">T-DAY MATCHED FORWARD RETURNS</div>
       <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
         T-${currentDay} ±${WINDOW} window · same delivery month · historical base rates only
       </div>
@@ -2843,7 +2868,7 @@ function renderAnalogCluster(data, month, year) {
 
   el.innerHTML = `
     <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
-      <div class="card-title" style="padding:0;margin-bottom:2px;">ANALOG YEAR CLUSTERING</div>
+      <div class="card-title" style="padding:0;margin-bottom:2px;" data-tooltip="Finds the top historical contract years whose normalized trailing 90-day price path most closely matches the current year's trajectory (by RMSE). Projects a composite median path forward. Historical analog only — not a forecast.">ANALOG YEAR CLUSTERING</div>
       <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
         ${month} · normalised to open=100 · top ${TOP_N} analogs by RMSE
       </div>
@@ -2976,7 +3001,7 @@ function renderDrawdownHeatmap(month) {
 
   el.innerHTML = `
     <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
-      <div class="card-title" style="padding:0;margin-bottom:2px;">DRAWDOWN HEATMAP</div>
+      <div class="card-title" style="padding:0;margin-bottom:2px;" data-tooltip="Shows which 50-T-day lifecycle buckets have historically concentrated the deepest drawdowns. Bar intensity = % of contracts whose maximum drawdown occurred in that bucket.">DRAWDOWN HEATMAP</div>
       <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
         ${month} · drawdown from running peak · ${contractsProcessed} contracts
       </div>
@@ -3030,8 +3055,8 @@ function renderTTFTab() {
         <div class="flex flex-col gap-sm">
           <label>Axis Mode</label>
           <div class="segment-switch" id="ttf-mode-switch">
-             <button class="segment-btn active" data-mode="cal">Calendar Date</button>
-             <button class="segment-btn" data-mode="tday">Trading Day</button>
+             <button class="segment-btn active" data-mode="cal" data-tooltip="Plot price on real calendar dates — useful for spotting news-driven moves on specific dates.">Calendar Date</button>
+             <button class="segment-btn" data-mode="tday" data-tooltip="Plot price on T-Day (1–519) — normalises all contracts to the same lifecycle axis for cross-year comparison.">Trading Day</button>
           </div>
         </div>
       </div>
@@ -4350,7 +4375,7 @@ function renderSpreadConvergenceCone(front, back, year, instrument) {
 
   el.innerHTML = `
     <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
-      <div class="card-title" style="padding:0;margin-bottom:2px;">SPREAD CONVERGENCE CONE</div>
+      <div class="card-title" style="padding:0;margin-bottom:2px;" data-tooltip="Finds historical years where the same spread was trading near the current value at the same T-Day (±20T, ±$0.15 window). Shows how those analog years resolved at expiry — distribution of final settlements and trajectory paths.">SPREAD CONVERGENCE CONE</div>
       <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
         ${front}/${back} · T-${currentD} @ ${currentV.toFixed(3)} ${unit}
         &nbsp;·&nbsp; ±${TDAY_WINDOW}T window &nbsp;·&nbsp; ±${VALUE_BAND.toFixed(2)} ${unit} band
@@ -5006,7 +5031,7 @@ function renderButterflyBuilder() {
     el.dataset.built = '1';
     el.innerHTML = `
       <div style="padding:10px 14px 8px;border-bottom:1px solid var(--border);">
-        <div class="card-title" style="padding:0;margin-bottom:6px;">BUTTERFLY SPREAD BUILDER
+        <div class="card-title" style="padding:0;margin-bottom:6px;" data-tooltip="3-legged seasonal structure: Front + Back − 2×Middle. Positive = wings above belly (contango). Negative = belly above wings (backwardation). Classic winter fly: Jan + Mar − 2×Feb.">BUTTERFLY SPREAD BUILDER
           <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:8px;">Front + Back − 2×Middle</span>
         </div>
         <div class="ctrl-toolbar" style="gap:10px;flex-wrap:wrap;">
@@ -6362,9 +6387,9 @@ MONTHS.forEach(m => {
     '<th style="color:var(--accent-hh);">Avg(' + rangeLabel + ')</th>' +
     '<th style="color:var(--accent-hh);" title="Average of 5 completed years (excludes current year)">5Y Avg</th>' +
     '<th style="color:var(--accent-hh);" title="Average of 3 completed years (excludes current year)">3Y Avg</th>' +
-    '<th style="color:var(--text-muted);font-size:10px;border-left:1px solid var(--border);" title="Era Drift — Pre-Shale era average (&lt;2011)">Pre-11</th>' +
-    '<th style="color:var(--text-muted);font-size:10px;" title="Era Drift — Shale era average (2011–2019)">11–19</th>' +
-    '<th style="color:var(--text-muted);font-size:10px;" title="Era Drift — LNG Export era average (2020–present)">20+</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;border-left:1px solid var(--border);" data-tooltip="Era Drift — Pre-Shale era avg (contracts expiring before 2011). Compare against modern eras to see how the price regime has shifted.">Pre-11</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — Shale revolution era avg (2011–2019). US production surge structurally repriced the HH curve.">11–19</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — LNG Export era avg (2020–present). Global linkage and export capacity have added new volatility drivers.">20+</th>' +
     '</tr></thead><tbody>';
 
   // Pre-compute per-month all-years rank lookup (over all years in STATE.expiry, not just visible)
@@ -8450,7 +8475,7 @@ function _renderStreakTable(data) {
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 14px 6px;border-bottom:1px solid var(--border);">
       <div>
-        <div class="card-title" style="padding:0;margin-bottom:2px;">CONDITIONAL STREAK PROBABILITIES — NG=F</div>
+        <div class="card-title" style="padding:0;margin-bottom:2px;" data-tooltip="After N consecutive up or down days/weeks, what has historically happened next? Shows % of next-period up moves, median and average next-period return, and sample size. Filter by calendar month to see seasonal streak tendencies.">CONDITIONAL STREAK PROBABILITIES — NG=F</div>
         <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
           Given N consecutive up/down periods, how often is the next period up vs. down?
           &nbsp;·&nbsp; * = n &lt; ${LOW_N} (low sample)
@@ -8516,6 +8541,43 @@ function navigateTo(tab, params) {
 
 <script>
 init();
+</script>
+
+<!-- Global Tooltip Anchor -->
+<div id="global-tooltip"></div>
+
+<script>
+(function() {
+  const tt = document.getElementById('global-tooltip');
+  let hideTimer = null;
+
+  document.addEventListener('mouseover', function(e) {
+    const target = e.target.closest('[data-tooltip]');
+    if (!target) return;
+    const text = target.getAttribute('data-tooltip');
+    if (!text) return;
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    tt.textContent = text;
+    tt.classList.add('visible');
+    const rect = target.getBoundingClientRect();
+    const GAP = 12;
+    // Force reflow so offsetWidth/Height are accurate
+    tt.style.top = '-9999px'; tt.style.left = '-9999px';
+    let left = rect.left + rect.width / 2 - tt.offsetWidth / 2;
+    let top = rect.top - tt.offsetHeight - GAP;
+    if (top < 8) top = rect.bottom + GAP;
+    if (left < 8) left = 8;
+    if (left + tt.offsetWidth > window.innerWidth - 8) left = window.innerWidth - tt.offsetWidth - 8;
+    tt.style.top = top + 'px';
+    tt.style.left = left + 'px';
+  });
+
+  document.addEventListener('mouseout', function(e) {
+    if (e.target.closest('[data-tooltip]')) {
+      hideTimer = setTimeout(() => tt.classList.remove('visible'), 80);
+    }
+  });
+})();
 </script>
 
 </body>
