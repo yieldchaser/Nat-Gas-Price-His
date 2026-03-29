@@ -4737,8 +4737,8 @@ function renderCurveStrips(curveData) {
   });
 
   const getAvg = slots => {
-    const quoted = slots.filter(s => s.isQuote && Number.isFinite(s.price));
-    if (quoted.length === 0) return { avg: null, missing: slots.length };
+    const quoted = slots.filter(s => !s.missing && Number.isFinite(s.price));
+    if (quoted.length === 0) return { avg: null, missing: slots.length, total: slots.length, quoted: 0 };
     const sum = quoted.reduce((s, slot) => s + slot.price, 0);
     return { avg: sum / quoted.length, missing: slots.length - quoted.length, total: slots.length, quoted: quoted.length };
   };
