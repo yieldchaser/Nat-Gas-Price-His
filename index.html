@@ -5635,46 +5635,83 @@ function renderCurveMetrics(curveData, windowContext) {
   const instrument = getCurveInstrument();
   const meta = getPriceInstrumentMeta(instrument);
   const fmt = val => Number.isFinite(val) ? `${meta.currency}${val.toFixed(3)}` : 'N/A';
-  
-  const chip = (label, val, color = 'var(--text-primary)') =>
-    `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color};">${val}</div></div>`;
-  const sep = `<div class="ctrl-sep"></div>`;
-  const slopeLabel = windowContext.slope == null
-    ? 'N/A'
-    : `${windowContext.slope >= 0 ? '+' : ''}${fmt(windowContext.slope)} · ${windowContext.slope >= 0 ? 'Contango' : 'Backwardation'}`;
-  const slopeColor = windowContext.slope == null
-    ? 'var(--text-muted)'
-    : (windowContext.slope >= 0 ? 'var(--positive)' : 'var(--negative)');
-  const coverageColor = windowContext.missingSlots.length ? 'var(--negative)' : 'var(--positive)';
+
+  // Card-style chip (matches KPI chips used elsewhere)
+  const chip = (label, valueHtml, color, tip, sub) =>
+    `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;flex:1;" data-tooltip="${tip}">` +
+    `<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>` +
+    `<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color};">${valueHtml}</div>` +
+    (sub ? `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);">${sub}</div>` : '') +
+    `</div>`;
+
+  // Coverage chip with mini bar
+  const covQ = windowContext.quotedSlots.length;
+  const covT = windowContext.count;
+  const covPct = covT > 0 ? Math.round(covQ / covT * 100) : 0;
+  const covColor = windowContext.missingSlots.length ? 'var(--negative)' : 'var(--positive)';
+  const covBar = `<div style="display:flex;align-items:center;gap:5px;margin-top:3px;">` +
+    `<div style="width:56px;height:4px;background:var(--bg-page);border-radius:2px;overflow:hidden;flex-shrink:0;">` +
+    `<div style="width:${covPct}%;height:100%;background:${covColor};border-radius:2px;"></div></div>` +
+    `<span style="font-size:10px;color:${covColor};font-family:var(--font-mono);">${covPct}%</span></div>`;
+  const covChip = chip('Coverage',
+    `${windowContext.coverageText} quoted`, covColor,
+    `${covQ} of ${covT} contracts in the selected window have live quotes. Missing contracts are excluded from all averages.`,
+    covBar.replace(/"/g, "'"));
+
+  // Slope: +$X.XXX · Contango with structure badge
+  const slopeColor = windowContext.slope == null ? 'var(--text-muted)'
+    : windowContext.slope >= 0 ? 'var(--positive)' : 'var(--negative)';
+  const structWord = windowContext.slope == null ? '' : windowContext.slope >= 0 ? 'Contango' : 'Backwardation';
+  const slopeVal = windowContext.slope == null ? 'N/A'
+    : `${windowContext.slope >= 0 ? '+' : ''}${fmt(windowContext.slope)}`;
+  const structBadge = structWord
+    ? ` <span style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:600;` +
+      (windowContext.slope >= 0
+        ? `background:rgba(0,255,136,0.12);color:var(--positive);border:1px solid rgba(0,255,136,0.25);`
+        : `background:rgba(255,68,85,0.12);color:var(--negative);border:1px solid rgba(255,68,85,0.25);`) +
+      `">${structWord}</span>` : '';
+
+  // W/S Premium %
+  const wsPct = (windowContext.winterAvg != null && windowContext.summerAvg != null && windowContext.summerAvg > 0)
+    ? ((windowContext.winterAvg - windowContext.summerAvg) / windowContext.summerAvg * 100) : null;
+  const wsColor = windowContext.premium == null ? 'var(--text-muted)'
+    : windowContext.premium >= 0 ? 'var(--positive)' : 'var(--negative)';
+
   const notes = [];
+  if (curveData.latestQuoteDate) notes.push(`Latest quote: ${formatDisplayDate(curveData.latestQuoteDate)}`);
+  if (curveData.skippedSlots.length) notes.push(`Rolled past: ${summarizeCurveLabels(curveData.skippedSlots, 3)}`);
+  if (windowContext.missingSlots.length) notes.push(`Missing in window: ${summarizeCurveLabels(windowContext.missingSlots, 6)}`);
 
-  if (curveData.latestQuoteDate) {
-    notes.push(`Latest quote across strip: ${formatDisplayDate(curveData.latestQuoteDate)}.`);
-  }
-  if (curveData.skippedSlots.length) {
-    notes.push(`Rolled past stale contracts: ${summarizeCurveLabels(curveData.skippedSlots, 3)}.`);
-  }
-  if (windowContext.missingSlots.length) {
-    notes.push(`Missing quotes in window: ${summarizeCurveLabels(windowContext.missingSlots, 6)}.`);
-  }
-
-  metricsEl.innerHTML = [
-    chip('Coverage', `${windowContext.coverageText} quoted`, coverageColor),
-    sep,
-    chip('Front Quote', windowContext.firstQuoted ? `${fmt(windowContext.firstQuoted.price)} · ${windowContext.firstQuoted.label}` : 'N/A', meta.color),
-    sep,
-    chip('Back Quote', windowContext.lastQuoted ? `${fmt(windowContext.lastQuoted.price)} · ${windowContext.lastQuoted.label}` : 'N/A'),
-    sep,
-    chip('Slope', slopeLabel, slopeColor),
-    sep,
-    chip('Winter Avg', fmt(windowContext.winterAvg), '#f5f7fb'),
-    sep,
-    chip('Summer Avg', fmt(windowContext.summerAvg), '#c5c8cf'),
-    sep,
-    chip('W/S Premium', fmt(windowContext.premium), windowContext.premium == null ? 'var(--text-muted)' : (windowContext.premium >= 0 ? 'var(--positive)' : 'var(--negative)')),
-  ].join('') + (notes.length
-    ? `<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;color:var(--text-muted);">${notes.join(' ')}</div>`
-    : '');
+  metricsEl.innerHTML =
+    `<div style="display:flex;flex-wrap:wrap;gap:8px;width:100%;">` +
+    covChip +
+    chip('Front Quote',
+      windowContext.firstQuoted ? `${fmt(windowContext.firstQuoted.price)}<span style="font-size:11px;font-weight:400;color:var(--text-muted);"> · ${windowContext.firstQuoted.label}</span>` : 'N/A',
+      meta.color,
+      `First quoted contract in the selected window: ${windowContext.firstQuoted ? windowContext.firstQuoted.label + ' at ' + fmt(windowContext.firstQuoted.price) : 'none'}.`) +
+    chip('Back Quote',
+      windowContext.lastQuoted ? `${fmt(windowContext.lastQuoted.price)}<span style="font-size:11px;font-weight:400;color:var(--text-muted);"> · ${windowContext.lastQuoted.label}</span>` : 'N/A',
+      'var(--text-primary)',
+      `Last quoted contract in the selected window: ${windowContext.lastQuoted ? windowContext.lastQuoted.label + ' at ' + fmt(windowContext.lastQuoted.price) : 'none'}.`) +
+    chip('Slope',
+      `${slopeVal}${structBadge}`,
+      slopeColor,
+      `Back quote minus front quote within the window. Positive = contango (deferred more expensive), negative = backwardation. Does not account for time value — compare to strip averages for richer context.`) +
+    chip('Winter Avg',
+      fmt(windowContext.winterAvg), '#e2e8f0',
+      `Average price of all Winter (Nov–Mar) contracts in the window. Winter contracts typically carry a premium due to heating demand.`) +
+    chip('Summer Avg',
+      fmt(windowContext.summerAvg), '#e2c09a',
+      `Average price of all Summer (Apr–Oct) contracts in the window. Includes shoulder months.`) +
+    chip('W/S Premium',
+      fmt(windowContext.premium), wsColor,
+      `Winter average minus Summer average — the seasonal premium embedded in the strip. Positive = winter deferred at a premium to summer (normal). ${wsPct != null ? Math.abs(wsPct).toFixed(1) + '% ' + (wsPct >= 0 ? 'above' : 'below') + ' summer avg.' : ''}`,
+      wsPct != null ? `${wsPct >= 0 ? '+' : ''}${wsPct.toFixed(1)}% vs summer` : null) +
+    `</div>` +
+    (notes.length
+      ? `<div style="width:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:8px;">` +
+        notes.map(n => `<span>· ${n}</span>`).join('') + `</div>`
+      : '');
 }
 
 function renderCurveTable(curveData, windowContext) {
