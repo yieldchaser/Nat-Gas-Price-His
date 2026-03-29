@@ -6323,8 +6323,12 @@ function buildExpiryTable(range) {
   // Bug fix: compute averages using ONLY the visible/filtered years so the
   // heat-map coloring is relative to whatever the user is looking at.
   const avg5y = {}, avg3y = {}, avgVisible = {};
+  // Era Drift averages (computed over all STATE.expiry years, not filtered)
+  const avgEra1 = {}, avgEra2 = {}, avgEra3 = {}; // Pre-2011, 2011-2019, 2020+
+  const allExpiryYearsForEra = Object.keys(STATE.expiry).map(Number);
 MONTHS.forEach(m => {
     let sv = 0, cv = 0, s5 = 0, c5 = 0, s3 = 0, c3 = 0;
+    let se1 = 0, ce1 = 0, se2 = 0, ce2 = 0, se3 = 0, ce3 = 0;
     years.forEach(yr => {
       const v = expiry[yr] && expiry[yr][m];
       if (v == null) return;
@@ -6332,9 +6336,20 @@ MONTHS.forEach(m => {
       if (parseInt(yr) >= currentYear - 5 && parseInt(yr) < currentYear) { s5 += v; c5++; }
       if (parseInt(yr) >= currentYear - 3 && parseInt(yr) < currentYear) { s3 += v; c3++; }
     });
+    // Era averages from all available data (not filtered by range)
+    allExpiryYearsForEra.forEach(yr => {
+      const v = STATE.expiry[yr] && STATE.expiry[yr][m];
+      if (v == null) return;
+      if (yr < 2011)  { se1 += v; ce1++; }
+      else if (yr <= 2019) { se2 += v; ce2++; }
+      else if (yr < currentYear) { se3 += v; ce3++; }
+    });
     avgVisible[m] = cv ? sv / cv : null;
     avg5y[m]      = c5 ? s5 / c5 : null;
     avg3y[m]      = c3 ? s3 / c3 : null;
+    avgEra1[m]    = ce1 ? se1 / ce1 : null;
+    avgEra2[m]    = ce2 ? se2 / ce2 : null;
+    avgEra3[m]    = ce3 ? se3 / ce3 : null;
   });
 
   // Range label for Avg column header
@@ -6347,6 +6362,9 @@ MONTHS.forEach(m => {
     '<th style="color:var(--accent-hh);">Avg(' + rangeLabel + ')</th>' +
     '<th style="color:var(--accent-hh);" title="Average of 5 completed years (excludes current year)">5Y Avg</th>' +
     '<th style="color:var(--accent-hh);" title="Average of 3 completed years (excludes current year)">3Y Avg</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;border-left:1px solid var(--border);" title="Era Drift — Pre-Shale era average (&lt;2011)">Pre-11</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;" title="Era Drift — Shale era average (2011–2019)">11–19</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;" title="Era Drift — LNG Export era average (2020–present)">20+</th>' +
     '</tr></thead><tbody>';
 
   // Pre-compute per-month all-years rank lookup (over all years in STATE.expiry, not just visible)
@@ -6403,6 +6421,21 @@ MONTHS.forEach(m => {
     [avgVisible, avg5y, avg3y].forEach(a => {
       html += '<td style="font-weight:600;">' + (a[m] != null ? '$' + a[m].toFixed(3) : '\u2014') + '</td>';
     });
+    // Era Drift columns
+    [avgEra1, avgEra2, avgEra3].forEach((a, i) => {
+      const v = a[m];
+      const borderStyle = i === 0 ? 'border-left:1px solid var(--border);' : '';
+      if (v == null) { html += '<td style="color:var(--text-muted);' + borderStyle + '">\u2014</td>'; return; }
+      // Color: compare era avg vs the overall visible avg
+      const ref = avgVisible[m];
+      let color = 'var(--text-secondary)';
+      if (ref) {
+        const d = (v - ref) / ref;
+        if (d > 0.03) color = 'var(--positive)';
+        else if (d < -0.03) color = 'var(--negative)';
+      }
+      html += '<td style="font-size:11px;color:' + color + ';' + borderStyle + '" title="Era avg: $' + v.toFixed(3) + '">' + '$' + v.toFixed(2) + '</td>';
+    });
     html += '</tr>';
   });
 
@@ -6430,6 +6463,17 @@ MONTHS.forEach(m => {
   [visAllAvg, vis5Avg, vis3Avg].forEach(v => {
     html += '<td style="font-weight:700;">' + (v != null ? '$' + v.toFixed(3) : '\u2014') + '</td>';
   });
+  // Era drift cells for Year Avg row (cross-month averages per era)
+  [allExpiryYearsForEra.filter(yr => yr < 2011),
+   allExpiryYearsForEra.filter(yr => yr >= 2011 && yr <= 2019),
+   allExpiryYearsForEra.filter(yr => yr >= 2020 && yr < currentYear)
+  ].forEach((eraYears, i) => {
+    const borderStyle = i === 0 ? 'border-left:1px solid var(--border);' : '';
+    if (!eraYears.length) { html += '<td style="color:var(--text-muted);' + borderStyle + '">\u2014</td>'; return; }
+    const vals = eraYears.flatMap(yr => MONTHS.map(m => STATE.expiry[yr] ? STATE.expiry[yr][m] : null).filter(v => v != null));
+    const avg = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+    html += '<td style="font-weight:700;font-size:11px;' + borderStyle + '">' + (avg != null ? '$' + avg.toFixed(2) : '\u2014') + '</td>';
+  });
   html += '</tr>';
 
   // YoY% row — year-over-year % change of full-year average
@@ -6447,8 +6491,9 @@ MONTHS.forEach(m => {
   html += '<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;font-weight:700;color:' +
     (yoyAvg == null ? 'var(--text-muted)' : yoyAvg >= 0 ? '#00ff88' : '#ff4455') + ';">' +
     (yoyAvg == null ? '\u2014' : (yoyAvg >= 0 ? '+' : '') + yoyAvg.toFixed(1) + '%') + '</td>';
-  // Avg columns (blank for YoY row)
+  // Avg columns + Era Drift columns (blank for YoY row)
   html += '<td>\u2014</td><td>\u2014</td><td>\u2014</td>';
+  html += '<td style="border-left:1px solid var(--border);">\u2014</td><td>\u2014</td><td>\u2014</td>';
   html += '</tr>';
 
   html += '</tbody></table>';
