@@ -1489,8 +1489,9 @@ async function buildSeasonalCache() {
         }).filter(Boolean);
       }
       data.forEach(pt => {
-        if (!cache[pt.d]) cache[pt.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+        if (!cache[pt.d]) cache[pt.d] = { sum: 0, sumSq: 0, count: 0, min: Infinity, max: -Infinity };
         cache[pt.d].sum += pt.p;
+        cache[pt.d].sumSq += pt.p * pt.p;
         cache[pt.d].count++;
         cache[pt.d].min = Math.min(cache[pt.d].min, pt.p);
         cache[pt.d].max = Math.max(cache[pt.d].max, pt.p);
@@ -1500,6 +1501,8 @@ async function buildSeasonalCache() {
     Object.keys(cache).forEach(d => {
       const c = cache[d];
       c.avg = c.sum / c.count;
+      const variance = c.count > 1 ? (c.sumSq / c.count) - (c.avg * c.avg) : 0;
+      c.stddev = variance > 0 ? Math.sqrt(variance) : 0;
       if (c.min === Infinity) c.min = 0;
       if (c.max === -Infinity) c.max = 0;
     });
@@ -1534,8 +1537,9 @@ async function buildTTFSeasonalCache() {
         }).filter(Boolean);
       }
       data.forEach(pt => {
-        if (!cache[pt.d]) cache[pt.d] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+        if (!cache[pt.d]) cache[pt.d] = { sum: 0, sumSq: 0, count: 0, min: Infinity, max: -Infinity };
         cache[pt.d].sum += pt.p;
+        cache[pt.d].sumSq += pt.p * pt.p;
         cache[pt.d].count++;
         cache[pt.d].min = Math.min(cache[pt.d].min, pt.p);
         cache[pt.d].max = Math.max(cache[pt.d].max, pt.p);
@@ -1544,6 +1548,8 @@ async function buildTTFSeasonalCache() {
     Object.keys(cache).forEach(d => {
       const entry = cache[d];
       entry.avg = entry.sum / entry.count;
+      const variance = entry.count > 1 ? (entry.sumSq / entry.count) - (entry.avg * entry.avg) : 0;
+      entry.stddev = variance > 0 ? Math.sqrt(variance) : 0;
       if (entry.min === Infinity) entry.min = 0;
       if (entry.max === -Infinity) entry.max = 0;
     });
@@ -1562,8 +1568,9 @@ function buildSpotSeasonalCache() {
       series.forEach(point => {
         if (!point.date) return;
         const key = point.date.slice(5);
-        if (!cache[key]) cache[key] = { sum: 0, count: 0, min: Infinity, max: -Infinity };
+        if (!cache[key]) cache[key] = { sum: 0, sumSq: 0, count: 0, min: Infinity, max: -Infinity };
         cache[key].sum += point.p;
+        cache[key].sumSq += point.p * point.p;
         cache[key].count++;
         cache[key].min = Math.min(cache[key].min, point.p);
         cache[key].max = Math.max(cache[key].max, point.p);
@@ -1574,6 +1581,8 @@ function buildSpotSeasonalCache() {
   Object.keys(cache).forEach(key => {
     const entry = cache[key];
     entry.avg = entry.sum / entry.count;
+    const variance = entry.count > 1 ? (entry.sumSq / entry.count) - (entry.avg * entry.avg) : 0;
+    entry.stddev = variance > 0 ? Math.sqrt(variance) : 0;
     if (entry.min === Infinity) entry.min = 0;
     if (entry.max === -Infinity) entry.max = 0;
   });
@@ -2244,6 +2253,37 @@ function baseChartOptions() {
   };
 }
 
+/* ─── Z-Score helper (used by HH, TTF, and Spot stats panels) ─── */
+function computeZScore(price, s) {
+  if (!s || !s.stddev || s.stddev === 0) return null;
+  return (price - s.avg) / s.stddev;
+}
+
+function zScoreStatHtml(z, yLabel) {
+  if (z === null) return '';
+  const absZ = Math.abs(z);
+  const sign = z >= 0 ? '+' : '';
+  const formatted = `${sign}${z.toFixed(1)}σ`;
+  // Color tiers: |z| >= 2 → red, |z| >= 1 → amber, else accent
+  const color = absZ >= 2
+    ? 'var(--negative)'
+    : absZ >= 1
+      ? 'var(--warning)'
+      : 'var(--accent-hh)';
+  // Badge icon: emphasise extremes
+  const icon = absZ >= 2 ? '⚡' : absZ >= 1 ? '◆' : '◇';
+  return `
+    <div class="stat">
+      <div class="stat-label">${yLabel} Z-Score</div>
+      <div style="font-family:var(--font-mono);font-size:14px;font-weight:600;color:${color};">
+        ${icon} ${formatted}
+        <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:4px;">
+          ${absZ >= 2 ? 'Extreme deviation' : absZ >= 1 ? 'Notable deviation' : 'Within 1σ'}
+        </span>
+      </div>
+    </div>`;
+}
+
 function renderHHStats(data, month, year) {
   const statsEl = document.getElementById('hh-stats');
   const last = data[data.length - 1];
@@ -2267,6 +2307,9 @@ function renderHHStats(data, month, year) {
     }
   }
 
+  // Z-score: distance from 5Y seasonal mean in stddev units
+  const _hhSeasonalEntry = seasonal && seasonal[currentDay] ? seasonal[currentDay] : null;
+  const hhZScore = computeZScore(last.p, _hhSeasonalEntry);
 
   // Check if contract is active (has live data) or expired
   const code = MONTH_CODES[month];
@@ -2322,6 +2365,7 @@ function renderHHStats(data, month, year) {
       <div class="stat-label">${seasonalYLabel} Range Position</div>
       <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${percentile}</div>
     </div>
+    ${zScoreStatHtml(hhZScore, seasonalYLabel)}
     <div class="stat">
       <div class="stat-label">High / Low / Avg</div>
       <div style="font-family:var(--font-mono);font-size:13px;">$${high.toFixed(3)} / $${low.toFixed(3)} / $${avg.toFixed(3)}</div>
@@ -2572,9 +2616,15 @@ function updateTTFChart() {
 
   // Stats
   const { max: high, min: low, avg } = getSeriesStats(data);
+  // Z-score from TTF 5Y seasonal cache at current T-day
+  const _ttfSeasonal = STATE.ttfSeasonalCache[month];
+  const _ttfSeasonalEntry = _ttfSeasonal && _ttfSeasonal[last.d] ? _ttfSeasonal[last.d] : null;
+  const ttfZScore = computeZScore(last.p, _ttfSeasonalEntry);
+  const ttfYLabel = _ttfSeasonalEntry ? (_ttfSeasonalEntry.count < 5 ? `${_ttfSeasonalEntry.count}Y` : '5Y') : '5Y';
   document.getElementById('ttf-stats').innerHTML = `
     <div class="card-title">Contract Statistics</div>
     <div class="stat"><div class="stat-label">Trading Days</div><div class="stat-value">${data.length}</div></div>
+    ${zScoreStatHtml(ttfZScore, ttfYLabel)}
     <div class="stat"><div class="stat-label">High / Low / Avg</div><div style="font-family:var(--font-mono);font-size:13px;">€${high.toFixed(3)} / €${low.toFixed(3)} / €${avg.toFixed(3)}</div></div>
     <div class="stat"><div class="stat-label">From Contract Open</div><div style="font-family:var(--font-mono);font-size:13px;" class="${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '+' : ''}${change.toFixed(1)}%</div></div>
     <div class="stat"><div class="stat-label">Data Range</div><div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">2018 – present</div></div>
@@ -2764,13 +2814,20 @@ function updateSpotChart() {
   chart.timeScale().fitContent();
 
   // Stats panel
+  // 5Y seasonal Z-score from spotSeasonalCache (keyed by MM-DD)
+  const _spotSeasonalKey = last.date ? last.date.slice(5) : null;
+  const _spotSeasonalEntry = _spotSeasonalKey && STATE.spotSeasonalCache[_spotSeasonalKey]
+    ? STATE.spotSeasonalCache[_spotSeasonalKey] : null;
+  const spotZScore = computeZScore(last.p, _spotSeasonalEntry);
+  const spotYLabel = _spotSeasonalEntry ? (_spotSeasonalEntry.count < 5 ? `${_spotSeasonalEntry.count}Y` : '5Y') : '5Y';
   document.getElementById('spot-stats').innerHTML = `
     <div class="card-title">Spot Statistics — ${year}</div>
     <div class="stat"><div class="stat-label">High</div><div class="stat-value" style="color:var(--negative);">$${high.toFixed(3)}</div></div>
     <div class="stat"><div class="stat-label">Low</div><div class="stat-value" style="color:var(--positive);">$${low.toFixed(3)}</div></div>
     <div class="stat"><div class="stat-label">Average</div><div class="stat-value">$${avg.toFixed(3)}</div></div>
     <div class="stat"><div class="stat-label">Trading Days</div><div style="font-family:var(--font-mono);font-size:14px;">${unique.length}</div></div>
-    <div class="stat"><div class="stat-label">Spikes (>2σ)</div><div style="font-family:var(--font-mono);font-size:14px;color:var(--warning);">${markers.length}</div></div>
+    <div class="stat"><div class="stat-label">Spikes (&gt;2σ)</div><div style="font-family:var(--font-mono);font-size:14px;color:var(--warning);">${markers.length}</div></div>
+    ${zScoreStatHtml(spotZScore, spotYLabel)}
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
       <div class="stat-label" style="margin-bottom:4px;">Global Stats (All Years)</div>
       <div style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">
