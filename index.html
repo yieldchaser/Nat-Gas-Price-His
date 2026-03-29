@@ -8660,10 +8660,10 @@ function _renderStreakTable(data) {
         rows += `<tr style="${dimStyle}" data-tooltip="${rowTip.replace(/"/g, '&quot;')}">
           <td style="text-align:left;">${dirLabel}${flag}</td>
           <td style="font-family:var(--font-mono);text-align:center;">${st.n}</td>
-          <td>${edgeBar}</td>
+          <td style="text-align:center;">${edgeBar}</td>
           <td style="color:${pctDnColor};font-family:var(--font-mono);text-align:center;">${pctDn}%</td>
-          <td>${medCell}</td>
-          <td>${avgCell}</td>
+          <td style="text-align:center;">${medCell}</td>
+          <td style="text-align:center;">${avgCell}</td>
         </tr>`;
       }
     });
@@ -8677,11 +8677,11 @@ function _renderStreakTable(data) {
         <table style="width:100%;min-width:520px;">
           <thead><tr>
             <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Streak type and length. ▲ = consecutive up periods, ▼ = consecutive down periods. N× = number of consecutive periods in the streak. * = low sample (n &lt; 15).">Streak</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Number of historical instances matching this exact streak pattern. Larger N = more statistically reliable. Rows with n &lt; 15 are dimmed and flagged with *.">N</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="% of next periods that were positive (up) after this streak. The bar shows deviation from 50% (random baseline) — longer bar = stronger historical edge. Green = bullish bias, red = bearish bias.">Next ↑ &amp; Edge</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="% of next periods that were negative (down) after this streak. Always equals 100% minus Next ↑.">Next ↓</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Median next-period return after this streak. The middle value of all observed next-period moves — less sensitive to outlier sessions than the mean. Bar shows magnitude (max visual = ±5%).">Med Return</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Mean (average) next-period return after this streak. Sensitive to outlier sessions — compare with the median to spot skew. Bar shows magnitude (max visual = ±5%).">Avg Return</th>
+            <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Number of historical instances matching this exact streak pattern. Larger N = more statistically reliable. Rows with n &lt; 15 are dimmed and flagged with *.">N</th>
+            <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="% of next periods that were positive (up) after this streak. The bar shows deviation from 50% (random baseline) — longer bar = stronger historical edge. Green = bullish bias, red = bearish bias.">Next ↑ &amp; Edge</th>
+            <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="% of next periods that were negative (down) after this streak. Always equals 100% minus Next ↑.">Next ↓</th>
+            <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Median next-period return after this streak. The middle value of all observed next-period moves — less sensitive to outlier sessions than the mean. Bar shows magnitude (max visual = ±5%).">Med Return</th>
+            <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Mean (average) next-period return after this streak. Sensitive to outlier sessions — compare with the median to spot skew. Bar shows magnitude (max visual = ±5%).">Avg Return</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
