@@ -6386,32 +6386,54 @@ MONTHS.forEach(m => {
   // Range label for Avg column header
   const rangeLabel = range === 'all' ? 'All' : range + 'Y';
 
-  let html = '<table style="white-space:nowrap;"><thead><tr>' +
-    '<th style="text-align:left;" data-tooltip="Click any month label to expand its full expiry history chart below.">Month</th>';
-  years.forEach(y => { html += '<th data-tooltip="Final settlement price for contracts expiring in ' + y + '. Click a cell to jump to that contract in the Prices tab.">' + y + '</th>'; });
-  html += '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Year-over-year % change vs the most recent prior year shown in the table.">YoY%</th>' +
-    '<th style="color:var(--accent-hh);" data-tooltip="Average final settlement price across all visible years in the current time window filter.">Avg(' + rangeLabel + ')</th>' +
-    '<th style="color:var(--accent-hh);" data-tooltip="Average of the last 5 completed contract years (excludes current year to avoid self-reference).">5Y Avg</th>' +
-    '<th style="color:var(--accent-hh);" data-tooltip="Average of the last 3 completed contract years — tighter, more recent reference.">3Y Avg</th>' +
-    '<th style="color:var(--text-muted);font-size:10px;border-left:1px solid var(--border);" data-tooltip="Era Drift — Pre-Shale era avg (contracts expiring before 2011). Compare against modern eras to see how the price regime has shifted.">Pre-11</th>' +
-    '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — Shale revolution era avg (2011–2019). US production surge structurally repriced the HH curve.">11–19</th>' +
-    '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — LNG Export era avg (2020–present). Global linkage and export capacity have added new volatility drivers.">20+</th>' +
-    '</tr></thead><tbody>';
-
   // Pre-compute per-month all-years rank lookup (over all years in STATE.expiry, not just visible)
   const allExpiryYears = Object.keys(STATE.expiry).sort((a, b) => +a - +b);
   const monthRankLookup = {}; // m -> sorted prices desc for ranking
+  const monthHighYear = {}, monthLowYear = {};
   MONTHS.forEach(m => {
     const allPricesForMonth = allExpiryYears.map(yr => STATE.expiry[yr] ? STATE.expiry[yr][m] : null).filter(v => v != null);
     monthRankLookup[m] = [...allPricesForMonth].sort((a, b) => b - a);
+    const allEntries = allExpiryYears.map(yr => ({ yr, v: STATE.expiry[yr] ? STATE.expiry[yr][m] : null })).filter(e => e.v != null);
+    if (allEntries.length) {
+      monthHighYear[m] = allEntries.reduce((a, b) => b.v > a.v ? b : a);
+      monthLowYear[m]  = allEntries.reduce((a, b) => b.v < a.v ? b : a);
+    }
   });
 
+  let html = '<table style="white-space:nowrap;"><thead><tr>' +
+    '<th style="text-align:left;" data-tooltip="Click any month label (▼) to expand its full expiry history chart. Click any price cell to jump to that contract in the Prices tab.">Month</th>';
+  years.forEach(y => {
+    const isCurrent = parseInt(y) === currentYear;
+    const hdrLabel = isCurrent
+      ? `${y} <span style="font-size:9px;color:var(--positive);vertical-align:middle;" title="">●</span>`
+      : y;
+    const hdrTip = isCurrent
+      ? `${y} — current year. Contracts that haven't expired yet show live market prices, not final settlements.`
+      : `Final settlement price for contracts expiring in ${y}. Click a cell to jump to that contract in the Prices tab.`;
+    html += `<th data-tooltip="${hdrTip}">${hdrLabel}</th>`;
+  });
+  html += '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Year-over-year % change in this month\'s settlement vs the prior year.">YoY%</th>' +
+    `<th style="color:var(--accent-hh);" data-tooltip="Average final settlement across all visible years in the current time-window filter (${rangeLabel}).">Avg(${rangeLabel})</th>` +
+    '<th style="color:var(--accent-hh);" data-tooltip="Average of the last 5 completed settlement years — excludes current year to avoid self-reference.">5Y Avg</th>' +
+    '<th style="color:var(--accent-hh);" data-tooltip="Average of the last 3 completed settlement years — tightest recent reference.">3Y Avg</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;border-left:1px solid var(--border);" data-tooltip="Era Drift — Pre-Shale era avg (contracts expiring before 2011). Higher values reflect the pre-shale price floor.">Pre-11</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — Shale revolution era (2011–2019). US production surge structurally repriced the HH curve lower.">11–19</th>' +
+    '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — LNG Export era (2020–present). Global linkage and export capacity have added new volatility drivers.">20+</th>' +
+    '</tr></thead><tbody>';
+
   MONTHS.forEach(m => {
-    html += '<tr><td style="text-align:left;font-weight:600;cursor:pointer;" class="expiry-month-label" data-month="' + m + '" onclick="showExpiryMonthProfile(\'' + m + '\')" title="Click to view ' + m + ' expiry history">' + m + ' &#9660;</td>';
+    const hEntry = monthHighYear[m], lEntry = monthLowYear[m];
+    const sortedM = monthRankLookup[m];
+    const lastV = years.length && expiry[years[years.length - 1]] ? expiry[years[years.length - 1]][m] : null;
+    const vsAvgCur = (lastV != null && avgVisible[m] != null) ? ((lastV - avgVisible[m]) / avgVisible[m] * 100) : null;
+    const monthTip = `${m} expiry history · All-time high: $${hEntry ? hEntry.v.toFixed(3) + ' (' + hEntry.yr + ')' : '—'} · All-time low: $${lEntry ? lEntry.v.toFixed(3) + ' (' + lEntry.yr + ')' : '—'} · ${rangeLabel} avg: $${avgVisible[m] ? avgVisible[m].toFixed(3) : '—'} · 5Y avg: $${avg5y[m] ? avg5y[m].toFixed(3) : '—'}${vsAvgCur != null ? ' · Most recent: ' + (vsAvgCur >= 0 ? '+' : '') + vsAvgCur.toFixed(1) + '% vs avg' : ''}. Click ▼ to expand history chart.`;
+    html += `<tr data-tooltip="${monthTip.replace(/"/g, '&quot;')}">` +
+      `<td style="text-align:left;font-weight:600;cursor:pointer;" class="expiry-month-label" data-month="${m}" onclick="showExpiryMonthProfile('${m}')" data-tooltip="${monthTip.replace(/"/g, '&quot;')}">${m} <span style="font-size:9px;opacity:0.6;">▼</span></td>`;
     years.forEach(yr => {
       const v = expiry[yr] ? expiry[yr][m] : null;
-      if (v == null) { html += '<td style="color:var(--text-muted);">\u2014</td>'; return; }
-      // Heat-map: compare against visible-window average for better contrast
+      const isCurrent = parseInt(yr) === currentYear;
+      if (v == null) { html += `<td style="color:var(--text-muted);">\u2014</td>`; return; }
+      // Heat-map: compare against visible-window average
       const ref = avgVisible[m];
       let bg = 'transparent';
       if (ref) {
@@ -6419,65 +6441,80 @@ MONTHS.forEach(m => {
         if (delta > 0.02)       bg = 'rgba(0,255,136,'  + Math.min(delta * 1.8, 0.55) + ')';
         else if (delta < -0.02) bg = 'rgba(255,68,85,'  + Math.min(Math.abs(delta) * 1.8, 0.55) + ')';
       }
-      // Per-cell tooltip: rank + vs 5Y avg + YoY
-      const sortedM = monthRankLookup[m];
-      const rank = sortedM.indexOf(v) + 1;
-      const rankN = sortedM.length;
-      const vs5y = (avg5y[m] != null && avg5y[m] > 0) ? ((v - avg5y[m]) / avg5y[m] * 100) : null;
+      const rank   = sortedM.indexOf(v) + 1;
+      const rankN  = sortedM.length;
+      const vs5y   = (avg5y[m] != null && avg5y[m] > 0) ? ((v - avg5y[m]) / avg5y[m] * 100) : null;
       const priorYr = String(parseInt(yr) - 1);
-      const priorV = expiry[priorYr] ? expiry[priorYr][m] : null;
+      const priorV  = expiry[priorYr] ? expiry[priorYr][m] : null;
       const yoyCell = (priorV != null && priorV !== 0) ? ((v - priorV) / priorV * 100) : null;
-      const ttParts = ['Rank #' + rank + '/' + rankN + ' all time'];
-      if (vs5y != null) ttParts.push((vs5y >= 0 ? '+' : '') + vs5y.toFixed(1) + '% vs 5Y avg');
-      if (yoyCell != null) ttParts.push('YoY: ' + (yoyCell >= 0 ? '+' : '') + yoyCell.toFixed(1) + '% from ' + priorYr);
-      const tooltipTitle = ttParts.join(' | ');
+      const vsAll   = ref ? ((v - ref) / ref * 100) : null;
+      const ttParts = [
+        `${m} ${yr}: $${v.toFixed(3)}`,
+        `Rank #${rank}/${rankN} all-time`,
+        ...(vsAll != null   ? [`${vsAll >= 0 ? '+' : ''}${vsAll.toFixed(1)}% vs ${rangeLabel} avg`]   : []),
+        ...(vs5y  != null   ? [`${vs5y  >= 0 ? '+' : ''}${vs5y.toFixed(1)}% vs 5Y avg`]              : []),
+        ...(yoyCell != null ? [`YoY: ${yoyCell >= 0 ? '+' : ''}${yoyCell.toFixed(1)}% from ${priorYr}`] : []),
+        ...(isCurrent ? ['⚠ Current year — may be live price, not final settlement'] : []),
+      ];
       const rankSup = rank <= 3
-        ? '<sup style="font-size:8px;color:var(--accent-hh);vertical-align:super;">#' + rank + '</sup>'
+        ? `<sup style="font-size:8px;color:var(--accent-hh);vertical-align:super;">#${rank}</sup>`
         : rank >= rankN - 2
-          ? '<sup style="font-size:8px;color:var(--negative);vertical-align:super;">#' + rank + '</sup>'
+          ? `<sup style="font-size:8px;color:var(--negative);vertical-align:super;">#${rank}</sup>`
           : '';
-      html += '<td style="background:' + bg + ';cursor:pointer;position:relative;" title="' + tooltipTitle + '" onclick="navigateTo(\'prices\',{month:\'' + m + '\',year:\'' + yr + '\'})">' +
-        '$' + v.toFixed(3) + rankSup + '</td>';
+      const cellStyle = `background:${bg};cursor:pointer;position:relative;${isCurrent ? 'border-bottom:2px solid rgba(0,255,136,0.4);' : ''}`;
+      html += `<td style="${cellStyle}" data-tooltip="${ttParts.join(' · ').replace(/"/g, '&quot;')}" onclick="navigateTo('prices',{month:'${m}',year:'${yr}'})">${'$' + v.toFixed(3)}${rankSup}</td>`;
     });
-    // YoY column: last vs second-to-last visible year
+    // YoY column
     const lastYr = years[years.length - 1];
     const prevYr = years[years.length - 2];
-    const lastV = lastYr && expiry[lastYr] ? expiry[lastYr][m] : null;
-    const prevV = prevYr && expiry[prevYr] ? expiry[prevYr][m] : null;
-    const yoy = (lastV != null && prevV != null && prevV > 0)
-      ? (lastV - prevV) / prevV * 100 : null;
-    html += '<td style="color:' + (yoy == null ? 'var(--text-muted)' : yoy >= 0 ? 'var(--positive)' : 'var(--negative)') + ';font-style:italic;">' +
+    const lastVy = lastYr && expiry[lastYr] ? expiry[lastYr][m] : null;
+    const prevVy = prevYr && expiry[prevYr] ? expiry[prevYr][m] : null;
+    const yoy = (lastVy != null && prevVy != null && prevVy > 0) ? (lastVy - prevVy) / prevVy * 100 : null;
+    const yoyTip = yoy != null ? `${m} YoY: ${lastYr} ($${lastVy.toFixed(3)}) vs ${prevYr} ($${prevVy.toFixed(3)}) = ${yoy >= 0 ? '+' : ''}${yoy.toFixed(1)}%` : `${m}: no prior year available for comparison`;
+    html += `<td style="color:${yoy == null ? 'var(--text-muted)' : yoy >= 0 ? 'var(--positive)' : 'var(--negative)'};font-style:italic;" data-tooltip="${yoyTip}">` +
       (yoy == null ? '\u2014' : (yoy >= 0 ? '+' : '') + yoy.toFixed(1) + '%') + '</td>';
     // Avg columns
-    [avgVisible, avg5y, avg3y].forEach(a => {
-      html += '<td style="font-weight:600;">' + (a[m] != null ? '$' + a[m].toFixed(3) : '\u2014') + '</td>';
+    const avgTips = [
+      `${m} average across all ${rangeLabel} visible years. Used as the heatmap baseline.`,
+      `${m} average of the last 5 completed years${avg5y[m] ? ' ($' + avg5y[m].toFixed(3) + ')' : ''}. Excludes current year.`,
+      `${m} average of the last 3 completed years${avg3y[m] ? ' ($' + avg3y[m].toFixed(3) + ')' : ''}. Tightest recent reference.`,
+    ];
+    [avgVisible, avg5y, avg3y].forEach((a, i) => {
+      const av = a[m];
+      const curVsDiff = (lastV != null && av != null) ? ((lastV - av) / av * 100) : null;
+      const sub = curVsDiff != null ? ` · most recent: ${curVsDiff >= 0 ? '+' : ''}${curVsDiff.toFixed(1)}%` : '';
+      html += `<td style="font-weight:600;" data-tooltip="${avgTips[i]}${sub}">${av != null ? '$' + av.toFixed(3) : '\u2014'}</td>`;
     });
     // Era Drift columns
+    const eraLabels = ['Pre-2011 (pre-shale) era', '2011–2019 (shale) era', '2020+ (LNG export) era'];
     [avgEra1, avgEra2, avgEra3].forEach((a, i) => {
       const v = a[m];
       const borderStyle = i === 0 ? 'border-left:1px solid var(--border);' : '';
-      if (v == null) { html += '<td style="color:var(--text-muted);' + borderStyle + '">\u2014</td>'; return; }
-      // Color: compare era avg vs the overall visible avg
+      if (v == null) { html += `<td style="color:var(--text-muted);${borderStyle}">\u2014</td>`; return; }
       const ref = avgVisible[m];
       let color = 'var(--text-secondary)';
-      if (ref) {
-        const d = (v - ref) / ref;
-        if (d > 0.03) color = 'var(--positive)';
-        else if (d < -0.03) color = 'var(--negative)';
-      }
-      html += '<td style="font-size:11px;color:' + color + ';' + borderStyle + '" title="Era avg: $' + v.toFixed(3) + '">' + '$' + v.toFixed(2) + '</td>';
+      if (ref) { const d = (v - ref) / ref; if (d > 0.03) color = 'var(--positive)'; else if (d < -0.03) color = 'var(--negative)'; }
+      const vsVis = ref ? ((v - ref) / ref * 100) : null;
+      const eraTip = `${m} ${eraLabels[i]} avg: $${v.toFixed(3)}${vsVis != null ? ' · ' + (vsVis >= 0 ? '+' : '') + vsVis.toFixed(1) + '% vs ' + rangeLabel + ' avg' : ''}`;
+      html += `<td style="font-size:11px;color:${color};${borderStyle}" data-tooltip="${eraTip}">$${v.toFixed(2)}</td>`;
     });
     html += '</tr>';
   });
 
-  // Year Avg row — fix: compute cross-column averages instead of blank cells
-  html += '<tr style="border-top:2px solid var(--border);"><td style="text-align:left;font-weight:700;">Year Avg</td>';
+  // Year Avg row
+  html += '<tr style="border-top:2px solid var(--border);"><td style="text-align:left;font-weight:700;" data-tooltip="Average settlement price across all 12 months for each year. Useful for comparing full-year price regimes.">Year Avg</td>';
   const yearAvgs = [];
-  years.forEach(yr => {
+  years.forEach((yr, yi) => {
     const vals = MONTHS.map(m => expiry[yr] ? expiry[yr][m] : null).filter(v => v != null);
     const avg = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
     yearAvgs.push(avg);
-    html += '<td style="font-weight:600;">' + (avg != null ? '$' + avg.toFixed(3) : '\u2014') + '</td>';
+    const isCurrent = parseInt(yr) === currentYear;
+    const priorAvgY = yi > 0 ? yearAvgs[yi - 1] : null;
+    const yoyYr = (avg != null && priorAvgY != null && priorAvgY > 0) ? ((avg - priorAvgY) / priorAvgY * 100) : null;
+    const tip = avg != null
+      ? `${yr} full-year avg: $${avg.toFixed(3)} · ${vals.length}/12 months settled${yoyYr != null ? ' · YoY: ' + (yoyYr >= 0 ? '+' : '') + yoyYr.toFixed(1) + '%' : ''}${isCurrent ? ' · Current year (partial)' : ''}`
+      : `${yr}: insufficient data`;
+    html += `<td style="font-weight:600;" data-tooltip="${tip}">${avg != null ? '$' + avg.toFixed(3) : '\u2014'}</td>`;
   });
   const lastYrAvg = yearAvgs[yearAvgs.length - 1];
   const prevYrAvg = yearAvgs[yearAvgs.length - 2];
@@ -6508,14 +6545,17 @@ MONTHS.forEach(m => {
   html += '</tr>';
 
   // YoY% row — year-over-year % change of full-year average
-  html += '<tr style="border-top:1px solid var(--border);background:rgba(0,0,0,0.18);"><td style="text-align:left;font-weight:700;color:var(--text-muted);font-size:11px;">YoY%</td>';
+  html += '<tr style="border-top:1px solid var(--border);background:rgba(0,0,0,0.18);"><td style="text-align:left;font-weight:700;color:var(--text-muted);font-size:11px;" data-tooltip="Year-over-year % change in the full-year average settlement price. Shows the direction and magnitude of annual price regime shifts.">YoY%</td>';
   years.forEach((yr, i) => {
     const thisAvg = yearAvgs[i];
     const priorAvg = i > 0 ? yearAvgs[i - 1] : null;
+    const prevYr = i > 0 ? years[i - 1] : null;
     const yoyRow = (thisAvg != null && priorAvg != null && priorAvg > 0)
       ? (thisAvg - priorAvg) / priorAvg * 100 : null;
-    html += '<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;color:' +
-      (yoyRow == null ? 'var(--text-muted)' : yoyRow >= 0 ? '#00ff88' : '#ff4455') + ';">' +
+    const tip = yoyRow != null
+      ? `${yr} full-year avg ($${thisAvg.toFixed(3)}) vs ${prevYr} ($${priorAvg.toFixed(3)}) = ${yoyRow >= 0 ? '+' : ''}${yoyRow.toFixed(1)}% YoY`
+      : `${yr}: no prior year available for YoY comparison`;
+    html += `<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;color:${yoyRow == null ? 'var(--text-muted)' : yoyRow >= 0 ? '#00ff88' : '#ff4455'};" data-tooltip="${tip}">` +
       (yoyRow == null ? '\u2014' : (yoyRow >= 0 ? '+' : '') + yoyRow.toFixed(1) + '%') + '</td>';
   });
   // YoY% column in the summary columns (YoY of last vs prev yearAvg — same as yoyAvg already computed)
