@@ -5687,51 +5687,106 @@ function renderCurveTable(curveData, windowContext) {
   const priceMin = quotedPrices.length ? Math.min(...quotedPrices) : 0;
   const priceMax = quotedPrices.length ? Math.max(...quotedPrices) : 0;
   const priceRange = (priceMax - priceMin) || 1;
-  const seasonColor = { winter: '#f5f7fb', summer: '#c5c8cf', shoulder: '#7d818b' };
+  const frontPrice = curveData.quotedSlots.length ? curveData.quotedSlots[0].price : null;
+  const today = new Date();
 
-  let tableHtml = `<div class="card-title" style="padding:12px 16px 8px;">Contract Quotes <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${curveData.quotedSlots.length}/${curveData.slots.length} quoted total</span></div>`;
-  tableHtml += `<div style="overflow-x:auto;"><table><thead><tr>
-    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Contract</th>
-    <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;">Price</th>
-    <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;">Last Quote</th>
-    <th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;">Season</th>
-  </tr></thead><tbody>`;
+  const seasonBadge = season => {
+    const s = {
+      winter:   'background:rgba(56,189,248,0.12);color:#e2e8f0;border:1px solid rgba(56,189,248,0.25);',
+      summer:   'background:rgba(251,146,60,0.12);color:#e2c09a;border:1px solid rgba(251,146,60,0.25);',
+      shoulder: 'background:rgba(148,163,184,0.08);color:#7d818b;border:1px solid rgba(148,163,184,0.2);',
+    };
+    return `<span style="font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600;${s[season] || ''}">${season.charAt(0).toUpperCase() + season.slice(1)}</span>`;
+  };
+
+  const th  = (l, tip) => `<th style="text-align:center;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="${tip}">${l}</th>`;
+  const thL = (l, tip) => `<th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="${tip}">${l}</th>`;
+
+  let tableHtml =
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px;flex-wrap:wrap;gap:4px;">` +
+    `<span class="card-title" style="padding:0;" data-tooltip="All contracts in the forward strip. Click any row to view that contract's full price history in the Prices tab. Rows highlighted with a faint background are within the current window selection.">Contract Quotes</span>` +
+    `<span style="font-size:11px;color:var(--text-muted);">${curveData.quotedSlots.length}/${curveData.slots.length} quoted` +
+    (frontPrice != null ? ` · Front: <span style="color:var(--text-primary);font-family:var(--font-mono);">${meta.currency}${frontPrice.toFixed(3)}</span>` : '') +
+    `</span></div>` +
+    `<div style="overflow-x:auto;"><table><thead><tr>` +
+    thL('Contract',   'NYMEX ticker and delivery month. Click any row to view that contract\'s full price history in the Prices tab.') +
+    th('Price',       `Live market price. Bar shows position within the strip range (${meta.currency}${priceMin.toFixed(3)}–${meta.currency}${priceMax.toFixed(3)}).`) +
+    th('vs Front',    `Premium or discount vs the front-month contract (${meta.currency}${frontPrice != null ? frontPrice.toFixed(3) : '—'}). Positive = contango, negative = backwardation.`) +
+    th('vs Prev',     'Price change vs the immediately prior contract — the local slope of the curve at each step. Shows whether the curve is steepening or flattening.') +
+    th('Season',      'Delivery season. Winter (Nov–Mar) typically commands a premium due to heating demand. Summer (Apr–Oct) is cooling season. Shoulder = spring/fall transition.') +
+    th('Last Quote',  'Date of the most recent market quote for this contract. Amber = >1 day stale, red = >5 days stale.') +
+    `</tr></thead><tbody>`;
 
   curveData.slots.forEach((slot, index) => {
     const inWindow = index >= windowContext.start && index <= windowContext.end;
-    const rowStyle = `${inWindow ? 'background:rgba(255,255,255,0.03);' : ''}${slot.missing ? 'opacity:0.72;' : ''}cursor:pointer;`;
-    const barWidth = (Number.isFinite(slot.price) && priceRange > 0) ? ((slot.price - priceMin) / priceRange * 40).toFixed(1) : '0';
+    const rowBg = inWindow ? 'background:rgba(255,255,255,0.035);' : '';
+
+    // Price bar
+    const barW = (Number.isFinite(slot.price) && priceRange > 0) ? ((slot.price - priceMin) / priceRange * 48).toFixed(1) : '0';
     const bar = Number.isFinite(slot.price)
-      ? `<span style="display:inline-block;width:${barWidth}px;height:3px;background:${meta.color};border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`
+      ? `<span style="display:inline-block;width:${barW}px;height:3px;background:${meta.color};border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:5px;"></span>`
       : '';
     const priceHtml = Number.isFinite(slot.price)
-      ? `${meta.currency}${slot.price.toFixed(3)}${bar}`
+      ? `<span style="font-family:var(--font-mono);">${meta.currency}${slot.price.toFixed(3)}</span>${bar}`
       : `<span style="color:var(--text-muted);">—</span>`;
-    const quoteHtml = slot.quoteDate
-      ? formatDisplayDate(slot.quoteDate)
-      : `<span style="color:var(--negative);">Missing</span>`;
-    const seasonHtml = `<span style="color:${seasonColor[slot.season]};">${slot.season.charAt(0).toUpperCase() + slot.season.slice(1)}</span>`;
 
-    // Extract month and year from ticker for cross-tab navigation
-    // Ticker format: NGJ26 or TTFJ26 — month code at pos 2 (HH) or pos 3 (TTF)
+    // vs Front
+    const vsFront = (Number.isFinite(slot.price) && frontPrice != null) ? slot.price - frontPrice : null;
+    const vfC = vsFront == null ? 'var(--text-muted)' : Math.abs(vsFront) < 0.005 ? 'var(--text-muted)' : vsFront > 0 ? 'var(--positive)' : 'var(--negative)';
+    const vsFrontHtml = vsFront == null
+      ? `<span style="color:var(--text-muted);">—</span>`
+      : `<span style="font-family:var(--font-mono);color:${vfC};">${vsFront >= 0 ? '+$' : '-$'}${Math.abs(vsFront).toFixed(3)}</span>`;
+
+    // vs Prev
+    const prevSlot = index > 0 ? curveData.slots[index - 1] : null;
+    const vsPrev = (Number.isFinite(slot.price) && prevSlot && Number.isFinite(prevSlot.price)) ? slot.price - prevSlot.price : null;
+    const vpC = vsPrev == null ? 'var(--text-muted)' : Math.abs(vsPrev) < 0.001 ? 'var(--text-muted)' : vsPrev > 0 ? 'var(--positive)' : 'var(--negative)';
+    const vsPrevHtml = vsPrev == null
+      ? `<span style="color:var(--text-muted);">—</span>`
+      : `<span style="font-family:var(--font-mono);font-size:11px;color:${vpC};">${vsPrev > 0 ? '▲' : '▼'}${vsPrev >= 0 ? '+$' : '-$'}${Math.abs(vsPrev).toFixed(3)}</span>`;
+
+    // Season badge
+    const seasonHtml = seasonBadge(slot.season);
+
+    // Last quote with staleness
+    let quoteHtml;
+    if (slot.quoteDate) {
+      const ageDays = Math.round((today - new Date(slot.quoteDate + 'T12:00:00Z')) / 86400000);
+      const ageC = ageDays > 5 ? 'var(--negative)' : ageDays > 1 ? 'var(--warning)' : 'var(--text-secondary)';
+      const ageSuffix = ageDays > 1 ? ` <span style="font-size:10px;color:${ageC};">(${ageDays}d)</span>` : '';
+      quoteHtml = `<span style="font-family:var(--font-mono);font-size:12px;color:${ageC};">${formatDisplayDate(slot.quoteDate)}</span>${ageSuffix}`;
+    } else {
+      quoteHtml = `<span style="color:var(--negative);">Missing</span>`;
+    }
+
+    // Row tooltip
+    const rowTip = Number.isFinite(slot.price)
+      ? `${slot.ticker} · ${slot.label} · ${meta.currency}${slot.price.toFixed(3)}`
+        + (vsFront != null ? ` · vs front: ${vsFront >= 0 ? '+$' : '-$'}${Math.abs(vsFront).toFixed(3)}` : '')
+        + (vsPrev  != null ? ` · vs prev: ${vsPrev  >= 0 ? '+$' : '-$'}${Math.abs(vsPrev).toFixed(3)}`  : '')
+        + ` · ${slot.season}${inWindow ? ' · in window' : ''}`
+      : `${slot.ticker} · ${slot.label}: no quote available`;
+
+    // Navigation
     const isHH = instrument === 'hh';
-    const tickerCode = isHH ? slot.ticker.charAt(2) : slot.ticker.charAt(3);
+    const tickerCode  = isHH ? slot.ticker.charAt(2) : slot.ticker.charAt(3);
     const tickerYrStr = isHH ? slot.ticker.slice(3) : slot.ticker.slice(4);
     const tickerYrFull = parseInt(tickerYrStr) < 50 ? 2000 + parseInt(tickerYrStr) : 1900 + parseInt(tickerYrStr);
     const tickerMonth = (typeof CODE_TO_MONTH !== 'undefined' ? CODE_TO_MONTH : {})[tickerCode] || '';
     const navMarket = isHH ? 'hh' : 'ttf';
-    const clickHandler = tickerMonth
-      ? `onclick="navigateTo('prices',{market:'${navMarket}',month:'${tickerMonth}',year:'${tickerYrFull}'})" title="View ${slot.ticker} in Prices tab"`
-      : '';
+    const clickAttr = tickerMonth
+      ? `onclick="navigateTo('prices',{market:'${navMarket}',month:'${tickerMonth}',year:'${tickerYrFull}'})"` : '';
 
-    tableHtml += `<tr style="${rowStyle}" ${clickHandler}>
+    tableHtml += `<tr style="${rowBg}${slot.missing ? 'opacity:0.7;' : ''}cursor:pointer;" ${clickAttr} data-tooltip="${rowTip.replace(/"/g, '&quot;')}">
       <td style="text-align:left;">
         <div style="font-family:var(--font-mono);color:${meta.color};">${slot.ticker}</div>
         <div style="font-size:11px;color:var(--text-muted);">${slot.label}</div>
       </td>
       <td style="text-align:center;">${priceHtml}</td>
-      <td style="text-align:center;font-family:var(--font-mono);font-size:12px;">${quoteHtml}</td>
+      <td style="text-align:center;">${vsFrontHtml}</td>
+      <td style="text-align:center;">${vsPrevHtml}</td>
       <td style="text-align:center;">${seasonHtml}</td>
+      <td style="text-align:center;">${quoteHtml}</td>
     </tr>`;
   });
 
