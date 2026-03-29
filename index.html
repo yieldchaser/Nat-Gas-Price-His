@@ -7086,7 +7086,7 @@ function renderDailyTab() {
 
       <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
         <div class="card grow" style="min-width:260px;padding:0;">
-          <div class="card-title" style="padding:10px 14px 0;" data-tooltip="Henry Hub (USD/MMBtu) vs Dutch TTF (EUR/MWh) price ratio — a proxy for transatlantic LNG arbitrage. Compression signals US LNG export demand is tightening the spread.">NG vs TTF Spread</div>
+          <div class="card-title" style="padding:10px 14px 0;" data-tooltip="Nominal price differential: Henry Hub NG=F (USD/MMBtu) minus Dutch TTF front-month price. Negative values mean TTF is trading above HH. The spread compresses when US LNG export demand rises and widens when European demand falls. 52W High/Low reference lines are shown on the chart.">NG vs TTF Spread</div>
           <div id="daily-spread-legend" style="padding:6px 14px 0;display:flex;flex-wrap:wrap;gap:5px;"></div>
           <div id="daily-spread-kpis" class="ctrl-toolbar" style="padding:10px 14px;margin:0 14px 12px;width:calc(100% - 28px);flex-wrap:wrap;gap:8px;border-radius:var(--radius);"></div>
           <div class="chart-wrap" id="daily-spread-chart" style="height:190px;"></div>
@@ -7574,32 +7574,58 @@ function _renderSpreadPanel(ngData) {
 
   const currentSpread = spreadSeries[spreadSeries.length - 1].value;
   const spreadPrices = spreadSeries.map(s => s.value);
-  const highSpread = Math.max(...spreadPrices);
-  const lowSpread = Math.min(...spreadPrices);
   const avgSpread = spreadPrices.reduce((s, v) => s + v, 0) / spreadPrices.length;
-  
+
   const now = new Date();
   const yearStart = `${now.getFullYear()}-01-01`;
   const ytdSeries = spreadSeries.filter(s => s.time >= yearStart);
-  const ytdDelta = ytdSeries.length >= 2 
-    ? (currentSpread - ytdSeries[0].value) 
+  const ytdDelta = ytdSeries.length >= 2
+    ? (currentSpread - ytdSeries[0].value)
     : null;
 
-  const chip = (label, value, color) =>
-    '<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:110px;flex:1;">' +
-    '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">' + label + '</div>' +
-    '<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + value + '</div>' +
-    '</div>';
+  // 52W values — consistent with the chart reference lines
+  const spread52w = spreadSeries.slice(-252);
+  const high52w = Math.max(...spread52w.map(s => s.value));
+  const low52w  = Math.min(...spread52w.map(s => s.value));
+  const range52w = high52w - low52w || 1;
+  const rangePct = Math.round((currentSpread - low52w) / range52w * 100);
+  const vsAvg = currentSpread - avgSpread;
 
   const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(3);
   const spreadColor = currentSpread >= 0 ? 'var(--positive)' : 'var(--negative)';
+  const vsAvgColor  = vsAvg >= 0 ? 'var(--positive)' : 'var(--negative)';
+  const rangePctColor = rangePct >= 70 ? 'var(--positive)' : rangePct <= 30 ? 'var(--negative)' : 'var(--text-secondary)';
+
+  // Small inline range bar for the 52W position chip
+  const rangeBarPct = Math.max(0, Math.min(100, rangePct));
+  const rangeBar = `<div style="display:flex;align-items:center;gap:5px;">
+    <span style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${rangePctColor};">${rangePct}%</span>
+    <div style="position:relative;width:48px;height:5px;background:var(--bg-page);border-radius:3px;overflow:hidden;flex-shrink:0;">
+      <div style="position:absolute;top:0;left:0;width:${rangeBarPct}%;height:100%;background:${rangePctColor};border-radius:3px;"></div>
+    </div>
+  </div>`;
+
+  const chip = (label, value, color, tip, sub) =>
+    `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;flex:1;" data-tooltip="${tip}">` +
+    `<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>` +
+    `<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color || 'var(--text-primary)'};">${value}</div>` +
+    (sub ? `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);">${sub}</div>` : '') +
+    `</div>`;
 
   chipsEl.innerHTML = [
-    chip('Current Spread', fmt(currentSpread), spreadColor),
-    chip('52W High', fmt(highSpread), '#ff8c00'),
-    chip('52W Low', fmt(lowSpread), '#00d4ff'),
-    chip('Avg Spread', fmt(avgSpread), 'var(--text-secondary)'),
-    chip('YTD \u0394', ytdDelta !== null ? fmt(ytdDelta) : '\u2014', (ytdDelta || 0) >= 0 ? 'var(--positive)' : 'var(--negative)'),
+    chip('Current Spread', fmt(currentSpread), spreadColor,
+      `Nominal spread: NG=F (USD/MMBtu) minus TTF front-month price. Negative = TTF is higher. vs all-time avg: ${fmt(vsAvg)}.`,
+      `vs avg: <span style="color:${vsAvgColor}">${fmt(vsAvg)}</span>`),
+    chip('52W High', fmt(high52w), '#ff8c00',
+      `Highest spread value over the last 252 trading sessions (~1 year). Shown as the orange dashed reference line on the chart.`),
+    chip('52W Low', fmt(low52w), '#00d4ff',
+      `Lowest spread value over the last 252 trading sessions (~1 year). Shown as the teal dashed reference line on the chart.`),
+    chip('52W Range %', rangeBar, rangePctColor,
+      `Where the current spread sits within its 52-week high/low range. 100% = at the 52W high, 0% = at the 52W low. Helps gauge whether the spread is historically wide or compressed.`),
+    chip('Avg Spread', fmt(avgSpread), 'var(--text-secondary)',
+      `All-time average spread across the full history of overlapping NG and TTF data.`),
+    chip('YTD \u0394', ytdDelta !== null ? fmt(ytdDelta) : '\u2014', (ytdDelta || 0) >= 0 ? 'var(--positive)' : 'var(--negative)',
+      `Change in the NG vs TTF spread since January 1st of this year. Widening = NG gaining relative to TTF; narrowing = TTF gaining.`),
   ].join('');
 
   if (spreadSeries.length < 2) {
@@ -7608,7 +7634,7 @@ function _renderSpreadPanel(ngData) {
   }
 
   const spreadChart = createManagedChart('daily', 'spread', chartEl);
-  const zeroLine = spreadChart.addLineSeries({ color: 'rgba(255,255,255,0.1)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  const zeroLine = spreadChart.addLineSeries({ color: 'rgba(255,255,255,0.2)', lineWidth: 1, lineStyle: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
   zeroLine.setData([{ time: spreadSeries[0].time, value: 0 }, { time: spreadSeries[spreadSeries.length - 1].time, value: 0 }]);
   const sSeries = spreadChart.addLineSeries({
     color: '#a78bfa', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerRadius: 4,
@@ -7616,10 +7642,10 @@ function _renderSpreadPanel(ngData) {
   });
   sSeries.setData(spreadSeries);
   applyChartTimeScaleOptions(spreadChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(600 / spreadSeries.length)), fixLeftEdge: true, fixRightEdge: true });
-  
-  const spread52w = spreadSeries.slice(-252);
-  const sHighVal = Math.max(...spread52w.map(s => s.value));
-  const sLowVal = Math.min(...spread52w.map(s => s.value));
+
+  // Use the already-computed 52W values (consistent with KPI chips)
+  const sHighVal = high52w;
+  const sLowVal  = low52w;
 
   const sHighSeries = spreadChart.addLineSeries({
     color: '#ff8c00', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
