@@ -898,6 +898,8 @@ const STATE = {
   liveData: {},
   charts: {},
   seasonalCache: {},
+  seasonalCache15y: {},   // lazy-built on first 15Y toggle click
+  seasonalCacheAll: {},   // lazy-built on first ALL toggle click
   ttfSeasonalCache: {},
   spotSeasonalCache: {},
   eurusd: 1.08, // fallback
@@ -1512,6 +1514,67 @@ async function buildSeasonalCache() {
   }
 }
 
+/* ─── Lazy-built extended seasonal caches (15Y and All-history) ─── */
+async function buildSeasonalCacheExtended(yearsBack, stateKey) {
+  // yearsBack = 15 for "15Y", Infinity for "ALL"
+  const currentYear = new Date().getFullYear();
+  for (let index = 0; index < MONTHS.length; index++) {
+    const month = MONTHS[index];
+    if (!STATE.hh[month]) continue;
+    const contracts = STATE.hh[month].contracts;
+    const cache = {};
+    // Determine year range
+    const startYear = Number.isFinite(yearsBack) ? currentYear - yearsBack : -Infinity;
+    for (let yr = Math.max(1990, startYear === -Infinity ? 1990 : startYear); yr < currentYear; yr++) {
+      const yy = yr % 100;
+      const pad = yy < 10 ? '0' + yy : '' + yy;
+      const ticker = `NG${MONTH_CODES[month]}${pad}`;
+      const rawData = contracts[ticker];
+      if (!rawData) continue;
+      let data = rawData;
+      const expiry = estimateContractExpiry(ticker);
+      if (expiry) {
+        data = rawData.map(pt => {
+          const daysLeft = approxTradingDaysTo(pt.date, expiry);
+          const d = 519 - daysLeft;
+          if (d < 1) return null;
+          return { d: Math.min(519, d), p: pt.p, date: pt.date };
+        }).filter(Boolean);
+      }
+      data.forEach(pt => {
+        if (!cache[pt.d]) cache[pt.d] = { sum: 0, sumSq: 0, count: 0, min: Infinity, max: -Infinity };
+        cache[pt.d].sum += pt.p;
+        cache[pt.d].sumSq += pt.p * pt.p;
+        cache[pt.d].count++;
+        cache[pt.d].min = Math.min(cache[pt.d].min, pt.p);
+        cache[pt.d].max = Math.max(cache[pt.d].max, pt.p);
+      });
+    }
+    Object.keys(cache).forEach(d => {
+      const c = cache[d];
+      c.avg = c.sum / c.count;
+      const variance = c.count > 1 ? (c.sumSq / c.count) - (c.avg * c.avg) : 0;
+      c.stddev = variance > 0 ? Math.sqrt(variance) : 0;
+      if (c.min === Infinity) c.min = 0;
+      if (c.max === -Infinity) c.max = 0;
+    });
+    STATE[stateKey][month] = cache;
+    await yieldToBrowser();
+  }
+}
+
+async function ensureSeasonalCache15y() {
+  if (STATE._seasonal15yBuilt) return;
+  STATE._seasonal15yBuilt = true; // set early to prevent concurrent builds
+  await buildSeasonalCacheExtended(15, 'seasonalCache15y');
+}
+
+async function ensureSeasonalCacheAll() {
+  if (STATE._seasonalAllBuilt) return;
+  STATE._seasonalAllBuilt = true;
+  await buildSeasonalCacheExtended(Infinity, 'seasonalCacheAll');
+}
+
 async function buildTTFSeasonalCache() {
   const currentYear = new Date().getFullYear();
   for (let index = 0; index < MONTHS.length; index++) {
@@ -1823,6 +1886,14 @@ function renderHHTab() {
              <button class="segment-btn" data-mode="tday">Trading Day</button>
           </div>
         </div>
+        <div class="flex flex-col gap-sm">
+          <label>Seasonal Window</label>
+          <div class="segment-switch" id="hh-seasonal-window">
+            <button class="segment-btn active" data-window="5y">5Y</button>
+            <button class="segment-btn" data-window="15y">15Y</button>
+            <button class="segment-btn" data-window="all">ALL</button>
+          </div>
+        </div>
         <button class="toggle-btn" id="hh-compare-toggle">Compare Mode</button>
         <div class="flex flex-col gap-sm" id="hh-compare-select" style="display:none;">
           <label>Compare Year</label>
@@ -1857,6 +1928,17 @@ function renderHHTab() {
       if (!btn) return;
       document.querySelectorAll('#hh-mode-switch .segment-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      updateHHChart();
+    });
+    document.getElementById('hh-seasonal-window').addEventListener('click', async e => {
+      const btn = e.target.closest('.segment-btn');
+      if (!btn) return;
+      document.querySelectorAll('#hh-seasonal-window .segment-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // Lazy-build extended caches on first click
+      const w = btn.dataset.window;
+      if (w === '15y') await ensureSeasonalCache15y();
+      else if (w === 'all') await ensureSeasonalCacheAll();
       updateHHChart();
     });
     document.getElementById('hh-compare-toggle').addEventListener('click', function() {
@@ -2070,7 +2152,13 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
   // calendarMode here means "Trading Days" button is active = use dayToTime
 
   // 5Y seasonal band (min/max area)
-  const seasonal = STATE.seasonalCache[month];
+  // Determine which seasonal cache to use based on the window toggle
+  const _windowBtn = document.querySelector('#hh-seasonal-window .segment-btn.active');
+  const _windowKey = _windowBtn ? _windowBtn.dataset.window : '5y';
+  const _cacheMap = { '5y': STATE.seasonalCache, '15y': STATE.seasonalCache15y, 'all': STATE.seasonalCacheAll };
+  const _seasonal = (_cacheMap[_windowKey] || STATE.seasonalCache)[month] || STATE.seasonalCache[month];
+  const _windowLabel = { '5y': '5Y', '15y': '15Y', 'all': 'ALL' }[_windowKey] || '5Y';
+  const seasonal = _seasonal;
   if (seasonal) {
     const bandData = [];
     const avgData = [];
@@ -2291,16 +2379,21 @@ function renderHHStats(data, month, year) {
   const last = data[data.length - 1];
   const first = data[0];
   const { max: high, min: low, avg } = getSeriesStats(data);
-  const seasonal = STATE.seasonalCache[month];
+  
+  const _windowBtn = document.querySelector('#hh-seasonal-window .segment-btn.active');
+  const _windowKey = _windowBtn ? _windowBtn.dataset.window : '5y';
+  const _cacheMap = { '5y': STATE.seasonalCache, '15y': STATE.seasonalCache15y, 'all': STATE.seasonalCacheAll };
+  const seasonal = (_cacheMap[_windowKey] || STATE.seasonalCache)[month] || STATE.seasonalCache[month];
+  
   const currentDay = last.d;
 
   let vs5yAvg = '—';
   let percentile = '—';
-  let seasonalYLabel = '5Y';
+  let seasonalYLabel = { '5y': '5Y', '15y': '15Y', 'all': 'ALL' }[_windowKey] || '5Y';
   if (seasonal && seasonal[currentDay]) {
     const s = seasonal[currentDay];
-    // s.count = how many prior-year contracts contributed; may be < 5 for new TTF months
-    seasonalYLabel = s.count < 5 ? `${s.count}Y` : '5Y';
+    // s.count = how many prior-year contracts contributed
+    if (_windowKey !== 'all' && s.count < parseInt(_windowKey)) seasonalYLabel = `${s.count}Y`;
     const delta = ((last.p - s.avg) / s.avg * 100);
     vs5yAvg = `<span class="${delta >= 0 ? 'positive' : 'negative'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}%</span> vs ${seasonalYLabel} avg`;
     if (s.max !== s.min) {
@@ -2460,12 +2553,17 @@ function renderHHHistoryTable(month, currentYear) {
 
 function renderHHSeasonalBar(data, month) {
   const bar = document.getElementById('hh-seasonal-bar');
-  const seasonal = STATE.seasonalCache[month];
+  const _windowBtn = document.querySelector('#hh-seasonal-window .segment-btn.active');
+  const _windowKey = _windowBtn ? _windowBtn.dataset.window : '5y';
+  const _cacheMap = { '5y': STATE.seasonalCache, '15y': STATE.seasonalCache15y, 'all': STATE.seasonalCacheAll };
+  const seasonal = (_cacheMap[_windowKey] || STATE.seasonalCache)[month] || STATE.seasonalCache[month];
+  
   if (!seasonal || data.length === 0) { bar.textContent = ''; return; }
   const last = data[data.length - 1];
   const s = seasonal[last.d];
   if (!s) { bar.textContent = ''; return; }
-  const yLabel = s.count < 5 ? `${s.count}Y` : '5Y';
+  let yLabel = { '5y': '5Y', '15y': '15Y', 'all': 'ALL' }[_windowKey] || '5Y';
+  if (_windowKey !== 'all' && s.count < parseInt(_windowKey)) yLabel = `${s.count}Y`;
   const delta = ((last.p - s.avg) / s.avg * 100);
   const pct = s.max !== s.min ? Math.round(((last.p - s.min) / (s.max - s.min)) * 100) : 50;
   bar.innerHTML = `
