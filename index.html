@@ -8034,27 +8034,93 @@ function _renderPriceLogPage(el) {
   const allPrices = data.map(p => p.p);
   const pMin = Math.min(...allPrices), pMax = Math.max(...allPrices), pRange = pMax - pMin || 1;
   const sessionLabel = data.length >= 8000 ? data.length + '+ SESSIONS' : data.length + ' sessions';
-  const th = (label, extra) => '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;' + (label === 'Date' ? 'text-align:left;' : '') + (extra || '') + '">' + label + '</th>';
-  let html = '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 6px;flex-wrap:wrap;gap:4px;">' +
-    '<span class="card-title" style="margin-bottom:0;">Price Log &mdash; NG=F · <span style="color:var(--accent-hh);">' + sessionLabel + '</span></span>' +
-    '<div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">' +
-    '<button onclick="_priceLogPage(-1)" style="background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:var(--font-mono);font-size:12px;" ' + (page === 0 ? 'disabled' : '') + '>&#9664; Prev</button>' +
-    '<span>Page ' + (page + 1) + ' / ' + totalPages + '</span>' +
-    '<button onclick="_priceLogPage(1)" style="background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:var(--font-mono);font-size:12px;" ' + (page >= totalPages - 1 ? 'disabled' : '') + '>Next &#9654;</button>' +
-    '</div></div>';
-  html += '<div style="overflow-y:auto;max-height:420px;"><table><thead><tr>' + th('Date') + th('Close') + th('Day \u0394%') + th('Range') + '</tr></thead><tbody>';
+
+  // Pre-compute streaks for the full dataset (most recent first)
+  const streaks = new Array(data.length).fill(0);
+  for (let i = 0; i < data.length; i++) {
+    const prevIdx = i + 1;
+    if (prevIdx >= data.length) { streaks[i] = 1; continue; }
+    const delta = data[prevIdx].p > 0 ? (data[i].p - data[prevIdx].p) / data[prevIdx].p : 0;
+    const dir = delta > 0 ? 1 : delta < 0 ? -1 : 0;
+    if (dir === 0) { streaks[i] = 0; continue; }
+    let count = 1;
+    let j = i + 1;
+    while (j < data.length - 1) {
+      const d2 = data[j + 1].p > 0 ? (data[j].p - data[j + 1].p) / data[j + 1].p : 0;
+      const d2dir = d2 > 0 ? 1 : d2 < 0 ? -1 : 0;
+      if (d2dir !== dir) break;
+      count++; j++;
+    }
+    streaks[i] = dir * count;
+  }
+
+  // Recent stats for header summary
+  const recent20 = data.slice(0, Math.min(20, data.length));
+  const posRecent = recent20.filter((pt, i) => i < recent20.length - 1 && pt.p > recent20[i + 1].p).length;
+
+  const th = (label, tip, extra) =>
+    '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;' +
+    (label === 'Date' ? 'text-align:left;' : '') + (extra || '') + '"' +
+    (tip ? ' data-tooltip="' + tip + '"' : '') + '>' + label + '</th>';
+
+  let html =
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border);">' +
+      '<div>' +
+        '<span class="card-title" style="margin-bottom:0;">Price Log &mdash; NG=F · <span style="color:var(--accent-hh);">' + sessionLabel + '</span></span>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;font-family:var(--font-mono);">' +
+          'All-time range: $' + pMin.toFixed(3) + ' – $' + pMax.toFixed(3) + ' · ' +
+          'Last 20 sessions: ' + posRecent + '/20 up · ' +
+          'Current streak: ' + (streaks[0] > 0 ? '<span style="color:var(--positive);">▲' + Math.abs(streaks[0]) + ' up</span>' : streaks[0] < 0 ? '<span style="color:var(--negative);">▼' + Math.abs(streaks[0]) + ' down</span>' : 'flat') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">' +
+        '<button onclick="_priceLogPage(-1)" style="background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:var(--font-mono);font-size:12px;" ' + (page === 0 ? 'disabled' : '') + '>&#9664; Prev</button>' +
+        '<span>Page ' + (page + 1) + ' / ' + totalPages + '</span>' +
+        '<button onclick="_priceLogPage(1)" style="background:var(--bg-primary);border:1px solid var(--border);color:var(--text-secondary);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:var(--font-mono);font-size:12px;" ' + (page >= totalPages - 1 ? 'disabled' : '') + '>Next &#9654;</button>' +
+      '</div>' +
+    '</div>';
+
+  html += '<div style="overflow-y:auto;max-height:420px;"><table><thead><tr>' +
+    th('Date', 'Trading session date (most recent first).') +
+    th('Close', 'Front-month NG=F closing price in USD/MMBtu.') +
+    th('Day Δ%', 'Close-to-close % change vs the prior session.') +
+    th('Streak', 'Consecutive up (▲) or down (▼) sessions ending on this day. e.g. ▲3 = up 3 days in a row.') +
+    th('Level', 'Price position within the all-time history range — left = all-time low, right = all-time high.') +
+    '</tr></thead><tbody>';
+
   pageData.forEach((pt, i) => {
     const globalIdx = start + i;
-    const prevPt = globalIdx < data.length - 1 ? data[globalIdx + 1] : pt;
-    const delta = prevPt.p > 0 ? (pt.p - prevPt.p) / prevPt.p * 100 : 0;
-    const barW = pRange > 0 ? ((pt.p - pMin) / pRange * 56).toFixed(1) : '0.0';
-    html += '<tr>' +
+    const prevPt = globalIdx < data.length - 1 ? data[globalIdx + 1] : null;
+    const delta = prevPt && prevPt.p > 0 ? (pt.p - prevPt.p) / prevPt.p * 100 : null;
+    const levelPct = pRange > 0 ? ((pt.p - pMin) / pRange * 100) : 0;
+    const barW = Math.max(2, (levelPct / 100 * 60)).toFixed(1);
+    const streak = streaks[globalIdx];
+    const streakLabel = streak === 0 ? '<span style="color:var(--text-muted);">—</span>'
+      : streak > 0
+        ? '<span style="color:var(--positive);">▲' + Math.abs(streak) + '</span>'
+        : '<span style="color:var(--negative);">▼' + Math.abs(streak) + '</span>';
+    const levelColor = levelPct > 70 ? 'var(--positive)' : levelPct < 30 ? 'var(--negative)' : 'var(--accent-hh)';
+    const rowTip = formatDailyDate(pt.date) + ' · $' + pt.p.toFixed(3) +
+      (delta !== null ? ' · ' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%' : '') +
+      ' · ' + levelPct.toFixed(0) + 'th percentile all-time';
+    html += '<tr data-tooltip="' + rowTip + '">' +
       '<td style="text-align:left;">' + formatDailyDate(pt.date) + '</td>' +
       '<td style="font-family:var(--font-mono);">$' + pt.p.toFixed(3) + '</td>' +
-      '<td class="' + (delta >= 0 ? 'positive' : 'negative') + '">' + (globalIdx === data.length - 1 ? '\u2014' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%') + '</td>' +
-      '<td><div style="width:' + barW + 'px;height:3px;background:var(--accent-hh);border-radius:2px;opacity:0.55;"></div></td>' +
+      '<td class="' + (delta === null ? '' : delta >= 0 ? 'positive' : 'negative') + '">' +
+        (delta === null ? '\u2014' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%') +
+      '</td>' +
+      '<td style="font-family:var(--font-mono);font-size:11px;">' + streakLabel + '</td>' +
+      '<td>' +
+        '<div style="display:flex;align-items:center;gap:4px;">' +
+          '<div style="width:60px;background:rgba(255,255,255,0.06);border-radius:2px;height:6px;flex-shrink:0;">' +
+            '<div style="width:' + barW + 'px;height:100%;background:' + levelColor + ';border-radius:2px;opacity:0.7;"></div>' +
+          '</div>' +
+          '<span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">' + levelPct.toFixed(0) + '%</span>' +
+        '</div>' +
+      '</td>' +
       '</tr>';
   });
+
   html += '</tbody></table></div>';
   el.innerHTML = html;
 }
