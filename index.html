@@ -1841,6 +1841,7 @@ function renderHHTab() {
         <div style="width:300px;flex-shrink:0;">
           <div class="card" id="hh-stats"></div>
           <div class="card" style="margin-top:var(--gap);max-height:300px;overflow-y:auto;" id="hh-history-table"></div>
+          <div class="card" style="margin-top:var(--gap);padding:0;" id="hh-fwd-returns"></div>
         </div>
       </div>
     `;
@@ -1973,6 +1974,7 @@ function updateHHChart() {
   renderHHStats(data, month, year);
   renderHHHistoryTable(month, year);
   renderHHSeasonalBar(data, month);
+  renderHHForwardReturns(data, month, year);
 }
 
 // Render a simplified view for contracts that are real and actively traded but have
@@ -2475,6 +2477,113 @@ function renderHHSeasonalBar(data, month) {
     <span style="color:var(--text-muted);">|</span>
     <span>${yLabel} Avg: $${s.avg.toFixed(3)}</span>
   `;
+}
+
+/* ─── Feature 2: Forward Return Distributions by T-Day (Prices Tab) ─── */
+function renderHHForwardReturns(data, month, year) {
+  const el = document.getElementById('hh-fwd-returns');
+  if (!el) return;
+
+  if (!data || data.length === 0) { el.innerHTML = ''; return; }
+
+  const last = data[data.length - 1];
+  const currentDay = last.d;
+  const contracts = STATE.hh[month] && STATE.hh[month].contracts;
+  if (!contracts) { el.innerHTML = ''; return; }
+
+  // Only show for active contracts — forward returns from current T-day are only
+  // meaningful when the contract hasn't expired yet.
+  const code = MONTH_CODES[month];
+  const yy = year % 100;
+  const pad = yy < 10 ? '0' + yy : '' + yy;
+  const liveTicker = `NG${code}${pad}.NYM`;
+  const isLive = !!STATE.liveData[liveTicker];
+  if (!isLive) { el.innerHTML = ''; return; }
+
+  const HORIZONS = [10, 20, 60];
+  const WINDOW = 12; // ±12 T-days around currentDay
+
+  // Accumulate forward returns for each horizon across all historical contracts
+  const results = HORIZONS.map(() => []);
+
+  Object.entries(contracts).forEach(([ticker, series]) => {
+    if (!series || series.length === 0) return;
+    // Skip the current year — no self-reference
+    const tickerYear = parseInt('20' + ticker.slice(-2), 10);
+    if (tickerYear === year) return;
+
+    // Find a point within ±WINDOW of currentDay
+    const matchPt = series.find(pt => Math.abs(pt.d - currentDay) <= WINDOW);
+    if (!matchPt) return;
+
+    HORIZONS.forEach((h, hi) => {
+      const targetD = matchPt.d + h;
+      // Find the closest point at or just past targetD
+      const fwdPt = series.find(pt => pt.d >= targetD);
+      if (!fwdPt) return;
+      const ret = (fwdPt.p - matchPt.p) / matchPt.p * 100;
+      if (!Number.isFinite(ret)) return;
+      results[hi].push(ret);
+    });
+  });
+
+  // Compute statistics for each horizon
+  function horizonStats(rets) {
+    if (!rets.length) return null;
+    const sorted = [...rets].sort((a, b) => a - b);
+    const n = sorted.length;
+    const median = n % 2 === 0
+      ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+      : sorted[Math.floor(n / 2)];
+    const posCount = rets.filter(r => r >= 0).length;
+    return { median, pctPos: Math.round(posCount / n * 100), n };
+  }
+
+  const stats = results.map(horizonStats);
+  const hasData = stats.some(s => s !== null && s.n >= 2);
+
+  if (!hasData) {
+    el.innerHTML = `
+      <div class="card-title" style="padding:10px 14px 4px;">HISTORICAL BASE RATES</div>
+      <div style="padding:8px 14px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">
+        Not enough historical same-month contracts at T-${currentDay} to compute forward returns.
+      </div>`;
+    return;
+  }
+
+  function renderHorizonCol(label, stat) {
+    if (!stat) return `<div style="flex:1;text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">${label}</div><div style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);">—</div></div>`;
+    const lowN = stat.n < 5;
+    const medColor = stat.median >= 0 ? 'var(--positive)' : 'var(--negative)';
+    const medSign = stat.median >= 0 ? '+' : '';
+    const pctColor = stat.pctPos >= 60 ? 'var(--positive)' : stat.pctPos <= 40 ? 'var(--negative)' : 'var(--text-secondary)';
+    return `
+      <div style="flex:1;text-align:center;padding:0 4px;">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">${label}</div>
+        <div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${medColor};">${medSign}${stat.median.toFixed(1)}%</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:1px;">median</div>
+        <div style="font-family:var(--font-mono);font-size:12px;color:${pctColor};margin-top:4px;">${stat.pctPos}% ↑</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:1px;">${lowN ? '<span title="Low sample count — interpret with caution">⚠️ ' : ''}n=${stat.n}${lowN ? '</span>' : ''}</div>
+      </div>`;
+  }
+
+  el.innerHTML = `
+    <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
+      <div class="card-title" style="padding:0;margin-bottom:2px;">T-DAY MATCHED FORWARD RETURNS</div>
+      <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
+        T-${currentDay} ±${WINDOW} window · same delivery month · historical base rates only
+      </div>
+    </div>
+    <div style="display:flex;gap:0;padding:12px 10px;border-bottom:1px solid var(--border);">
+      ${renderHorizonCol('+10T', stats[0])}
+      <div style="width:1px;background:var(--border);flex-shrink:0;"></div>
+      ${renderHorizonCol('+20T', stats[1])}
+      <div style="width:1px;background:var(--border);flex-shrink:0;"></div>
+      ${renderHorizonCol('+60T', stats[2])}
+    </div>
+    <div style="padding:6px 14px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
+      ⓘ Historical base rates · not a forecast
+    </div>`;
 }
 </script>
 
