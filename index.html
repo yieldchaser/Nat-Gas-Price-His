@@ -6742,13 +6742,38 @@ function showExpiryMonthProfile(month) {
     getTitle: p => { const d = lookup.get(typeof p.time === 'string' ? p.time : ''); return d ? d.year.toString() : ''; },
     getMetrics: param => {
       const d = lookup.get(typeof param.time === 'string' ? param.time : '');
-      const rank = d ? sortedDesc.indexOf(d.value) + 1 : null;
-      const vsAll = d ? d.value - avgAll : null;
+      if (!d) return [];
+
+      // All-time rank (retrospective — full dataset)
+      const rankAll = sortedDesc.indexOf(d.value) + 1;
+
+      // At-the-time rank: rank among years settled UP TO AND INCLUDING this year
+      const dataUpTo = seriesData.filter(p => p.year <= d.year);
+      const rankAtTime = [...dataUpTo].sort((a, b) => b.value - a.value).findIndex(p => p.year === d.year) + 1;
+
+      // At-the-time 5Y avg: average of up to 5 completed years PRIOR to this year
+      const prior5 = seriesData.filter(p => p.year >= d.year - 5 && p.year < d.year);
+      const avg5yAtTime = prior5.length
+        ? prior5.reduce((s, p) => s + p.value, 0) / prior5.length
+        : null;
+      const vs5yAtTime = avg5yAtTime != null ? d.value - avg5yAtTime : null;
+      const avg5yYearRange = prior5.length
+        ? `${prior5[0].year}–${prior5[prior5.length - 1].year}`
+        : null;
+
+      // vs current all-avg reference line (what the dashed line shows)
+      const vsAllRef = d.value - avgAll;
+
       return [
-        ...(rank ? [{ label: 'Rank (all-time)', value: `#${rank} of ${prices.length}` }] : []),
-        ...(vsAll !== null ? [{ label: 'vs All Avg', value: (vsAll >= 0 ? '+' : '') + '$' + vsAll.toFixed(3) }] : []),
-        { label: 'All Avg', value: '$' + avgAll.toFixed(3) },
-        { label: '5Y Avg (completed)', value: '$' + avg5y.toFixed(3) },
+        { label: 'Rank (all-time)',        value: `#${rankAll} of ${prices.length}` },
+        { label: `Rank (as of ${d.year})`, value: `#${rankAtTime} of ${dataUpTo.length}` },
+        ...(avg5yAtTime != null ? [
+          { label: `5Y Avg at time (${avg5yYearRange})`, value: '$' + avg5yAtTime.toFixed(3) },
+          { label: 'vs 5Y avg at time',    value: (vs5yAtTime >= 0 ? '+' : '') + '$' + vs5yAtTime.toFixed(3) },
+        ] : []),
+        { label: 'vs All Avg (ref line)',  value: (vsAllRef >= 0 ? '+' : '') + '$' + vsAllRef.toFixed(3) },
+        { label: 'All Avg (ref line)',     value: '$' + avgAll.toFixed(3) },
+        { label: '5Y Avg (ref line, today)', value: '$' + avg5y.toFixed(3) },
       ];
     },
   });
