@@ -8608,7 +8608,7 @@ function _renderStreakTable(data) {
   // ── Render one streak sub-table ─────────────────────────────────────────────
   const LOW_N = 15;
   function renderStreakRows(buckets, maxLen) {
-    if (!buckets) return '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:12px;">Insufficient data</td></tr>';
+    if (!buckets) return '<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:12px;">Insufficient data</td></tr>';
     let rows = '';
     ['up', 'down'].forEach(dir => {
       for (let n = 1; n <= maxLen; n++) {
@@ -8617,21 +8617,53 @@ function _renderStreakTable(data) {
         if (!st) continue;
         const lowN = st.n < LOW_N;
         const dimStyle = lowN ? 'opacity:0.55;' : '';
-        const flag = lowN ? '<span title="Low sample count — interpret with caution" style="color:var(--warning);font-size:10px;"> *</span>' : '';
+        const flag = lowN ? `<span data-tooltip="Low sample: only ${st.n} instances found (threshold: ${LOW_N}). Pattern may not be statistically meaningful — interpret with caution." style="color:var(--warning);font-size:10px;cursor:help;"> *</span>` : '';
         const dirLabel = dir === 'up'
           ? `<span style="color:var(--positive);">▲</span> ${n}× Up`
           : `<span style="color:var(--negative);">▼</span> ${n}× Down`;
-        const pctUpColor = st.pctUp >= 60 ? 'color:var(--positive)' : st.pctUp <= 40 ? 'color:var(--negative)' : 'color:var(--text-secondary)';
-        const pctDnColor = (100 - st.pctUp) >= 60 ? 'color:var(--positive)' : (100 - st.pctUp) <= 40 ? 'color:var(--negative)' : 'color:var(--text-secondary)';
-        const medColor = st.median >= 0 ? 'color:var(--positive)' : 'color:var(--negative)';
-        const avgColor = st.avg >= 0 ? 'color:var(--positive)' : 'color:var(--negative)';
-        rows += `<tr style="${dimStyle}">
+        const pctUp = st.pctUp;
+        const pctDn = 100 - pctUp;
+        const edge = pctUp - 50;
+        // Edge bar: deviation from 50% baseline, max visual width 54px for ±30%
+        const edgeBarW = Math.min(Math.abs(edge) / 30 * 54, 54);
+        const edgeColor = edge >= 0 ? 'var(--positive)' : 'var(--negative)';
+        const pctUpColor = pctUp >= 60 ? 'var(--positive)' : pctUp <= 40 ? 'var(--negative)' : 'var(--text-secondary)';
+        const pctDnColor = pctDn >= 60 ? 'var(--positive)' : pctDn <= 40 ? 'var(--negative)' : 'var(--text-secondary)';
+        const edgeBar = `<div style="display:flex;align-items:center;gap:5px;justify-content:center;">
+          <span style="color:${pctUpColor};font-family:var(--font-mono);min-width:32px;text-align:right;">${pctUp}%</span>
+          <div style="position:relative;width:54px;height:6px;background:var(--bg-page);border-radius:3px;overflow:hidden;" title="">
+            <div style="position:absolute;top:0;${edge >= 0 ? 'left:50%' : `left:calc(50% - ${edgeBarW}px)`};width:${edgeBarW}px;height:100%;background:${edgeColor};border-radius:3px;"></div>
+            <div style="position:absolute;top:0;left:50%;width:1px;height:100%;background:var(--border);"></div>
+          </div>
+          <span style="color:${edgeColor};font-family:var(--font-mono);font-size:10px;min-width:28px;">${edge >= 0 ? '+' : ''}${edge}%</span>
+        </div>`;
+        // Return bars: ±5% max visual width 36px
+        const maxRet = 5;
+        const medBarW = Math.min(Math.abs(st.median) / maxRet * 36, 36);
+        const avgBarW = Math.min(Math.abs(st.avg) / maxRet * 36, 36);
+        const medColor = st.median >= 0 ? 'var(--positive)' : 'var(--negative)';
+        const avgColor = st.avg >= 0 ? 'var(--positive)' : 'var(--negative)';
+        const medCell = `<div style="display:flex;align-items:center;gap:4px;justify-content:center;">
+          <span style="color:${medColor};font-family:var(--font-mono);min-width:44px;text-align:right;">${st.median >= 0 ? '+' : ''}${st.median.toFixed(2)}%</span>
+          <div style="position:relative;width:36px;height:5px;background:var(--bg-page);border-radius:2px;overflow:hidden;">
+            <div style="position:absolute;top:0;${st.median >= 0 ? 'left:0' : `left:calc(100% - ${medBarW}px)`};width:${medBarW}px;height:100%;background:${medColor};border-radius:2px;"></div>
+          </div>
+        </div>`;
+        const avgCell = `<div style="display:flex;align-items:center;gap:4px;justify-content:center;">
+          <span style="color:${avgColor};font-family:var(--font-mono);min-width:44px;text-align:right;">${st.avg >= 0 ? '+' : ''}${st.avg.toFixed(2)}%</span>
+          <div style="position:relative;width:36px;height:5px;background:var(--bg-page);border-radius:2px;overflow:hidden;">
+            <div style="position:absolute;top:0;${st.avg >= 0 ? 'left:0' : `left:calc(100% - ${avgBarW}px)`};width:${avgBarW}px;height:100%;background:${avgColor};border-radius:2px;"></div>
+          </div>
+        </div>`;
+        const periodLabel = maxLen <= 4 ? 'week' : 'day';
+        const rowTip = `After ${n} consecutive ${dir} ${periodLabel}${n > 1 ? 's' : ''}: next ${periodLabel} was positive ${pctUp}% of the time (${edge >= 0 ? '+' : ''}${edge}% edge vs random 50/50). Median next return: ${st.median >= 0 ? '+' : ''}${st.median.toFixed(2)}%. Mean: ${st.avg >= 0 ? '+' : ''}${st.avg.toFixed(2)}%. Sample: n=${st.n} instances.${lowN ? ' Low sample — treat with caution.' : ''}`;
+        rows += `<tr style="${dimStyle}" data-tooltip="${rowTip.replace(/"/g, '&quot;')}">
           <td style="text-align:left;">${dirLabel}${flag}</td>
-          <td>${st.n}</td>
-          <td style="${pctUpColor}">${st.pctUp}%</td>
-          <td style="${pctDnColor}">${100 - st.pctUp}%</td>
-          <td style="${medColor}">${st.median >= 0 ? '+' : ''}${st.median.toFixed(2)}%</td>
-          <td style="${avgColor}">${st.avg >= 0 ? '+' : ''}${st.avg.toFixed(2)}%</td>
+          <td style="font-family:var(--font-mono);text-align:center;">${st.n}</td>
+          <td>${edgeBar}</td>
+          <td style="color:${pctDnColor};font-family:var(--font-mono);text-align:center;">${pctDn}%</td>
+          <td>${medCell}</td>
+          <td>${avgCell}</td>
         </tr>`;
       }
     });
@@ -8642,14 +8674,14 @@ function _renderStreakTable(data) {
     return `
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;padding:10px 14px 4px;">${title}</div>
       <div style="overflow-x:auto;">
-        <table style="width:100%;min-width:480px;">
+        <table style="width:100%;min-width:520px;">
           <thead><tr>
-            <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Streak</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">N</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Next ↑</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Next ↓</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Med Return</th>
-            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Avg Return</th>
+            <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Streak type and length. ▲ = consecutive up periods, ▼ = consecutive down periods. N× = number of consecutive periods in the streak. * = low sample (n &lt; 15).">Streak</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Number of historical instances matching this exact streak pattern. Larger N = more statistically reliable. Rows with n &lt; 15 are dimmed and flagged with *.">N</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="% of next periods that were positive (up) after this streak. The bar shows deviation from 50% (random baseline) — longer bar = stronger historical edge. Green = bullish bias, red = bearish bias.">Next ↑ &amp; Edge</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="% of next periods that were negative (down) after this streak. Always equals 100% minus Next ↑.">Next ↓</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Median next-period return after this streak. The middle value of all observed next-period moves — less sensitive to outlier sessions than the mean. Bar shows magnitude (max visual = ±5%).">Med Return</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Mean (average) next-period return after this streak. Sensitive to outlier sessions — compare with the median to spot skew. Bar shows magnitude (max visual = ±5%).">Avg Return</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
