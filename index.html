@@ -8256,37 +8256,39 @@ function _renderStreakTable(data) {
   }
 
   // ── Core streak computation ─────────────────────────────────────────────────
-  // Returns { up: Map<N→{nextRets}>, down: Map<N→{nextRets}> } for streak lengths 1-maxStreak
+  // Returns { up: { 1: [], ... }, down: { 1: [], ... } } for streak lengths 1-maxStreak
   function computeStreakStats(changes, maxStreak, monthFilter) {
-    // Filter by month if needed
-    const src = monthFilter === 'ALL' ? changes : changes.filter(c => c.month === monthFilter);
-    if (src.length < maxStreak + 2) return null;
+    if (changes.length < maxStreak + 2) return null;
 
-    // { up: { 1: [nextRet,...], 2: [...], ... }, down: { ... } }
     const buckets = { up: {}, down: {} };
     for (let n = 1; n <= maxStreak; n++) {
       buckets.up[n] = [];
       buckets.down[n] = [];
     }
 
-    // Walk through the changes array tracking current streak
+    // Walk vertically through the unfiltered changes array tracking true chronological streaks.
     let streakDir = null; // 'up' or 'down'
     let streakLen = 0;
 
-    for (let i = 0; i < src.length - 1; i++) {
-      const dir = src[i].ret >= 0 ? 'up' : 'down';
+    for (let i = 0; i < changes.length - 1; i++) {
+      const dir = changes[i].ret >= 0 ? 'up' : 'down';
       if (dir === streakDir) {
         streakLen++;
       } else {
         streakDir = dir;
         streakLen = 1;
       }
-      // The next period's return
-      const nextRet = src[i + 1].ret;
-      // Record for every streak-length condition that is currently satisfied
-      // i.e. if streakLen=3, it also satisfies streak>=1 and streak>=2 conditions
-      for (let n = 1; n <= Math.min(streakLen, maxStreak); n++) {
-        buckets[dir][n].push(nextRet);
+      
+      // The period whose return we are predicting
+      const targetMonth = changes[i].month;
+
+      // Only record the stat if the *current* period is in the scoped month (or if ALL)
+      // This means "if today is in May, and today ends a 3-day down streak, what is tomorrow's return?"
+      if (monthFilter === 'ALL' || targetMonth === monthFilter) {
+        const nextRet = changes[i + 1].ret;
+        for (let n = 1; n <= Math.min(streakLen, maxStreak); n++) {
+          buckets[dir][n].push(nextRet);
+        }
       }
     }
     return buckets;
