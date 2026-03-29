@@ -9,13 +9,16 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 ### 1. Prices Tab — HH & TTF Contracts
 
 - **Lifecycle Chart**: Price history plotted on either a Calendar Date or T-Day axis (Day 1–519 of the 519-trading-day contract lifecycle)
-- **5Y Seasonal Band**: Min/max/avg band from the last 5 **completed** contract years (excludes current year to avoid self-reference). Dynamically shows actual contributing year count (e.g. "3Y avg") when fewer than 5 years exist
-- **Pre-Window View**: Contracts more than 519 trading days from expiry are outside the lifecycle analysis window. They show a candlestick chart on a calendar-date axis with basic stats, labeled "PRE-ANALYSIS WINDOW"
-- **Contract Statistics**: Trading Days (with progress bar), Days to Expiry (calendar days remaining), Trading Days Elapsed, vs NY Seasonal Avg, Range Position (percentile), High/Low/Avg, From Contract Open %, Status
+- **Seasonal Band + Window Toggle**: Min/max/avg band from the last 5 completed contract years. Toggle to **15Y** or **All-history** bands (lazy-built on first click). Dynamically shows actual contributing year count when fewer years are available
+- **Pre-Window View**: Contracts more than 519 trading days from expiry show a candlestick chart on a calendar-date axis with basic stats, labeled "PRE-ANALYSIS WINDOW"
+- **Contract Statistics**: Trading Days (with progress bar), Days to Expiry, Trading Days Elapsed, vs Seasonal Avg, Range Position (percentile), Z-Score, High/Low/Avg, From Contract Open %, Status
 - **Same Month History**: Sidebar table of all same-month contracts with expiry prices ranked all-time
 - **T-Day Filter**: Slider to restrict chart and viewport to the last N trading days
 - **Compare Mode**: Multi-series overlay (Shift+Click years)
 - **Instrument Switcher**: Toggle between Henry Hub (NYMEX, USD/MMBtu) and Dutch TTF (ICE, EUR/MWh)
+- **Forward Return Distributions**: T-Day matched historical forward returns at +10T / +20T / +60T horizons (active contracts only)
+- **Analog Year Clustering**: Top historical same-month years by normalized path similarity (RMSE), with composite median projection
+- **Drawdown-by-T-Day Heatmap**: 50-T-day bucket breakdown of where historical contracts concentrated their deepest drawdowns
 
 ### 2. Spreads Tab
 
@@ -23,6 +26,8 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 - **Spread Statistics**: AT-519, AT-PENULT, AT-90D, AT-10D milestone columns; all-time avg and 5-completed-year avg footer rows
 - **Seasonality Heatmap**: Average calendar spread matrix across the last 5 completed years for identifying contango/backwardation patterns
 - **Lifecycle Resolution Chart**: Multi-year spread vs. T-Day comparison with year pills and T-Day range slider
+- **Spread Convergence Cone**: Finds historical analog years (matching T-Day position ± price window) and shows distribution of where those analogs settled at expiry
+- **Butterfly Spread Builder**: 3-legged seasonal structure (Front + Back − 2×Middle) with per-year history and all-time / 5Y avg reference lines
 
 ### 3. Forward Curve Tab
 
@@ -36,33 +41,49 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 ### 4. Expiry Prices Tab
 
 - **Settlement Matrix**: Monthly final settlement prices across 20+ years
-- **5Y / 3Y Averages**: Computed from 5 or 3 **completed** years only (excludes current year and future years). Tooltips make this explicit
+- **5Y / 3Y Averages**: Computed from 5 or 3 **completed** years only (excludes current year and future years)
+- **Era Drift Columns**: Three structural era averages per month — Pre-2011 (pre-shale), 2011–2019 (shale revolution), 2020+ (LNG export era) — color-coded vs the overall average to surface regime shifts
 - **Seasonal Bar Chart**: 12-bar seasonal profile using only settled (expired) contracts — excludes current/future year prices which are live market prices, not settlements
 - **Month Profile Chart**: Click any month label to open expiry history across all years with all-years and 5Y-completed avg lines
 - **Heat-map**: Cell colors relative to the visible window's average
 - **Per-cell Tooltips**: Rank (all-time), vs 5Y avg %, YoY%
+- **Time Window Filter**: All / 10Y / 5Y / 3Y — adjusts both visible years and heatmap coloring baseline
 
 ### 5. Daily Tracker Tab
 
 - **Continuous NG=F**: 9,000+ session foundation (1990–present) spliced with live Yahoo Finance data
 - **KPI Chips**: 52W High/Low, vs 52W High/Low %, 30D Avg, YTD Δ%
 - **NG vs TTF Spread**: Nominal spread with live EURUSD=X conversion
-- **Monthly Seasonality**: Average monthly return heatmap
+- **Monthly Seasonality**: Average monthly return bar chart with toggle to full **Box Plot** view (p5/p25/median/p75/p95 + outliers per calendar month)
 - **Annual Returns**: Year-by-year ranked return table
+- **Conditional Streak Probability Table**: After N consecutive up/down days or weeks, shows historical % next-period up, median return, and sample size — filterable by calendar month
 - **Upcoming Expiries**: Next contracts with days-to-expiry using correct NYMEX 3-biz-day rule
 ---
 
 ## Statistical Analysis Features
 
-- **Conditional Probability / Streak Table** (Daily Tracker tab): Tells you the historical probability and average return of the next period following a consecutive multi-day or multi-week winning/losing streak.
-- **Trough-to-Peak Analyzer** (Daily Tracker tab): Tells you the historically worst-case drawdown mapped onto a dynamic recovery cone, showing whether the active contract is oversold relative to prior years.
-- **Expiry Price Distribution** (Expirys tab): Tells you the historical context (percentile rank, vs 5Y average, YoY delta) of any given month's final settlement utilizing a ranked cross-tabulated heatmap.
-- **Box Plot Distributions** (Daily Tracker tab): Tells you the statistical variance (p5, p25, median, p75, p95) and outlier density of historical returns grouped by calendar month.
-- **Spread Convergence Cone** (Spreads tab): Tells you where historical spread analogs (matching on T-day progression and price shape) eventually settled upon contract expiration.
-- **Seasonality Drift Detection / Z-Score** (Prices tab): Tells you whether the active contract is tracking closer to its trailing 5Y, 15Y, or All-Time historical mean trajectory using dynamically sizing standard deviation units.
-- **Analog Year Clustering** (Prices tab): Tells you the top 5 historical contract years whose normalized trailing 90-day price shapes most closely match the current year's trajectory, projecting a composite forward path.
-- **Butterfly Spread Builder** (Spreads tab): Tells you the absolute value and context of custom 3-legged seasonal trade structures (Front + Back − 2×Middle) plotted against baseline historical averages.
-- **Drawdown-by-T-Day Heatmap** (Prices tab): Tells you exactly which life-cycle window (in 50-T-day buckets) has historically concentrated the deepest maximum drawdowns from the running peak.livery month.
+All 9 features are fully implemented.
+
+- **Seasonality Z-Score** (Prices tab): Distance of the current price from the seasonal mean in standard deviation units at the exact T-Day position. Color-coded: within 1σ = normal, ±1–2σ = notable (amber), beyond ±2σ = extreme (red). Respects the active 5Y / 15Y / All seasonal window.
+- **T-Day Matched Forward Returns** (Prices tab): For each historical same-month contract, finds the price at the current T-Day (±12T window) and records forward returns at +10T, +20T, and +60T horizons. Shows median return, % positive, and sample size. Active contracts only — historical base rates, not a forecast.
+- **Conditional Probability / Streak Table** (Daily Tracker tab): After N consecutive up/down days (1–5) or weeks (1–4), shows historical probability of the next period being up, median return, and sample size. Filterable by calendar month.
+- **Box Plot Distributions** (Daily Tracker tab): Full return distribution (p5, p25, median, p75, p95) per calendar month with outlier dots — toggle from bar chart view with the BAR/BOX control.
+- **Spread Convergence Cone** (Spreads tab): Finds historical years where the same spread traded near the current value at the same T-Day (±20T, ±$0.15 window). Shows analog year trajectories and distribution of final settlement values.
+- **Seasonality Drift Detection / Era Drift** (Prices tab + Expiry tab): 5Y / 15Y / All seasonal band toggle on the lifecycle chart (lazily built). Era Drift columns on the Expiry table showing pre-shale (<2011), shale era (2011–2019), and LNG export era (2020+) averages per delivery month.
+- **Analog Year Clustering** (Prices tab): Top historical same-month contract years ranked by normalized path similarity (RMSE vs trailing 90-day trajectory). Renders a lifecycle chart with faded analog overlays and a bold composite median path.
+- **Butterfly Spread Builder** (Spreads tab): 3-legged seasonal structure (Front + Back − 2×Middle) with per-year lifecycle chart and all-time / 5Y avg reference lines. Defaults to Jan + Mar − 2×Feb (classic HH winter fly).
+- **Drawdown-by-T-Day Heatmap** (Prices tab): 50-T-day lifecycle buckets showing average drawdown depth and concentration of max-drawdown events — reveals which lifecycle windows have historically been the most dangerous.
+
+---
+
+## Tooltip System
+
+A global `data-tooltip` system covers all interactive and informational elements across every tab. Implementation uses a **single event listener** on `document` (zero per-element listeners) for minimal memory overhead and automatic support for dynamically-rendered content.
+
+- **Architecture**: Single `#global-tooltip` div + `mouseover` delegation. Boundary-aware positioning (flips below element if no room above, clamps to viewport edges).
+- **Styling**: Glassmorphism (dark background, `backdrop-filter: blur`), 0.13s fade transition, 80ms hide delay for smooth feel.
+- **Coverage**: Tab navigation, all Prices/TTF/Spot stat labels (vs seasonal avg, range position, Z-score, high/low/avg, from open, status), all control buttons and segment switches across every tab, AT-519/AT-PENULT/AT-90D/AT-10D milestone headers, Forward Returns horizon columns, Drawdown Heatmap column headers, Era Drift columns, card titles for all 9 statistical features.
+- **Content**: Expert-level contextual explanations — not just labels, but what each metric *means* and when it matters.
 
 ---
 
