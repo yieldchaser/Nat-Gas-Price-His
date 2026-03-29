@@ -1913,6 +1913,8 @@ function renderHHTab() {
           <div class="card" id="hh-stats"></div>
           <div class="card" style="margin-top:var(--gap);max-height:300px;overflow-y:auto;" id="hh-history-table"></div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="hh-fwd-returns"></div>
+          <div class="card" style="margin-top:var(--gap);padding:0;" id="hh-analog-cluster"></div>
+          <div class="card" style="margin-top:var(--gap);padding:0;" id="hh-drawdown-heatmap"></div>
         </div>
       </div>
     `;
@@ -2057,6 +2059,8 @@ function updateHHChart() {
   renderHHHistoryTable(month, year);
   renderHHSeasonalBar(data, month);
   renderHHForwardReturns(data, month, year);
+  renderAnalogCluster(data, month, year);
+  renderDrawdownHeatmap(month);
 }
 
 // Render a simplified view for contracts that are real and actively traded but have
@@ -2681,6 +2685,294 @@ function renderHHForwardReturns(data, month, year) {
     </div>
     <div style="padding:6px 14px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
       ⓘ Historical base rates · not a forecast
+    </div>`;
+}
+
+/* ─── Feature 7: Analog Year Clustering (Tier 3) ─── */
+function renderAnalogCluster(data, month, year) {
+  const el = document.getElementById('hh-analog-cluster');
+  if (!el) return;
+  if (!data || data.length < 20) { el.innerHTML = ''; return; }
+
+  const contracts = STATE.hh[month] && STATE.hh[month].contracts;
+  if (!contracts) { el.innerHTML = ''; return; }
+
+  // Normalise a series array to its own opening price = 100
+  function normalise(series) {
+    const open = series[0].p;
+    if (!open || open === 0) return null;
+    return series.map(pt => ({ d: pt.d, norm: (pt.p / open) * 100 }));
+  }
+
+  // Active contract normalised
+  const activeSeries = data;
+  const activeNorm = normalise(activeSeries);
+  if (!activeNorm) { el.innerHTML = ''; return; }
+
+  const activeMap = new Map(activeNorm.map(pt => [pt.d, pt.norm]));
+  const activeDs = activeNorm.map(pt => pt.d);
+  const minD = activeDs[0], maxD = activeDs[activeDs.length - 1];
+
+  // Build pool of historical contracts (same month, not current year)
+  const candidates = [];
+  Object.entries(contracts).forEach(([ticker, series]) => {
+    if (!series || series.length < 20) return;
+    const tickerYear = parseInt(ticker.slice(-2)) < 50 ? 2000 + parseInt(ticker.slice(-2)) : 1900 + parseInt(ticker.slice(-2));
+    if (tickerYear === year) return; // no self-reference
+
+    const expiry = estimateContractExpiry(ticker);
+    let mapped = series;
+    if (expiry) {
+      mapped = series.map(pt => {
+        const daysLeft = approxTradingDaysTo(pt.date, expiry);
+        const d = 519 - daysLeft;
+        if (d < 1) return null;
+        return { d: Math.min(519, d), p: pt.p, date: pt.date };
+      }).filter(Boolean);
+    }
+    if (mapped.length < 10) return;
+    const norm = normalise(mapped);
+    if (!norm) return;
+    const normMap = new Map(norm.map(pt => [pt.d, pt.norm]));
+
+    // Compute SSE over the overlapping window (minD to min of both maxDs)
+    let sse = 0, count = 0;
+    for (let d = minD; d <= maxD; d++) {
+      const av = activeMap.get(d);
+      const hv = normMap.get(d);
+      if (av !== undefined && hv !== undefined) {
+        sse += (av - hv) ** 2;
+        count++;
+      }
+    }
+    if (count < 10) return;
+    const rmse = Math.sqrt(sse / count);
+    candidates.push({ yr: tickerYear, norm, normMap, rmse, fullMapped: mapped });
+  });
+
+  if (candidates.length === 0) { el.innerHTML = ''; return; }
+
+  // Sort by similarity, pick top 5
+  candidates.sort((a, b) => a.rmse - b.rmse);
+  const TOP_N = Math.min(5, candidates.length);
+  const analogs = candidates.slice(0, TOP_N);
+
+  // Composite = mean of analog normalised values at each D, from maxD onward
+  const compositeDs = new Set();
+  analogs.forEach(a => { a.norm.forEach(pt => { if (pt.d >= maxD) compositeDs.add(pt.d); }); });
+  const compositePoints = [...compositeDs].sort((a, b) => a - b).map(d => {
+    let sum = 0, cnt = 0;
+    analogs.forEach(a => { const v = a.normMap.get(d); if (v !== undefined) { sum += v; cnt++; } });
+    return cnt > 0 ? { d, norm: sum / cnt } : null;
+  }).filter(Boolean);
+
+  // SVG chart dimensions
+  const SVG_H = 180;
+  const PAD_T = 8, PAD_B = 24, PAD_L = 4;
+  let allNormVals = [...activeNorm.map(p => p.norm)];
+  analogs.forEach(a => a.norm.forEach(p => { if (p.d >= minD) allNormVals.push(p.norm); }));
+  compositePoints.forEach(p => allNormVals.push(p.norm));
+  let yMin = Math.min(...allNormVals), yMax = Math.max(...allNormVals);
+  const yPad = (yMax - yMin) * 0.08 + 0.01;
+  yMin -= yPad; yMax += yPad;
+  const allD = new Set();
+  activeNorm.forEach(p => allD.add(p.d));
+  analogs.forEach(a => a.norm.forEach(p => allD.add(p.d)));
+  const dMin = Math.min(...allD), dMax = Math.max(...allD);
+
+  function sx(d) { return ((d - dMin) / (dMax - dMin) * 100).toFixed(2) + '%'; }
+  function sy(v) { return (PAD_T + (SVG_H - PAD_T - PAD_B) * (1 - (v - yMin) / (yMax - yMin))).toFixed(1); }
+
+  const COLORS = ['#60a5fa','#34d399','#f472b6','#a78bfa','#fb923c'];
+  let svgStr = '';
+
+  // Zero line (= 100, the open price baseline)
+  const baseY = sy(100);
+  svgStr += `<line x1="0" y1="${baseY}" x2="100%" y2="${baseY}" stroke="rgba(255,255,255,0.07)" stroke-width="1" stroke-dasharray="3,3"/>`;
+  svgStr += `<text x="1%" y="${(parseFloat(baseY)-2).toFixed(1)}" font-size="8" fill="rgba(255,255,255,0.25)">100 (open)</text>`;
+
+  // Analog year paths
+  analogs.forEach((a, i) => {
+    const pts = a.norm.filter(p => p.d >= minD).map(p => `${sx(p.d)},${sy(p.norm)}`).join(' ');
+    if (!pts) return;
+    svgStr += `<polyline points="${pts}" fill="none" stroke="${COLORS[i % COLORS.length]}" stroke-width="1" opacity="0.35"/>`;
+    const last = a.norm[a.norm.length - 1];
+    svgStr += `<text x="${sx(last.d)}" y="${(parseFloat(sy(last.norm)) - 2).toFixed(1)}" font-size="8" fill="${COLORS[i % COLORS.length]}" opacity="0.6" text-anchor="end">${a.yr}</text>`;
+  });
+
+  // Composite forward path (amber)
+  if (compositePoints.length > 1) {
+    const cpts = compositePoints.map(p => `${sx(p.d)},${sy(p.norm)}`).join(' ');
+    svgStr += `<polyline points="${cpts}" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4,2"/>`;
+    const cl = compositePoints[compositePoints.length - 1];
+    svgStr += `<text x="${sx(cl.d)}" y="${(parseFloat(sy(cl.norm)) - 3).toFixed(1)}" font-size="8" fill="#fbbf24" text-anchor="end">composite</text>`;
+  }
+
+  // Active contract path (white, solid, prominent)
+  const activePts = activeNorm.map(p => `${sx(p.d)},${sy(p.norm)}`).join(' ');
+  svgStr += `<polyline points="${activePts}" fill="none" stroke="white" stroke-width="2"/>`;
+  const alast = activeNorm[activeNorm.length - 1];
+  svgStr += `<circle cx="${sx(alast.d)}" cy="${sy(alast.norm)}" r="3.5" fill="white"/>`;
+
+  // X-axis tick labels
+  [minD, Math.round((minD + dMax) / 2), dMax].forEach(d => {
+    svgStr += `<text x="${sx(d)}" y="${SVG_H - 6}" font-size="8" fill="rgba(255,255,255,0.35)" text-anchor="middle">T-${d}</text>`;
+  });
+
+  el.innerHTML = `
+    <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
+      <div class="card-title" style="padding:0;margin-bottom:2px;">ANALOG YEAR CLUSTERING</div>
+      <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
+        ${month} · normalised to open=100 · top ${TOP_N} analogs by RMSE
+      </div>
+    </div>
+    <div style="padding:8px 14px 2px;">
+      <svg width="100%" height="${SVG_H}" style="overflow:visible;display:block;">${svgStr}</svg>
+    </div>
+    <div style="padding:4px 14px 6px;">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;">
+        ${analogs.map((a, i) => `<span style="font-family:var(--font-mono);font-size:10px;color:${COLORS[i % COLORS.length]};">● ${a.yr} <span style="color:var(--text-muted);">(Δ${a.rmse.toFixed(1)})</span></span>`).join('')}
+        ${compositePoints.length > 0 ? `<span style="font-family:var(--font-mono);font-size:10px;color:#fbbf24;">◆ Composite</span>` : ''}
+        <span style="font-family:var(--font-mono);font-size:10px;color:white;">— ${year}</span>
+      </div>
+      <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">
+        ⓘ Analog Year Composite (Historical) — not a forecast · RMSE = similarity score (lower = closer)
+      </div>
+    </div>`;
+}
+
+/* ─── Feature 9: Drawdown-by-T-Day Heatmap (Tier 3) ─── */
+function renderDrawdownHeatmap(month) {
+  const el = document.getElementById('hh-drawdown-heatmap');
+  if (!el) return;
+  const contracts = STATE.hh[month] && STATE.hh[month].contracts;
+  if (!contracts) { el.innerHTML = ''; return; }
+
+  const BUCKET_SIZE = 50;
+  const MAX_TDAY    = 519;
+  const NUM_BUCKETS = Math.ceil(MAX_TDAY / BUCKET_SIZE);
+
+  // For each historical contract: compute running-peak drawdown at each T-day
+  const bucketStats = Array.from({ length: NUM_BUCKETS }, () => ({
+    dds: [],          // drawdown depths at each T-day in this bucket
+    maxDdCount: 0,    // contracts whose max DD peaked in this bucket
+    contractCount: 0, // contracts contributing to this bucket
+  }));
+
+  let contractsProcessed = 0;
+
+  Object.entries(contracts).forEach(([ticker, series]) => {
+    if (!series || series.length < 10) return;
+    const expiry = estimateContractExpiry(ticker);
+    let mapped = series;
+    if (expiry) {
+      mapped = series.map(pt => {
+        const daysLeft = approxTradingDaysTo(pt.date, expiry);
+        const d = 519 - daysLeft;
+        if (d < 1) return null;
+        return { d: Math.min(519, d), p: pt.p };
+      }).filter(Boolean);
+    }
+    if (mapped.length < 10) return;
+    mapped.sort((a, b) => a.d - b.d);
+
+    contractsProcessed++;
+    let peak = -Infinity;
+    let maxDd = 0, maxDdBucket = 0;
+
+    mapped.forEach(pt => {
+      if (pt.p > peak) peak = pt.p;
+      const dd = peak > 0 ? (peak - pt.p) / peak * 100 : 0;
+      const bucket = Math.min(NUM_BUCKETS - 1, Math.floor((pt.d - 1) / BUCKET_SIZE));
+      bucketStats[bucket].dds.push(dd);
+      if (dd > maxDd) { maxDd = dd; maxDdBucket = bucket; }
+    });
+    bucketStats[maxDdBucket].maxDdCount++;
+    bucketStats.forEach(b => { if (b.dds.length > 0) b.contractCount++; });
+  });
+
+  if (contractsProcessed === 0) { el.innerHTML = ''; return; }
+
+  // Per-bucket aggregation
+  const buckets = bucketStats.map((b, i) => {
+    const sorted = [...b.dds].sort((a, c) => a - c);
+    const avg = sorted.length ? sorted.reduce((s, v) => s + v, 0) / sorted.length : 0;
+    const median = sorted.length ? (sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      : sorted[Math.floor(sorted.length / 2)]) : 0;
+    const pctMaxHere = contractsProcessed > 0 ? (b.maxDdCount / contractsProcessed * 100) : 0;
+    return {
+      label: `T${i * BUCKET_SIZE + 1}–${Math.min(MAX_TDAY, (i + 1) * BUCKET_SIZE)}`,
+      avg, median, pctMaxHere,
+    };
+  }).filter(b => b.avg > 0 || b.pctMaxHere > 0);
+
+  if (buckets.length === 0) { el.innerHTML = ''; return; }
+
+  const maxAvg = Math.max(...buckets.map(b => b.avg), 0.01);
+  const maxPct = Math.max(...buckets.map(b => b.pctMaxHere), 0.01);
+
+  // Heat colour: 0% → dark blue, 100% → deep red via amber
+  function heatColor(ratio) {
+    // 0→blue, 0.5→amber, 1→red
+    if (ratio < 0.5) {
+      const t = ratio * 2;
+      const r = Math.round(30 + t * (251 - 30));
+      const g = Math.round(100 + t * (191 - 100));
+      const b = Math.round(220 + t * (36 - 220));
+      return `rgb(${r},${g},${b})`;
+    } else {
+      const t = (ratio - 0.5) * 2;
+      const r = Math.round(251 + t * (239 - 251));
+      const g = Math.round(191 + t * (68 - 191));
+      const b = Math.round(36 + t * (68 - 36));
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+
+  const rows = buckets.map(b => {
+    const avgBar  = (b.avg / maxAvg * 120).toFixed(0);
+    const pctBar  = (b.pctMaxHere / maxPct * 120).toFixed(0);
+    const hc = heatColor(b.pctMaxHere / maxPct);
+    return `<tr>
+      <td style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);white-space:nowrap;">${b.label}</td>
+      <td style="padding:3px 6px;">
+        <div style="display:flex;align-items:center;gap:4px;">
+          <div style="height:9px;width:${avgBar}px;background:rgba(0,212,255,0.55);border-radius:2px;"></div>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--accent-hh);">${b.avg.toFixed(1)}%</span>
+        </div>
+        <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">med ${b.median.toFixed(1)}%</div>
+      </td>
+      <td style="padding:3px 6px;">
+        <div style="display:flex;align-items:center;gap:4px;">
+          <div style="height:9px;width:${pctBar}px;background:${hc};opacity:0.8;border-radius:2px;"></div>
+          <span style="font-family:var(--font-mono);font-size:10px;color:${hc};">${b.pctMaxHere.toFixed(0)}%</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
+      <div class="card-title" style="padding:0;margin-bottom:2px;">DRAWDOWN HEATMAP</div>
+      <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
+        ${month} · drawdown from running peak · ${contractsProcessed} contracts
+      </div>
+    </div>
+    <div style="padding:6px 10px;overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px 0;">T-Day</th>
+            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px;">Avg DD Depth</th>
+            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px;">% Max DD Here</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="padding:4px 14px 6px;font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">
+      ⓘ Running-peak drawdown · heat = concentration of max drawdown events
     </div>`;
 }
 </script>
@@ -3330,6 +3622,7 @@ function renderSpreadTab() {
           </div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="spread-table"></div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="spread-convergence"></div>
+          <div class="card" style="margin-top:var(--gap);padding:0;" id="butterfly-section"></div>
         </div>
       </div>
     `;
@@ -3354,6 +3647,7 @@ function renderSpreadTab() {
   scheduleSpreadHeatmap(true);
   renderSpreadResolutionChart();
   initSpreadResolutionEvents();
+  renderButterflyBuilder();
 }
 
 function getSpreadInstrument() {
@@ -4630,6 +4924,217 @@ function scheduleSpreadHeatmap(force = false) {
       STATE.spreadHeatmapPending = false;
     }
   }, 0);
+}
+
+/* ─── Feature 8: Butterfly Spread Builder (Tier 3) ─── */
+function computeButterfly(frontMonth, midMonth, backMonth, year) {
+  const cacheKey = `fly|${frontMonth}|${midMonth}|${backMonth}|${year}`;
+  if (STATE._flyCache && STATE._flyCache[cacheKey]) return STATE._flyCache[cacheKey];
+  if (!STATE._flyCache) STATE._flyCache = {};
+
+  // Get T-day mapped data for all three legs using existing calendar-date join
+  function getSpreadPoints(month, yr) {
+    const code = MONTH_CODES[month];
+    if (!code) return [];
+    const yy = yr % 100;
+    const pad = yy < 10 ? '0' + yy : '' + yy;
+    const ticker = `NG${code}${pad}`;
+    return getContractData(ticker); // {d, p, date}
+  }
+
+  const front = getSpreadPoints(frontMonth, year);
+  const mid   = getSpreadPoints(midMonth,  year);
+  const back  = getSpreadPoints(backMonth, year);
+
+  if (!front.length || !mid.length || !back.length) {
+    const empty = { points: [], stats: { min:0, max:0, avg:0, count:0 } };
+    STATE._flyCache[cacheKey] = empty; return empty;
+  }
+
+  // Join on calendar date
+  const midMap  = new Map(); mid.forEach(pt => { if (pt.date) midMap.set(pt.date, pt.p); });
+  const backMap = new Map(); back.forEach(pt => { if (pt.date) backMap.set(pt.date, pt.p); });
+
+  const points = [];
+  front.forEach(pt => {
+    if (!pt.date) return;
+    const mp = midMap.get(pt.date);
+    const bp = backMap.get(pt.date);
+    if (mp !== undefined && bp !== undefined) {
+      points.push({ d: pt.d, date: pt.date, value: pt.p + bp - 2 * mp });
+    }
+  });
+
+  const result = { points, stats: getSeriesStats(points, p => p.value) };
+  STATE._flyCache[cacheKey] = result;
+  return result;
+}
+
+function renderButterflyBuilder() {
+  const el = document.getElementById('butterfly-section');
+  if (!el) return;
+
+  // Build initial HTML on first render
+  if (!el.dataset.built) {
+    el.dataset.built = '1';
+    el.innerHTML = `
+      <div style="padding:10px 14px 8px;border-bottom:1px solid var(--border);">
+        <div class="card-title" style="padding:0;margin-bottom:6px;">BUTTERFLY SPREAD BUILDER
+          <span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:8px;">Front + Back − 2×Middle</span>
+        </div>
+        <div class="ctrl-toolbar" style="gap:10px;flex-wrap:wrap;">
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Front</div>
+            <select id="fly-front">${MONTHS.map((m,i)=>`<option value="${m}" ${m==='Jan'?'selected':''}>${m}</option>`).join('')}</select>
+          </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Middle (×2)</div>
+            <select id="fly-mid">${MONTHS.map((m,i)=>`<option value="${m}" ${m==='Feb'?'selected':''}>${m}</option>`).join('')}</select>
+          </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Back</div>
+            <select id="fly-back">${MONTHS.map((m,i)=>`<option value="${m}" ${m==='Mar'?'selected':''}>${m}</option>`).join('')}</select>
+          </div>
+          <div class="ctrl-sep"></div>
+          <div class="ctrl-group">
+            <div class="ctrl-group-label">Year</div>
+            <select id="fly-year"></select>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:0;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div class="chart-wrap" id="fly-chart-container" style="height:200px;"></div>
+        </div>
+        <div style="width:220px;flex-shrink:0;padding:10px 14px;border-left:1px solid var(--border);" id="fly-stats"></div>
+      </div>`;
+
+    // Populate year selector, wire events
+    _flyPopulateYear();
+    document.getElementById('fly-front').addEventListener('change', () => { _flyPopulateYear(); _flyUpdate(); });
+    document.getElementById('fly-mid').addEventListener('change', () => { _flyPopulateYear(); _flyUpdate(); });
+    document.getElementById('fly-back').addEventListener('change', () => { _flyPopulateYear(); _flyUpdate(); });
+    document.getElementById('fly-year').addEventListener('change', _flyUpdate);
+  }
+
+  _flyUpdate();
+}
+
+function _flyPopulateYear() {
+  const front = document.getElementById('fly-front')?.value || 'Jan';
+  const mid   = document.getElementById('fly-mid')?.value   || 'Feb';
+  const back  = document.getElementById('fly-back')?.value  || 'Mar';
+  const sel   = document.getElementById('fly-year');
+  if (!sel) return;
+
+  const yearsSet = new Set();
+  [front, mid, back].forEach(m => {
+    const store = STATE.hh[m];
+    if (!store) return;
+    Object.keys(store.contracts).forEach(t => {
+      const yr = parseInt(t.slice(-2));
+      yearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
+    });
+  });
+
+  const years = [...yearsSet].sort((a, b) => b - a);
+  const curYear = new Date().getFullYear();
+  const prevVal = sel.value ? parseInt(sel.value) : curYear;
+  sel.innerHTML = years.map(y => `<option value="${y}" ${y === prevVal ? 'selected':''}>${y}</option>`).join('');
+  if (!sel.value && years.length) sel.value = String(years[0]);
+}
+
+function _flyUpdate() {
+  const front = document.getElementById('fly-front')?.value || 'Jan';
+  const mid   = document.getElementById('fly-mid')?.value   || 'Feb';
+  const back  = document.getElementById('fly-back')?.value  || 'Mar';
+  const year  = parseInt(document.getElementById('fly-year')?.value);
+  if (!year) return;
+
+  const result = computeButterfly(front, mid, back, year);
+  const chartEl = document.getElementById('fly-chart-container');
+  const statsEl = document.getElementById('fly-stats');
+
+  // ── Stats ────────────────────────────────────────────────────────────────
+  const pts = result.points;
+  const unit = '$/MMBtu';
+  const fmt = v => Number.isFinite(v) ? (v >= 0 ? '+' : '') + v.toFixed(3) : '—';
+  const fmtAbs = v => Number.isFinite(v) ? v.toFixed(3) : '—';
+
+  // All-history reference (all years for this fly combo)
+  let allVals = [];
+  const allYearsSet = new Set();
+  [front, mid, back].forEach(m => {
+    if (STATE.hh[m]) Object.keys(STATE.hh[m].contracts).forEach(t => {
+      const yr = parseInt(t.slice(-2)); allYearsSet.add(yr < 50 ? 2000 + yr : 1900 + yr);
+    });
+  });
+  allYearsSet.forEach(yr => {
+    if (yr === year) return;
+    const r = computeButterfly(front, mid, back, yr);
+    r.points.forEach(p => allVals.push(p.value));
+  });
+  const allAvg  = allVals.length ? allVals.reduce((s,v) => s+v, 0) / allVals.length : null;
+  const allMin  = allVals.length ? Math.min(...allVals) : null;
+  const allMax  = allVals.length ? Math.max(...allVals) : null;
+
+  // 5Y reference (5 prior years max)
+  const priorYears = [...allYearsSet].filter(y => y < year).sort((a,b)=>b-a).slice(0,5);
+  let vals5y = [];
+  priorYears.forEach(yr => {
+    const r = computeButterfly(front, mid, back, yr);
+    r.points.forEach(p => vals5y.push(p.value));
+  });
+  const avg5y = vals5y.length ? vals5y.reduce((s,v) => s+v, 0) / vals5y.length : null;
+
+  const last = pts.length ? pts[pts.length - 1] : null;
+  const curr = last ? last.value : null;
+  const delta5y = (curr != null && avg5y != null) ? curr - avg5y : null;
+  const deltaAll = (curr != null && allAvg != null) ? curr - allAvg : null;
+
+  const chip = (label, val, color = 'var(--text-primary)') =>
+    `<div class="stat"><div class="stat-label">${label}</div><div style="font-family:var(--font-mono);font-size:13px;color:${color};">${val}</div></div>`;
+  const sep = `<div style="height:1px;background:var(--border);margin:4px 0;"></div>`;
+
+  statsEl.innerHTML = [
+    chip('Fly Formula', `${front} + ${back} − 2×${mid}`, 'var(--text-muted)'),
+    chip('Current', curr != null ? fmt(curr) + ' ' + unit : '—', curr != null ? (curr >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+    sep,
+    chip('5Y Avg', avg5y != null ? fmt(avg5y) : '—', 'var(--text-secondary)'),
+    chip('vs 5Y', delta5y != null ? fmt(delta5y) : '—', delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+    sep,
+    chip('All-Time Avg', allAvg != null ? fmt(allAvg) : '—', 'var(--text-secondary)'),
+    chip('All-Time Range', (allMin != null && allMax != null) ? `${fmtAbs(allMin)} – ${fmtAbs(allMax)}` : '—', 'var(--text-muted)'),
+    chip('vs All-Time', deltaAll != null ? fmt(deltaAll) : '—', deltaAll != null ? (deltaAll >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+    chip('Data Points', String(pts.length)),
+  ].join('');
+
+  // ── Chart ─────────────────────────────────────────────────────────────────
+  if (!pts.length) { chartEl.innerHTML = '<div style="padding:20px;color:var(--text-muted);font-family:var(--font-mono);font-size:12px;">No data for this fly combination / year</div>'; return; }
+
+  const chart = createManagedChart('fly', 'main', chartEl);
+  const palette = getNeutralChartPalette();
+
+  // Zero baseline
+  const zeroSeries = chart.addLineSeries({
+    color: palette.zero, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  zeroSeries.setData([
+    { time: dayToTime(pts[0].d), value: 0 },
+    { time: dayToTime(pts[pts.length - 1].d), value: 0 },
+  ]);
+
+  const mainSeries = chart.addLineSeries({
+    color: '#a78bfa', lineWidth: 2,
+    priceLineVisible: true, lastValueVisible: true, crosshairMarkerVisible: true,
+  });
+  mainSeries.setData(pts.map(p => ({ time: dayToTime(p.d), value: p.value })));
+
+  applyChartTimeScaleOptions(chart, {});
+  chart.timeScale().fitContent();
 }
 </script>
 
