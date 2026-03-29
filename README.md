@@ -50,46 +50,19 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 - **Monthly Seasonality**: Average monthly return heatmap
 - **Annual Returns**: Year-by-year ranked return table
 - **Upcoming Expiries**: Next contracts with days-to-expiry using correct NYMEX 3-biz-day rule
-
 ---
 
 ## Statistical Analysis Features
 
-### 1. Conditional Probability (Streak Table)
-- **Tab**: Daily Tracker
-- **Tells you**: The historical probability and average return of the next period following a consecutive multi-day (or multi-week) winning/losing streak for the active contract month.
-
-### 2. Trough-to-Peak Analyzer
-- **Tab**: Daily Tracker
-- **Tells you**: The historically worst-case drawdown mapped onto a dynamic recovery cone, showing whether the active contract is oversold relative to prior years.
-
-### 3. Expiry Price Distribution
-- **Tab**: Expiry Prices
-- **Tells you**: A full settlement matrix with ranked heatmapping to immediately identify the historical context (percentile rank, vs 5Y average) of any given month's final close.
-
-### 4. Box Plots
-- **Tab**: Daily Tracker
-- **Tells you**: The statistical distribution (p5, p25, median, p75, p95) of returns for any given calendar month, exposing the variance and outliers around the mean return.
-
-### 5. Spread Convergence Cone
-- **Tab**: Spreads
-- **Tells you**: Where historical analogs of the active spread (matching on T-day progression and price shape) eventually settled upon contract expiration.
-
-### 6. Seasonality Drift Detection
-- **Tab**: Prices
-- **Tells you**: Whether the active contract is tracking closer to its 5Y, 15Y, or All-Time historical average trajectory via an adjustable dynamic seasonal baseline.
-
-### 7. Analog Year Clustering
-- **Tab**: Prices
-- **Tells you**: The top 5 historical contract years whose normalized price shapes most closely match the current year's trajectory, building a composite overlay of their forward paths.
-
-### 8. Butterfly Spread Builder
-- **Tab**: Spreads
-- **Tells you**: The absolute value and historical context of a 3-legged butterfly spread (Front + Back − 2×Middle) plotted against its 5Y and All-Time moving averages.
-
-### 9. Drawdown Heatmap
-- **Tab**: Prices
-- **Tells you**: Exactly which life-cycle window (in 50-T-day buckets) has historically concentrated the deepest maximum drawdowns from the running peak for the selected delivery month.
+- **Conditional Probability / Streak Table** (Daily Tracker tab): Tells you the historical probability and average return of the next period following a consecutive multi-day or multi-week winning/losing streak.
+- **Trough-to-Peak Analyzer** (Daily Tracker tab): Tells you the historically worst-case drawdown mapped onto a dynamic recovery cone, showing whether the active contract is oversold relative to prior years.
+- **Expiry Price Distribution** (Expirys tab): Tells you the historical context (percentile rank, vs 5Y average, YoY delta) of any given month's final settlement utilizing a ranked cross-tabulated heatmap.
+- **Box Plot Distributions** (Daily Tracker tab): Tells you the statistical variance (p5, p25, median, p75, p95) and outlier density of historical returns grouped by calendar month.
+- **Spread Convergence Cone** (Spreads tab): Tells you where historical spread analogs (matching on T-day progression and price shape) eventually settled upon contract expiration.
+- **Seasonality Drift Detection / Z-Score** (Prices tab): Tells you whether the active contract is tracking closer to its trailing 5Y, 15Y, or All-Time historical mean trajectory using dynamically sizing standard deviation units.
+- **Analog Year Clustering** (Prices tab): Tells you the top 5 historical contract years whose normalized trailing 90-day price shapes most closely match the current year's trajectory, projecting a composite forward path.
+- **Butterfly Spread Builder** (Spreads tab): Tells you the absolute value and context of custom 3-legged seasonal trade structures (Front + Back − 2×Middle) plotted against baseline historical averages.
+- **Drawdown-by-T-Day Heatmap** (Prices tab): Tells you exactly which life-cycle window (in 50-T-day buckets) has historically concentrated the deepest maximum drawdowns from the running peak.livery month.
 
 ---
 
