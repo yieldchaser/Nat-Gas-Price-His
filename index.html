@@ -6270,6 +6270,8 @@ function renderDailyTab() {
       <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-seasonality"></div>
 
       <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-annual"></div>
+
+      <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-streak"></div>
     `;
 
       document.getElementById('daily-range-switch').addEventListener('click', e => {
@@ -6393,6 +6395,7 @@ function updateDailyTracker() {
   _renderDailyPriceLog(data);
   _renderMonthlySeasonality(data);
   _renderAnnualPerformance(data);
+  _renderStreakTable(data);
 }
 
 function _renderDailyStatChips(stats, currentPrice) {
@@ -7290,6 +7293,201 @@ function _renderAnnualPerformance(data) {
   '</div>';
 
   el.innerHTML = html;
+}
+
+/* ─── Feature 1: Conditional Probability / Streak Table (Daily Tracker) ─── */
+function _renderStreakTable(data) {
+  const el = document.getElementById('daily-streak');
+  if (!el || !data || data.length < 100) {
+    if (el) el.innerHTML = '';
+    return;
+  }
+
+  // ── Month filter state ──────────────────────────────────────────────────────
+  // Store selected month on the element so re-renders are stable
+  if (!el._streakMonth) el._streakMonth = 'ALL';
+  const selMonth = el._streakMonth;
+
+  // ── Compute daily changes ───────────────────────────────────────────────────
+  // Each point in daily data: { date: 'YYYY-MM-DD', p: number }
+  const dailyChanges = [];
+  for (let i = 1; i < data.length; i++) {
+    const ret = (data[i].p - data[i - 1].p) / data[i - 1].p * 100;
+    const calMonth = parseInt(data[i].date.slice(5, 7), 10); // 1-12
+    if (Number.isFinite(ret)) dailyChanges.push({ ret, month: calMonth });
+  }
+
+  // ── Build weekly closes ─────────────────────────────────────────────────────
+  // Group into ISO-week buckets (Sun-start: split on day===1, Mon)
+  const weeklyChanges = [];
+  {
+    let weekBuckets = [];
+    let curWeek = [];
+    let prevMonday = null;
+    data.forEach(pt => {
+      const d = new Date(pt.date + 'T00:00:00Z');
+      const dow = d.getUTCDay(); // 0=Sun
+      if (dow === 1 && curWeek.length > 0) {
+        weekBuckets.push(curWeek);
+        curWeek = [];
+      }
+      curWeek.push(pt);
+    });
+    if (curWeek.length > 0) weekBuckets.push(curWeek);
+
+    for (let i = 1; i < weekBuckets.length; i++) {
+      const prev = weekBuckets[i - 1];
+      const curr = weekBuckets[i];
+      const prevClose = prev[prev.length - 1].p;
+      const currClose = curr[curr.length - 1].p;
+      const ret = (currClose - prevClose) / prevClose * 100;
+      const calMonth = parseInt(curr[curr.length - 1].date.slice(5, 7), 10);
+      if (Number.isFinite(ret)) weeklyChanges.push({ ret, month: calMonth });
+    }
+  }
+
+  // ── Core streak computation ─────────────────────────────────────────────────
+  // Returns { up: Map<N→{nextRets}>, down: Map<N→{nextRets}> } for streak lengths 1-maxStreak
+  function computeStreakStats(changes, maxStreak, monthFilter) {
+    // Filter by month if needed
+    const src = monthFilter === 'ALL' ? changes : changes.filter(c => c.month === monthFilter);
+    if (src.length < maxStreak + 2) return null;
+
+    // { up: { 1: [nextRet,...], 2: [...], ... }, down: { ... } }
+    const buckets = { up: {}, down: {} };
+    for (let n = 1; n <= maxStreak; n++) {
+      buckets.up[n] = [];
+      buckets.down[n] = [];
+    }
+
+    // Walk through the changes array tracking current streak
+    let streakDir = null; // 'up' or 'down'
+    let streakLen = 0;
+
+    for (let i = 0; i < src.length - 1; i++) {
+      const dir = src[i].ret >= 0 ? 'up' : 'down';
+      if (dir === streakDir) {
+        streakLen++;
+      } else {
+        streakDir = dir;
+        streakLen = 1;
+      }
+      // The next period's return
+      const nextRet = src[i + 1].ret;
+      // Record for every streak-length condition that is currently satisfied
+      // i.e. if streakLen=3, it also satisfies streak>=1 and streak>=2 conditions
+      for (let n = 1; n <= Math.min(streakLen, maxStreak); n++) {
+        buckets[dir][n].push(nextRet);
+      }
+    }
+    return buckets;
+  }
+
+  // ── Compute summary stats from an array of returns ──────────────────────────
+  function streakSummary(rets) {
+    if (!rets || rets.length === 0) return null;
+    const sorted = [...rets].sort((a, b) => a - b);
+    const n = sorted.length;
+    const median = n % 2 === 0
+      ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+      : sorted[Math.floor(n / 2)];
+    const avg = rets.reduce((s, r) => s + r, 0) / n;
+    const pctUp = Math.round(rets.filter(r => r >= 0).length / n * 100);
+    return { n, median, avg, pctUp };
+  }
+
+  const monthNum = selMonth === 'ALL' ? 'ALL' : parseInt(selMonth, 10);
+  const dailyBuckets = computeStreakStats(dailyChanges, 5, monthNum);
+  const weeklyBuckets = computeStreakStats(weeklyChanges, 4, monthNum);
+
+  // ── Render one streak sub-table ─────────────────────────────────────────────
+  const LOW_N = 15;
+  function renderStreakRows(buckets, maxLen) {
+    if (!buckets) return '<tr><td colspan="7" style="color:var(--text-muted);text-align:center;padding:12px;">Insufficient data</td></tr>';
+    let rows = '';
+    ['up', 'down'].forEach(dir => {
+      for (let n = 1; n <= maxLen; n++) {
+        const rets = buckets[dir][n];
+        const st = streakSummary(rets);
+        if (!st) continue;
+        const lowN = st.n < LOW_N;
+        const dimStyle = lowN ? 'opacity:0.55;' : '';
+        const flag = lowN ? '<span title="Low sample count — interpret with caution" style="color:var(--warning);font-size:10px;"> *</span>' : '';
+        const dirLabel = dir === 'up'
+          ? `<span style="color:var(--positive);">▲</span> ${n}× Up`
+          : `<span style="color:var(--negative);">▼</span> ${n}× Down`;
+        const pctUpColor = st.pctUp >= 60 ? 'color:var(--positive)' : st.pctUp <= 40 ? 'color:var(--negative)' : 'color:var(--text-secondary)';
+        const pctDnColor = (100 - st.pctUp) >= 60 ? 'color:var(--positive)' : (100 - st.pctUp) <= 40 ? 'color:var(--negative)' : 'color:var(--text-secondary)';
+        const medColor = st.median >= 0 ? 'color:var(--positive)' : 'color:var(--negative)';
+        const avgColor = st.avg >= 0 ? 'color:var(--positive)' : 'color:var(--negative)';
+        rows += `<tr style="${dimStyle}">
+          <td style="text-align:left;">${dirLabel}${flag}</td>
+          <td>${st.n}</td>
+          <td style="${pctUpColor}">${st.pctUp}%</td>
+          <td style="${pctDnColor}">${100 - st.pctUp}%</td>
+          <td style="${medColor}">${st.median >= 0 ? '+' : ''}${st.median.toFixed(2)}%</td>
+          <td style="${avgColor}">${st.avg >= 0 ? '+' : ''}${st.avg.toFixed(2)}%</td>
+        </tr>`;
+      }
+    });
+    return rows;
+  }
+
+  function tableHtml(title, rows) {
+    return `
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;padding:10px 14px 4px;">${title}</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;min-width:480px;">
+          <thead><tr>
+            <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Streak</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">N</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Next ↑</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Next ↓</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Med Return</th>
+            <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Avg Return</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  // ── Month filter dropdown ───────────────────────────────────────────────────
+  const MONTH_NAMES_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthOptions = ['<option value="ALL"' + (selMonth === 'ALL' ? ' selected' : '') + '>All Months</option>']
+    .concat(MONTH_NAMES_SHORT.map((m, i) => {
+      const v = String(i + 1);
+      return `<option value="${v}"${selMonth === v ? ' selected' : ''}>${m}</option>`;
+    })).join('');
+
+  const dailyRows = renderStreakRows(dailyBuckets, 5);
+  const weeklyRows = renderStreakRows(weeklyBuckets, 4);
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 14px 6px;border-bottom:1px solid var(--border);">
+      <div>
+        <div class="card-title" style="padding:0;margin-bottom:2px;">CONDITIONAL STREAK PROBABILITIES — NG=F</div>
+        <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
+          Given N consecutive up/down periods, how often is the next period up vs. down?
+          &nbsp;·&nbsp; * = n &lt; ${LOW_N} (low sample)
+        </div>
+      </div>
+      <select id="streak-month-filter" style="font-size:12px;padding:4px 8px;">${monthOptions}</select>
+    </div>
+    ${tableHtml(`Daily Streaks (1–5 consecutive days) · full history ${selMonth === 'ALL' ? '' : '· ' + MONTH_NAMES_SHORT[parseInt(selMonth,10)-1] + ' only'}`, dailyRows)}
+    <div style="height:1px;background:var(--border);margin:0 14px;"></div>
+    ${tableHtml(`Weekly Streaks (1–4 consecutive weeks) · full history ${selMonth === 'ALL' ? '' : '· ' + MONTH_NAMES_SHORT[parseInt(selMonth,10)-1] + ' only'}`, weeklyRows)}
+    <div style="padding:6px 14px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);border-top:1px solid var(--border);">
+      ⓘ Based on ${dailyChanges.length.toLocaleString()} daily sessions · ${weeklyChanges.length.toLocaleString()} weeks · historical observation counts, not predictions
+    </div>`;
+
+  // Wire up month filter — re-render in place without rebuilding the whole daily tracker
+  const filterEl = document.getElementById('streak-month-filter');
+  if (filterEl) {
+    filterEl.addEventListener('change', function() {
+      el._streakMonth = this.value;
+      _renderStreakTable(data);
+    });
+  }
 }
 </script>
 
