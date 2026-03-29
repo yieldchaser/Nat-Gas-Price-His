@@ -1602,12 +1602,18 @@ function getContractData(ticker) {
   // from expiry). Expired contracts keep their authoritative CSV d values.
   const isActive = expiry && expiry > new Date();
   function anchorPts(pts) {
-    return pts.map(pt => {
+    const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
       const d = 519 - daysLeft;
       if (d < 1) return null;
       return { ...pt, d: Math.min(519, d) };
     }).filter(Boolean);
+    // approxTradingDaysTo rounds ~1/7 consecutive weekday pairs to the same d,
+    // producing duplicate dayToTime(d) values that LightweightCharts silently
+    // rejects. Keep the last (most-recent) point per d to ensure strict monotonicity.
+    const byD = new Map();
+    for (const pt of anchored) byD.set(pt.d, pt);
+    return [...byD.values()].sort((a, b) => a.d - b.d);
   }
 
   // Try live data
@@ -1658,12 +1664,18 @@ function getTTFContractData(ticker) {
   const expiry = estimateContractExpiry(ticker);
   const isActive = expiry && expiry > new Date();
   function anchorPts(pts) {
-    return pts.map(pt => {
+    const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
       const d = 519 - daysLeft;
       if (d < 1) return null;
       return { ...pt, d: Math.min(519, d) };
     }).filter(Boolean);
+    // approxTradingDaysTo rounds ~1/7 consecutive weekday pairs to the same d,
+    // producing duplicate dayToTime(d) values that LightweightCharts silently
+    // rejects. Keep the last (most-recent) point per d to ensure strict monotonicity.
+    const byD = new Map();
+    for (const pt of anchored) byD.set(pt.d, pt);
+    return [...byD.values()].sort((a, b) => a.d - b.d);
   }
 
   // Try live data — Yahoo uses TTF{CODE}{YY}.NYM; internal tickers use TG{CODE}{YY}
