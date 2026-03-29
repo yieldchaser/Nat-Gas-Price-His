@@ -3231,6 +3231,7 @@ function renderSpreadTab() {
             <div id="spread-heatmap" style="overflow-x:auto;"></div>
           </div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="spread-table"></div>
+          <div class="card" style="margin-top:var(--gap);padding:0;" id="spread-convergence"></div>
         </div>
       </div>
     `;
@@ -3734,6 +3735,7 @@ function updateSpreadChart() {
   });
   syncSpreadRangeFooter();
   renderSpreadAxisLabel();
+  renderSpreadConvergenceCone(front, back, year, instrument);
 }
 
 function syncSpreadRangeFooter() {
@@ -3778,6 +3780,185 @@ function syncSpreadRangeFooter() {
     chart.timeScale().fitContent();
   }
   renderSpreadAxisLabel();
+}
+
+/* ─── Feature 5: Spread Convergence Cone (Tier 2) ─── */
+function renderSpreadConvergenceCone(front, back, year, instrument) {
+  const el = document.getElementById('spread-convergence');
+  if (!el) return;
+
+  const currentSpread = computeSpread(front, back, year, instrument);
+  if (!currentSpread.points.length) { el.innerHTML = ''; return; }
+
+  const lastPt   = currentSpread.points[currentSpread.points.length - 1];
+  const currentD = lastPt.d;
+  const currentV = lastPt.value;
+
+  // Only meaningful when contract has significant history and is still active
+  if (currentD < 10) { el.innerHTML = ''; return; }
+
+  const TDAY_WINDOW  = 20;  // ±20 T-days
+  const MIN_ANALOGS  = 4;
+  let   VALUE_BAND   = Math.max(0.15, Math.abs(currentV) * 0.05); // ±15¢ or 5% of value, whichever larger
+
+  // Collect all historical years for this pair
+  const store = instrument === 'ttf' ? STATE.ttf : STATE.hh;
+  const allYears = new Set();
+  [front, back].forEach(m => {
+    if (!store[m]) return;
+    Object.keys(store[m].contracts).forEach(t => {
+      const yr = parseInt(t.slice(3)); 
+      allYears.add(yr < 50 ? 2000 + yr : 1900 + yr);
+    });
+  });
+
+  function findAnalogs(valueBand) {
+    const analogs = [];
+    allYears.forEach(yr => {
+      if (yr === year) return; // no self-reference
+      const sp = computeSpread(front, back, yr, instrument);
+      if (!sp.points.length) return;
+      // Find a point within ±TDAY_WINDOW of currentD
+      const matchPt = sp.points.find(pt => Math.abs(pt.d - currentD) <= TDAY_WINDOW);
+      if (!matchPt) return;
+      // Check value proximity
+      if (Math.abs(matchPt.value - currentV) > valueBand) return;
+      // Collect all points from matchPt.d onward (the "forward path")
+      const fwdPoints = sp.points.filter(pt => pt.d >= matchPt.d);
+      if (fwdPoints.length < 5) return;
+      const lastFwd = fwdPoints[fwdPoints.length - 1];
+      analogs.push({ yr, matchPt, fwdPoints, finalValue: lastFwd.value });
+    });
+    return analogs;
+  }
+
+  let analogs = findAnalogs(VALUE_BAND);
+  let widened = false;
+  if (analogs.length < MIN_ANALOGS) {
+    VALUE_BAND = VALUE_BAND * 1.5;
+    analogs = findAnalogs(VALUE_BAND);
+    widened = true;
+    // If still < MIN_ANALOGS after widening, show a note but still render whatever we have
+  }
+
+  if (analogs.length === 0) {
+    el.innerHTML = `
+      <div style="padding:12px 14px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);">
+        SPREAD CONVERGENCE CONE — No historical analog years found within the current search window.
+      </div>`;
+    return;
+  }
+
+  // ── Compute median final settlement ───────────────────────────────────────
+  const finals = analogs.map(a => a.finalValue).sort((a, b) => a - b);
+  const medianFinal = finals.length % 2 === 0
+    ? (finals[finals.length / 2 - 1] + finals[finals.length / 2]) / 2
+    : finals[Math.floor(finals.length / 2)];
+  const avgFinal = finals.reduce((s, v) => s + v, 0) / finals.length;
+
+  // ── SVG trajectory chart ───────────────────────────────────────────────────
+  const SVG_H = 160;
+  const PAD_L = 4, PAD_R = 4, PAD_T = 10, PAD_B = 20;
+  const plotW = 100; // use percentage
+
+  // Y extent — all fwd points across all analogs + current value
+  let yMin = currentV, yMax = currentV;
+  analogs.forEach(a => {
+    a.fwdPoints.forEach(pt => {
+      yMin = Math.min(yMin, pt.value);
+      yMax = Math.max(yMax, pt.value);
+    });
+  });
+  yMin -= Math.abs(yMax - yMin) * 0.1;
+  yMax += Math.abs(yMax - yMin) * 0.1 + 0.001;
+
+  // X: T-day range
+  const dMin = currentD;
+  const dMax = Math.max(...analogs.map(a => a.fwdPoints[a.fwdPoints.length - 1].d), currentD + 10);
+
+  function toSvgX(d) { return ((d - dMin) / (dMax - dMin) * 100).toFixed(2) + '%'; }
+  function toSvgY(v) { return (PAD_T + (SVG_H - PAD_T - PAD_B) * (1 - (v - yMin) / (yMax - yMin))).toFixed(1); }
+
+  const zeroY = toSvgY(0);
+
+  let svgLines = `<line x1="0" y1="${zeroY}" x2="100%" y2="${zeroY}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>`;
+
+  // Draw analog trajectories as faded thin lines
+  analogs.forEach((a, i) => {
+    const color = getSpreadYearColor ? getSpreadYearColor(a.yr) : '#60a5fa';
+    const pts = a.fwdPoints.map(pt => `${toSvgX(pt.d)},${toSvgY(pt.value)}`).join(' ');
+    svgLines += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1" opacity="0.35"/>`;
+    // Year label at the end
+    const endPt = a.fwdPoints[a.fwdPoints.length - 1];
+    svgLines += `<text x="${toSvgX(endPt.d)}" y="${(parseFloat(toSvgY(endPt.value)) - 3).toFixed(1)}" font-size="8" fill="${color}" opacity="0.6" text-anchor="end">${a.yr}</text>`;
+  });
+
+  // Median final settlement indicator (horizontal band ±0.05)
+  const medY1 = toSvgY(medianFinal + Math.abs(medianFinal) * 0.02 + 0.02);
+  const medY2 = toSvgY(medianFinal - Math.abs(medianFinal) * 0.02 - 0.02);
+  const bandTop = Math.min(parseFloat(medY1), parseFloat(medY2));
+  const bandH = Math.max(3, Math.abs(parseFloat(medY2) - parseFloat(medY1)));
+  svgLines += `<rect x="60%" y="${bandTop.toFixed(1)}" width="40%" height="${bandH.toFixed(1)}" fill="rgba(251,191,36,0.2)" stroke="rgba(251,191,36,0.6)" stroke-width="1"/>`;
+  svgLines += `<line x1="60%" y1="${toSvgY(medianFinal)}" x2="100%" y2="${toSvgY(medianFinal)}" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="3,2"/>`;
+  svgLines += `<text x="62%" y="${(parseFloat(toSvgY(medianFinal)) - 2).toFixed(1)}" font-size="8" fill="#fbbf24">med ${medianFinal.toFixed(3)}</text>`;
+
+  // Current value dot
+  svgLines += `<circle cx="${toSvgX(currentD)}" cy="${toSvgY(currentV)}" r="4" fill="white" stroke="var(--accent-spread,#00d4ff)" stroke-width="2"/>`;
+
+  // ── Histogram of final settlements (simple CSS bars) ──────────────────────
+  const histBins = 5;
+  const histRange = Math.max(0.01, yMax - yMin);
+  const bins = Array(histBins).fill(0);
+  finals.forEach(v => {
+    const b = Math.min(histBins - 1, Math.floor(((v - yMin) / histRange) * histBins));
+    bins[b]++;
+  });
+  const maxBin = Math.max(...bins, 1);
+  const histHtml = bins.map((n, i) => {
+    const pct = (n / maxBin * 80).toFixed(0);
+    const binVal = (yMin + (i + 0.5) * histRange / histBins).toFixed(2);
+    return `<div style="display:flex;align-items:center;gap:4px;margin:1px 0;">
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);width:40px;text-align:right;">${binVal}</div>
+      <div style="height:10px;width:${pct}px;background:rgba(251,191,36,0.5);border-radius:1px;"></div>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-muted);">${n}</div>
+    </div>`;
+  }).reverse().join('');
+
+  const unit = instrument === 'ttf' ? 'EUR/MWh' : '$/MMBtu';
+  const wideNote = widened
+    ? `<div style="font-size:10px;color:var(--warning);margin-top:4px;">⚡ Window auto-widened to ±${VALUE_BAND.toFixed(2)} ${unit} — fewer than ${MIN_ANALOGS} analogs at original width</div>`
+    : '';
+
+  el.innerHTML = `
+    <div style="padding:10px 14px 6px;border-bottom:1px solid var(--border);">
+      <div class="card-title" style="padding:0;margin-bottom:2px;">SPREAD CONVERGENCE CONE</div>
+      <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">
+        ${front}/${back} · T-${currentD} @ ${currentV.toFixed(3)} ${unit}
+        &nbsp;·&nbsp; ±${TDAY_WINDOW}T window &nbsp;·&nbsp; ±${VALUE_BAND.toFixed(2)} ${unit} band
+        &nbsp;·&nbsp; <strong style="color:var(--text-primary);">${analogs.length}</strong> analogs
+        ${wideNote}
+      </div>
+    </div>
+    <div style="display:flex;gap:0;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;padding:8px 14px;">
+        <svg width="100%" height="${SVG_H}" style="overflow:visible;display:block;">${svgLines}</svg>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-top:2px;">
+          ← T-${currentD} &nbsp;&nbsp; analog year paths → expiry &nbsp;&nbsp; ◉ current
+        </div>
+      </div>
+      <div style="width:130px;flex-shrink:0;padding:8px 14px;border-left:1px solid var(--border);">
+        <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Final Settlement</div>
+        ${histHtml}
+        <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;">
+          <div>Median: <span style="color:#fbbf24;">${medianFinal.toFixed(3)}</span></div>
+          <div>Avg: <span style="color:var(--text-secondary);">${avgFinal.toFixed(3)}</span></div>
+          <div style="font-size:9px;color:var(--text-muted);margin-top:4px;">n = ${analogs.length} historical years</div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:4px 14px 8px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);border-top:1px solid var(--border);">
+      ⓘ Historical analog years only · not a forecast · ${analogs.map(a=>a.yr).join(', ')}
+    </div>`;
 }
 
 function _syncSpreadSliderFromChart() {
