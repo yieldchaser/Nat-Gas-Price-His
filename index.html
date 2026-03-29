@@ -5763,68 +5763,125 @@ function renderCurveStrips(curveData) {
     return { avg: sum / quoted.length, missing: slots.length - quoted.length, total: slots.length, quoted: quoted.length };
   };
 
-  const getStruct = avg => {
-    if (avg == null || frontPrice == null) return '—';
-    const diff = avg - frontPrice;
-    if (Math.abs(diff) < 0.005) return '—';
-    return diff > 0 ? '<span style="color:var(--positive);">Contango</span>' : '<span style="color:var(--negative);">Back</span>';
-  };
-
   // Build Cal Strips
+  const calAvgByYear = {}; // track Cal avg per year for winter premium calc
   Object.keys(byYear).sort().forEach(yr => {
     const year = parseInt(yr);
     if (year < currentYear) return;
     const slots = byYear[yr];
     if (slots.length < 1) return;
-    
-    // Cal strip (Jan-Dec) -> wait, maybe some early months have expired, but if they are in the curve they are active
+
     const stat = getAvg(slots);
-    strips.push({ label: 'Cal ' + year, desc: 'Jan–Dec', stat });
+    calAvgByYear[year] = stat.avg;
+    strips.push({ label: 'Cal ' + year, desc: 'Jan–Dec', stat, type: 'cal', year });
 
-    // Summer strip (Apr-Oct)
     const summerSlots = slots.filter(s => s.monthIdx >= 3 && s.monthIdx <= 9);
-    if (summerSlots.length > 0) {
-      strips.push({ label: 'Summer ' + String(year).slice(2), desc: 'Apr–Oct', stat: getAvg(summerSlots) });
-    }
+    if (summerSlots.length > 0)
+      strips.push({ label: 'Summer ' + String(year).slice(2), desc: 'Apr–Oct', stat: getAvg(summerSlots), type: 'summer', year });
 
-    // Winter strip (Nov-Mar) -> Nov/Dec of this year + Jan/Feb/Mar of NEXT year
     if (byYear[year + 1]) {
       const winterSlots = [
         ...slots.filter(s => s.monthIdx === 10 || s.monthIdx === 11),
-        ...byYear[year + 1].filter(s => s.monthIdx >= 0 && s.monthIdx <= 2)
+        ...byYear[year + 1].filter(s => s.monthIdx >= 0 && s.monthIdx <= 2),
       ];
-      if (winterSlots.length > 0) {
-        strips.push({ label: 'Winter ' + String(year).slice(2) + '/' + String(year+1).slice(2), desc: 'Nov–Mar', stat: getAvg(winterSlots) });
-      }
+      if (winterSlots.length > 0)
+        strips.push({ label: 'Winter ' + String(year).slice(2) + '/' + String(year+1).slice(2), desc: 'Nov–Mar', stat: getAvg(winterSlots), type: 'winter', year });
     }
   });
 
-  if (strips.length === 0) {
-    containerEl.innerHTML = '';
-    return;
-  }
+  if (strips.length === 0) { containerEl.innerHTML = ''; return; }
 
-  const th = (label, left = false) => '<th style="text-align:' + (left ? 'left' : 'center') + ';position:sticky;top:0;background:var(--bg-card);z-index:2;">' + label + '</th>';
-  let html = '<div class="card-title" style="padding:12px 16px 8px;">Strip Averages</div>';
-  html += '<div style="overflow-x:auto;"><table><thead><tr>' +
-    th('Strip', true) + th('Contracts', true) + th('Avg Price') + th('vs Front') + th('Structure') +
-    '</tr></thead><tbody>';
+  // Pre-compute max |vsFront| for bar scaling
+  const maxAbsVsFront = Math.max(...strips.map(strip => {
+    const v = strip.stat.avg != null && frontPrice != null ? Math.abs(strip.stat.avg - frontPrice) : 0;
+    return v;
+  }), 0.01);
+
+  const th = (label, tip, left = false) =>
+    `<th style="text-align:${left ? 'left' : 'center'};position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="${tip}">${label}</th>`;
+
+  let html = `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px;flex-wrap:wrap;gap:4px;">` +
+    `<span class="card-title" style="padding:0;" data-tooltip="Average price of each standard NG delivery strip computed from live quoted contracts. Cal = full calendar year, Summer = Apr–Oct, Winter = Nov–Mar cross-year. Partial strips are noted with N/M quoted.">Strip Averages</span>` +
+    (frontPrice != null ? `<span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">Front: <span style="color:var(--text-primary);">$${frontPrice.toFixed(3)}</span></span>` : '') +
+    `</div>`;
+
+  html += `<div style="overflow-x:auto;"><table><thead><tr>` +
+    th('Strip',     'Strip name. Cal = Jan–Dec calendar year average. Summer = Apr–Oct. Winter = Nov (year Y) through Mar (year Y+1). Click any row to see that strip\'s contracts on the curve chart.', true) +
+    th('Contracts', 'Delivery months included in this strip. N/M quoted = only N of M months have live market quotes — avg may not be representative.', true) +
+    th('Avg Price',  'Simple average of all quoted contract prices within the strip. Partial strips (not all months quoted) are noted.') +
+    th('vs Front',  'Strip average minus the front-month contract price. Positive = strip is above front (contango term structure). Bar shows magnitude relative to the widest strip in this table.') +
+    th('% vs Front','Strip average as a % premium/discount to the front month. Complements the dollar difference.') +
+    th('Structure',  'Term structure signal for this strip relative to the front month: Contango = strip avg above front (deferred premium), Back = strip avg below front (backwardation).') +
+    `</tr></thead><tbody>`;
 
   strips.forEach(strip => {
     const s = strip.stat;
-    const avgStr = s.avg == null ? '—' : '$' + s.avg.toFixed(3);
-    const missingStr = s.missing > 0 ? ' <span style="font-size:10px;color:var(--negative);">' + s.quoted + '/' + s.total + ' quoted</span>' : '';
-    const vsFront = (s.avg != null && frontPrice != null) ? s.avg - frontPrice : null;
-    const vsFrontStr = vsFront == null ? '—' : (vsFront > 0 ? '+$' : '-$') + Math.abs(vsFront).toFixed(3);
-    const vsFrontColor = vsFront == null ? '' : (vsFront > 0 ? 'color:var(--positive);' : 'color:var(--negative);');
-    
-    html += '<tr>' +
-      '<td style="text-align:left;font-weight:600;">' + strip.label + '</td>' +
-      '<td style="text-align:left;color:var(--text-muted);">' + strip.desc + missingStr + '</td>' +
-      '<td style="text-align:center;font-family:var(--font-mono);">' + avgStr + '</td>' +
-      '<td style="text-align:center;font-family:var(--font-mono);' + vsFrontColor + '">' + vsFrontStr + '</td>' +
-      '<td style="text-align:center;">' + getStruct(s.avg) + '</td>' +
-      '</tr>';
+    const vsFront    = (s.avg != null && frontPrice != null) ? s.avg - frontPrice : null;
+    const vsFrontPct = (vsFront != null && frontPrice > 0) ? (vsFront / frontPrice * 100) : null;
+    const vsFrontColor = vsFront == null ? 'var(--text-muted)' : vsFront > 0 ? 'var(--positive)' : 'var(--negative)';
+
+    // Mini bar for vs Front
+    const barW = vsFront != null ? Math.min(Math.abs(vsFront) / maxAbsVsFront * 52, 52) : 0;
+    const vsFrontCell = vsFront == null ? '<span style="color:var(--text-muted);">—</span>' :
+      `<div style="display:flex;align-items:center;gap:5px;justify-content:center;">` +
+      `<span style="font-family:var(--font-mono);color:${vsFrontColor};min-width:52px;text-align:right;">${vsFront > 0 ? '+$' : '-$'}${Math.abs(vsFront).toFixed(3)}</span>` +
+      `<div style="position:relative;width:52px;height:5px;background:var(--bg-page);border-radius:3px;overflow:hidden;">` +
+      `<div style="position:absolute;top:0;${vsFront >= 0 ? 'left:0' : `left:calc(100% - ${barW}px)`};width:${barW}px;height:100%;background:${vsFrontColor};border-radius:3px;"></div></div></div>`;
+
+    const pctCell = vsFrontPct == null ? '<span style="color:var(--text-muted);">—</span>' :
+      `<span style="font-family:var(--font-mono);color:${vsFrontColor};">${vsFrontPct > 0 ? '+' : ''}${vsFrontPct.toFixed(1)}%</span>`;
+
+    // Structure badge
+    let structBadge = '<span style="color:var(--text-muted);">—</span>';
+    if (vsFront != null && Math.abs(vsFront) >= 0.005) {
+      structBadge = vsFront > 0
+        ? `<span style="background:rgba(0,255,136,0.12);color:var(--positive);border:1px solid rgba(0,255,136,0.25);border-radius:4px;font-size:10px;padding:2px 7px;font-weight:600;">Contango</span>`
+        : `<span style="background:rgba(255,68,85,0.12);color:var(--negative);border:1px solid rgba(255,68,85,0.25);border-radius:4px;font-size:10px;padding:2px 7px;font-weight:600;">Back</span>`;
+    }
+
+    // Partial coverage mini bar
+    const covPct = s.total > 0 ? (s.quoted / s.total * 100) : 100;
+    const covColor = covPct === 100 ? 'var(--positive)' : covPct >= 60 ? 'var(--warning)' : 'var(--negative)';
+    const covBar = s.missing > 0
+      ? `<div style="display:flex;align-items:center;gap:4px;margin-top:2px;">` +
+        `<div style="width:32px;height:3px;background:var(--bg-page);border-radius:2px;overflow:hidden;flex-shrink:0;">` +
+        `<div style="width:${covPct}%;height:100%;background:${covColor};border-radius:2px;"></div></div>` +
+        `<span style="font-size:10px;color:${covColor};">${s.quoted}/${s.total}</span></div>`
+      : '';
+
+    // Winter premium vs Cal of same year
+    let winterPremNote = '';
+    if (strip.type === 'winter' && s.avg != null) {
+      const calRef = calAvgByYear[strip.year];
+      if (calRef != null) {
+        const prem = s.avg - calRef;
+        const premColor = prem >= 0 ? 'var(--positive)' : 'var(--negative)';
+        winterPremNote = ` <span style="font-size:10px;color:${premColor};" data-tooltip="Winter ${String(strip.year).slice(2)}/${String(strip.year+1).slice(2)} avg vs Cal ${strip.year} avg ($${calRef.toFixed(3)}): seasonal premium/discount.">${prem >= 0 ? '+' : ''}$${prem.toFixed(3)} vs Cal</span>`;
+      }
+    }
+
+    // Row background tinting by type
+    const rowBg = strip.type === 'summer' ? 'background:rgba(251,146,60,0.04);'
+                : strip.type === 'winter' ? 'background:rgba(56,189,248,0.04);'
+                : '';
+
+    // Row tooltip
+    const quotedNote = s.missing > 0 ? ` Only ${s.quoted}/${s.total} months quoted — avg may be incomplete.` : ` All ${s.total} months quoted.`;
+    const winterPremTip = strip.type === 'winter' && calAvgByYear[strip.year] != null
+      ? ` Winter premium vs Cal ${strip.year}: ${(s.avg - calAvgByYear[strip.year]) >= 0 ? '+' : ''}$${(s.avg - calAvgByYear[strip.year]).toFixed(3)}.`
+      : '';
+    const rowTip = s.avg != null
+      ? `${strip.label} (${strip.desc}): avg $${s.avg.toFixed(3)} · ${vsFront != null ? (vsFront >= 0 ? '+$' : '-$') + Math.abs(vsFront).toFixed(3) + ' vs front' : ''} ${vsFrontPct != null ? '(' + (vsFrontPct >= 0 ? '+' : '') + vsFrontPct.toFixed(1) + '%)' : ''}.${quotedNote}${winterPremTip}`
+      : `${strip.label}: insufficient quotes to compute average.`;
+
+    html += `<tr style="${rowBg}cursor:default;" data-tooltip="${rowTip.replace(/"/g, '&quot;')}">` +
+      `<td style="text-align:left;font-weight:600;">${strip.label}${winterPremNote}</td>` +
+      `<td style="text-align:left;color:var(--text-muted);">${strip.desc}${covBar}</td>` +
+      `<td style="text-align:center;font-family:var(--font-mono);">${s.avg == null ? '<span style="color:var(--text-muted);">—</span>' : '$' + s.avg.toFixed(3)}</td>` +
+      `<td style="text-align:center;">${vsFrontCell}</td>` +
+      `<td style="text-align:center;">${pctCell}</td>` +
+      `<td style="text-align:center;">${structBadge}</td>` +
+      `</tr>`;
   });
 
   html += '</tbody></table></div>';
