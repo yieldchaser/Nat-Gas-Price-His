@@ -8427,29 +8427,73 @@ function _renderAnnualPerformance(data) {
   const best = sorted[0];
   const worst = sorted[sorted.length - 1];
 
-  const th = label => '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">' + label + '</th>';
-  let html = '<div class="card-title" style="padding:10px 14px 6px;" data-tooltip="Month-by-month and total annual % returns for NG=F across all available years. Each cell = that month\'s close-to-close return. Total = full-year compounded return.">ANNUAL PERFORMANCE \u2014 NG=F <span style="font-size:10px;color:var(--text-muted);font-weight:400;">' + rows.length + ' years</span></div>';
+  // Median (exclude current year)
+  const sortedPcts = [...allPcts].sort((a, b) => a - b);
+  const median = sortedPcts.length % 2 === 0
+    ? (sortedPcts[sortedPcts.length / 2 - 1] + sortedPcts[sortedPcts.length / 2]) / 2
+    : sortedPcts[Math.floor(sortedPcts.length / 2)];
+
+  // Max abs pct for bar scaling
+  const maxAbsPct = Math.max(...rows.map(r => Math.abs(r.pct)), 1);
+
+  const th = (label, tip, align) =>
+    '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;' + (align === 'left' ? 'text-align:left;' : '') + '"' +
+    (tip ? ' data-tooltip="' + tip + '"' : '') + '>' + label + '</th>';
+
+  let html =
+    '<div style="padding:10px 14px 4px;border-bottom:1px solid var(--border);">' +
+      '<div class="card-title" style="padding:0;margin-bottom:2px;" data-tooltip="Year-over-year performance using first and last close of each calendar year. Current year is partial and excluded from averages.">ANNUAL PERFORMANCE \u2014 NG=F' +
+        '<span style="font-size:10px;color:var(--text-muted);font-weight:400;margin-left:6px;">' + rows.length + ' years</span>' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">first close of year → last close of year · current year marked PARTIAL</div>' +
+    '</div>';
+
   html += '<div style="overflow-y:auto;max-height:360px;"><table><thead><tr>' +
-    '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;text-align:left;">Year</th>' +
-    th('Jan Price') + th('Dec Price') + th('Annual \u0394%') + th('Rank') + '</tr></thead><tbody>';
+    th('Year', 'Calendar year. Current year is in-progress (PARTIAL) and excluded from avg/median.', 'left') +
+    th('Jan Close', 'First available close of the calendar year (USD/MMBtu).') +
+    th('Dec Close', 'Last available close of the calendar year.') +
+    th('Annual Δ%', 'Year-over-year % return: (Dec Close − Jan Close) / Jan Close.') +
+    th('Return Bar', 'Visual magnitude of the annual return — bar width ∝ absolute return, green = positive, red = negative.') +
+    th('vs Avg', 'Deviation from the historical average annual return (excludes current year). Positive = outperformed avg.') +
+    th('Rank', 'All-time rank by annual return. #1 = best year on record.') +
+    '</tr></thead><tbody>';
 
   rows.forEach(r => {
-    html += '<tr>' +
-      '<td style="text-align:left;font-weight:600;">' + r.year + '</td>' +
-      '<td style="font-family:var(--font-mono);">$' + r.jan.toFixed(3) + '</td>' +
-      '<td style="font-family:var(--font-mono);">$' + r.dec.toFixed(3) + '</td>' +
-      '<td class="' + (r.pct >= 0 ? 'positive' : 'negative') + '">' + (r.pct >= 0 ? '+' : '') + r.pct.toFixed(1) + '%</td>' +
-      '<td style="color:var(--text-muted);">#' + r.rank + '</td>' +
+    const isCurrent = r.year === currentYearStr;
+    const vsAvg = r.pct - avgAnn;
+    const barW = Math.max(2, (Math.abs(r.pct) / maxAbsPct * 80)).toFixed(1);
+    const barColor = r.pct >= 0 ? 'rgba(0,255,136,0.65)' : 'rgba(255,68,85,0.65)';
+    const vsColor = vsAvg >= 0 ? 'var(--positive)' : 'var(--negative)';
+    const rowTip = r.year + ': $' + r.jan.toFixed(3) + ' → $' + r.dec.toFixed(3) +
+      ' · ' + (r.pct >= 0 ? '+' : '') + r.pct.toFixed(1) + '% · Rank #' + r.rank + '/' + rows.length +
+      ' · vs avg: ' + (vsAvg >= 0 ? '+' : '') + vsAvg.toFixed(1) + '%' +
+      (isCurrent ? ' · PARTIAL YEAR (in progress)' : '');
+    html += '<tr data-tooltip="' + rowTip + '">' +
+      '<td style="text-align:left;font-weight:600;">' + r.year +
+        (isCurrent ? '<span style="font-size:9px;color:var(--accent-hh);margin-left:6px;font-weight:400;font-family:var(--font-mono);">PARTIAL</span>' : '') +
+      '</td>' +
+      '<td style="font-family:var(--font-mono);color:var(--text-secondary);">$' + r.jan.toFixed(3) + '</td>' +
+      '<td style="font-family:var(--font-mono);color:var(--text-secondary);">$' + r.dec.toFixed(3) + '</td>' +
+      '<td class="' + (r.pct >= 0 ? 'positive' : 'negative') + '" style="font-weight:600;">' + (r.pct >= 0 ? '+' : '') + r.pct.toFixed(1) + '%</td>' +
+      '<td>' +
+        '<div style="width:' + barW + 'px;height:6px;background:' + barColor + ';border-radius:2px;display:inline-block;vertical-align:middle;"></div>' +
+      '</td>' +
+      '<td style="font-family:var(--font-mono);font-size:11px;color:' + vsColor + ';">' +
+        (isCurrent ? '<span style="color:var(--text-muted);">—</span>' : (vsAvg >= 0 ? '+' : '') + vsAvg.toFixed(1) + '%') +
+      '</td>' +
+      '<td style="color:var(--text-muted);font-size:11px;">#' + r.rank + '<span style="font-size:9px;">/' + rows.length + '</span></td>' +
     '</tr>';
   });
 
   html += '</tbody></table></div>';
-  html += '<div style="padding:8px 14px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;display:flex;gap:16px;flex-wrap:wrap;color:var(--text-muted);">' +
-    '<span>Avg: <strong style="color:var(--text-primary);">' + (avgAnn >= 0 ? '+' : '') + avgAnn.toFixed(1) + '%</strong></span>' +
-    '<span>Best: <strong style="color:var(--positive);">+' + best.pct.toFixed(1) + '% (' + best.year + ')</strong></span>' +
-    '<span>Worst: <strong style="color:var(--negative);">' + worst.pct.toFixed(1) + '% (' + worst.year + ')</strong></span>' +
-    '<span>Pos: <strong style="color:var(--positive);">' + posYears + '/' + rows.length + '</strong></span>' +
-  '</div>';
+  html +=
+    '<div style="padding:8px 14px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;display:flex;gap:16px;flex-wrap:wrap;color:var(--text-muted);">' +
+      '<span data-tooltip="Arithmetic mean of annual returns — excludes current partial year.">Avg: <strong style="color:var(--text-primary);">' + (avgAnn >= 0 ? '+' : '') + avgAnn.toFixed(1) + '%</strong></span>' +
+      '<span data-tooltip="Median annual return — less sensitive to outliers like 2000\'s +358%.">Median: <strong style="color:var(--text-primary);">' + (median >= 0 ? '+' : '') + median.toFixed(1) + '%</strong></span>' +
+      '<span data-tooltip="Best single calendar year on record.">Best: <strong style="color:var(--positive);">' + (best.pct >= 0 ? '+' : '') + best.pct.toFixed(1) + '% (' + best.year + ')</strong></span>' +
+      '<span data-tooltip="Worst single calendar year on record.">Worst: <strong style="color:var(--negative);">' + worst.pct.toFixed(1) + '% (' + worst.year + ')</strong></span>' +
+      '<span data-tooltip="Number of calendar years with a positive annual return.">Pos: <strong style="color:var(--positive);">' + posYears + '/' + rows.length + '</strong></span>' +
+    '</div>';
 
   el.innerHTML = html;
 }
