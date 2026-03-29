@@ -6386,6 +6386,10 @@ MONTHS.forEach(m => {
   // Range label for Avg column header
   const rangeLabel = range === 'all' ? 'All' : range + 'Y';
 
+  // Today at UTC midnight — used to classify current-year cells as settled vs live
+  const _now = new Date();
+  const todayUTC = new Date(Date.UTC(_now.getUTCFullYear(), _now.getUTCMonth(), _now.getUTCDate()));
+
   // Pre-compute per-month all-years rank lookup (over all years in STATE.expiry, not just visible)
   const allExpiryYears = Object.keys(STATE.expiry).sort((a, b) => +a - +b);
   const monthRankLookup = {}; // m -> sorted prices desc for ranking
@@ -6405,10 +6409,10 @@ MONTHS.forEach(m => {
   years.forEach(y => {
     const isCurrent = parseInt(y) === currentYear;
     const hdrLabel = isCurrent
-      ? `${y} <span style="font-size:9px;color:var(--positive);vertical-align:middle;" title="">●</span>`
+      ? `${y} <span style="font-size:9px;color:rgba(255,165,0,0.9);vertical-align:middle;">⚡</span>`
       : y;
     const hdrTip = isCurrent
-      ? `${y} — current year. Contracts that haven't expired yet show live market prices, not final settlements.`
+      ? `${y} — mixed column. Settled contracts show final NYMEX settlement prices (teal border). Contracts not yet expired show live market quotes (amber border, ~ prefix) and are not comparable to historical settlements.`
       : `Final settlement price for contracts expiring in ${y}. Click a cell to jump to that contract in the Prices tab.`;
     html += `<th data-tooltip="${hdrTip}">${hdrLabel}</th>`;
   });
@@ -6432,11 +6436,21 @@ MONTHS.forEach(m => {
     years.forEach(yr => {
       const v = expiry[yr] ? expiry[yr][m] : null;
       const isCurrent = parseInt(yr) === currentYear;
+      // For current-year cells, classify as settled (final) or live (still trading)
+      let isSettledCurrent = false, isLiveCurrent = false;
+      let expiryDateStr = '';
+      if (isCurrent && typeof computeNGExpiry === 'function') {
+        const monthIdx = MONTHS.indexOf(m);
+        const expiryDate = computeNGExpiry(parseInt(yr), monthIdx);
+        expiryDateStr = expiryDate.toISOString().slice(0, 10);
+        isSettledCurrent = expiryDate <= todayUTC;
+        isLiveCurrent = !isSettledCurrent;
+      }
+
       if (v == null) { html += `<td style="color:var(--text-muted);">\u2014</td>`; return; }
-      // Heat-map: compare against visible-window average
       const ref = avgVisible[m];
       let bg = 'transparent';
-      if (ref) {
+      if (ref && !isLiveCurrent) { // don't heatmap live cells — they'd skew color vs settled history
         const delta = (v - ref) / ref;
         if (delta > 0.02)       bg = 'rgba(0,255,136,'  + Math.min(delta * 1.8, 0.55) + ')';
         else if (delta < -0.02) bg = 'rgba(255,68,85,'  + Math.min(Math.abs(delta) * 1.8, 0.55) + ')';
@@ -6448,21 +6462,33 @@ MONTHS.forEach(m => {
       const priorV  = expiry[priorYr] ? expiry[priorYr][m] : null;
       const yoyCell = (priorV != null && priorV !== 0) ? ((v - priorV) / priorV * 100) : null;
       const vsAll   = ref ? ((v - ref) / ref * 100) : null;
+      // Avoid duplicate tooltip line when visible avg IS the 5Y avg (range = '5Y')
+      const vs5yIsDupe = vs5y != null && vsAll != null && Math.abs(vs5y - vsAll) < 0.1;
       const ttParts = [
         `${m} ${yr}: $${v.toFixed(3)}`,
+        ...(isLiveCurrent    ? [`⚡ Live price — contract expires ${expiryDateStr} (not yet a final settlement)`] : []),
+        ...(isSettledCurrent ? [`✓ Final settlement (expired ${expiryDateStr})`] : []),
         `Rank #${rank}/${rankN} all-time`,
-        ...(vsAll != null   ? [`${vsAll >= 0 ? '+' : ''}${vsAll.toFixed(1)}% vs ${rangeLabel} avg`]   : []),
-        ...(vs5y  != null   ? [`${vs5y  >= 0 ? '+' : ''}${vs5y.toFixed(1)}% vs 5Y avg`]              : []),
+        ...(vsAll != null              ? [`${vsAll >= 0 ? '+' : ''}${vsAll.toFixed(1)}% vs ${rangeLabel} avg`] : []),
+        ...(!vs5yIsDupe && vs5y != null ? [`${vs5y >= 0 ? '+' : ''}${vs5y.toFixed(1)}% vs 5Y avg`] : []),
         ...(yoyCell != null ? [`YoY: ${yoyCell >= 0 ? '+' : ''}${yoyCell.toFixed(1)}% from ${priorYr}`] : []),
-        ...(isCurrent ? ['⚠ Current year — may be live price, not final settlement'] : []),
       ];
       const rankSup = rank <= 3
         ? `<sup style="font-size:8px;color:var(--accent-hh);vertical-align:super;">#${rank}</sup>`
         : rank >= rankN - 2
           ? `<sup style="font-size:8px;color:var(--negative);vertical-align:super;">#${rank}</sup>`
           : '';
-      const cellStyle = `background:${bg};cursor:pointer;position:relative;${isCurrent ? 'border-bottom:2px solid rgba(0,255,136,0.4);' : ''}`;
-      html += `<td style="${cellStyle}" data-tooltip="${ttParts.join(' · ').replace(/"/g, '&quot;')}" onclick="navigateTo('prices',{month:'${m}',year:'${yr}'})">${'$' + v.toFixed(3)}${rankSup}</td>`;
+      // Cell border: teal = recently settled, amber = live/unsettled
+      const borderStyle = isSettledCurrent ? 'border-bottom:2px solid rgba(0,212,255,0.45);'
+                        : isLiveCurrent    ? 'border-bottom:2px solid rgba(255,165,0,0.6);'
+                        : '';
+      // Live cells: show value in italic with ~ prefix, no heatmap bg
+      const liveBg = isLiveCurrent ? 'background:rgba(255,165,0,0.06);' : `background:${bg};`;
+      const valueHtml = isLiveCurrent
+        ? `<span style="font-style:italic;color:rgba(255,165,0,0.85);">~$${v.toFixed(3)}</span>${rankSup}`
+        : `$${v.toFixed(3)}${rankSup}`;
+      const cellStyle = `${liveBg}cursor:pointer;position:relative;${borderStyle}`;
+      html += `<td style="${cellStyle}" data-tooltip="${ttParts.join(' · ').replace(/"/g, '&quot;')}" onclick="navigateTo('prices',{month:'${m}',year:'${yr}'})">${valueHtml}</td>`;
     });
     // YoY column
     const lastYr = years[years.length - 1];
