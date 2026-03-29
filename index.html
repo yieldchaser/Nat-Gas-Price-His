@@ -6542,13 +6542,18 @@ function showExpiryMonthProfile(month) {
   const profileEl = document.getElementById('expiry-month-profile');
   if (!profileEl) return;
 
+  const _getExpiryRange = () => {
+    const active = document.querySelector('#expiry-range-switch .segment-btn.active');
+    return active ? active.dataset.range : 'all';
+  };
+
   if (_expirySelectedMonth === month) {
     // Toggle off
     _expirySelectedMonth = null;
     profileEl.style.display = 'none';
     profileEl.innerHTML = '';
-    // Remove active highlight
     document.querySelectorAll('.expiry-month-label').forEach(e => e.classList.remove('expiry-month-active'));
+    buildExpirySeasonalBar(_getExpiryRange());
     return;
   }
   _expirySelectedMonth = month;
@@ -6577,6 +6582,12 @@ function showExpiryMonthProfile(month) {
     return p5.length ? p5.reduce((s, v) => s + v, 0) / p5.length : avgAll;
   })();
 
+  // Rank lookup (descending: rank 1 = all-time high)
+  const sortedDesc = [...prices].sort((a, b) => b - a);
+  const highPoint = seriesData.reduce((a, b) => b.value > a.value ? b : a);
+  const lowPoint  = seriesData.reduce((a, b) => b.value < a.value ? b : a);
+  const curYearEntry = seriesData.find(d => d.year === currentYear);
+
   profileEl.style.display = 'block';
   profileEl.className = 'card';
   profileEl.style.padding = '0';
@@ -6584,10 +6595,38 @@ function showExpiryMonthProfile(month) {
 
   const titleEl = document.createElement('div');
   titleEl.className = 'card-title';
-  titleEl.style.padding = '10px 14px 0';
-  titleEl.textContent = month.toUpperCase() + ' EXPIRY HISTORY \u2014 ' + seriesData.length + ' contracts';
+  titleEl.style.cssText = 'padding:10px 14px 0;display:flex;align-items:baseline;gap:8px;';
+  titleEl.innerHTML = `${month.toUpperCase()} EXPIRY HISTORY <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${seriesData.length} settled contracts · ${seriesData[0].year}–${seriesData[seriesData.length - 1].year}</span>`;
   profileEl.innerHTML = '';
   profileEl.appendChild(titleEl);
+
+  // ── KPI stats strip ──────────────────────────────────────────────────────────
+  const kpiEl = document.createElement('div');
+  kpiEl.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 0;';
+  const kpi = (label, val, color, tip, sub) =>
+    `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:5px 10px;min-width:88px;" data-tooltip="${tip}">` +
+    `<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>` +
+    `<div style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:${color};">${val}</div>` +
+    (sub ? `<div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">${sub}</div>` : '') +
+    `</div>`;
+  const vsAvgAll = curYearEntry ? curYearEntry.value - avgAll : null;
+  kpiEl.innerHTML = [
+    kpi('All-Time High', '$' + highPoint.value.toFixed(3), '#ff8c00',
+      `Highest ${month} final settlement on record, set in ${highPoint.year}.`, `${highPoint.year}`),
+    kpi('All-Time Low',  '$' + lowPoint.value.toFixed(3),  '#00d4ff',
+      `Lowest ${month} final settlement on record, set in ${lowPoint.year}.`,  `${lowPoint.year}`),
+    kpi('All Avg', '$' + avgAll.toFixed(3), 'var(--text-secondary)',
+      `Simple average of all ${seriesData.length} ${month} final settlements.`),
+    kpi('5Y Avg', '$' + avg5y.toFixed(3), '#ff8c00',
+      `Average of the last 5 completed ${month} contracts (${currentYear - 5}–${currentYear - 1}). Excludes current year — it hasn't settled yet.`),
+    curYearEntry
+      ? kpi(`${currentYear}`, '$' + curYearEntry.value.toFixed(3),
+          curYearEntry.value >= avgAll ? 'var(--positive)' : 'var(--negative)',
+          `Current ${currentYear} ${month} contract price. Rank: #${sortedDesc.indexOf(curYearEntry.value) + 1} of ${prices.length} all-time. vs All Avg: ${vsAvgAll >= 0 ? '+' : ''}${vsAvgAll.toFixed(3)}.`,
+          `#${sortedDesc.indexOf(curYearEntry.value) + 1}/${prices.length}`)
+      : '',
+  ].join('');
+  profileEl.appendChild(kpiEl);
 
   const chartEl = document.createElement('div');
   chartEl.className = 'chart-wrap';
@@ -6631,8 +6670,8 @@ function showExpiryMonthProfile(month) {
   const pillRowEl = document.createElement('div');
   pillRowEl.style.cssText = 'display:flex;gap:8px;padding:8px 14px 0;';
   pillRowEl.innerHTML = `
-    <button class="series-pill active" data-key="allAvg" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.30);background:rgba(255,255,255,0.08);color:#f5f7fb;cursor:pointer;">All Avg</button>
-    <button class="series-pill active" data-key="avg5y" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,140,0,0.40);background:rgba(255,140,0,0.10);color:#ff8c00;cursor:pointer;" title="Average of 5 completed years (excludes current year)">5Y Avg</button>
+    <button class="series-pill active" data-key="allAvg" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.30);background:rgba(255,255,255,0.08);color:#f5f7fb;cursor:pointer;" data-tooltip="Toggle the all-years average reference line ($${avgAll.toFixed(3)}).">All Avg</button>
+    <button class="series-pill active" data-key="avg5y" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,140,0,0.40);background:rgba(255,140,0,0.10);color:#ff8c00;cursor:pointer;" data-tooltip="Toggle the 5-completed-year average reference line ($${avg5y.toFixed(3)}). Uses ${currentYear - 5}–${currentYear - 1} only — excludes current year which hasn't settled.">5Y Avg</button>
   `;
   profileEl.insertBefore(pillRowEl, chartEl);
 
@@ -6661,10 +6700,17 @@ function showExpiryMonthProfile(month) {
       getPoint: p => lookup.get(typeof p.time === 'string' ? p.time : ''),
       formatValue: v => '$' + v.toFixed(3) }],
     getTitle: p => { const d = lookup.get(typeof p.time === 'string' ? p.time : ''); return d ? d.year.toString() : ''; },
-    getMetrics: () => [
-      { label: 'All Avg', value: '$' + avgAll.toFixed(3) },
-      { label: '5Y Avg (completed)', value: '$' + avg5y.toFixed(3) },
-    ],
+    getMetrics: param => {
+      const d = lookup.get(typeof param.time === 'string' ? param.time : '');
+      const rank = d ? sortedDesc.indexOf(d.value) + 1 : null;
+      const vsAll = d ? d.value - avgAll : null;
+      return [
+        ...(rank ? [{ label: 'Rank (all-time)', value: `#${rank} of ${prices.length}` }] : []),
+        ...(vsAll !== null ? [{ label: 'vs All Avg', value: (vsAll >= 0 ? '+' : '') + '$' + vsAll.toFixed(3) }] : []),
+        { label: 'All Avg', value: '$' + avgAll.toFixed(3) },
+        { label: '5Y Avg (completed)', value: '$' + avg5y.toFixed(3) },
+      ];
+    },
   });
 
   // Slider controls
@@ -6740,6 +6786,8 @@ function showExpiryMonthProfile(month) {
   });
 
   syncExpiryProfileRangeFooter();
+  // Refresh bar chart to apply active-month highlight
+  buildExpirySeasonalBar(_getExpiryRange());
 }
 
 function _syncExpiryProfileSliderFromChart() {
@@ -6827,19 +6875,43 @@ function buildExpirySeasonalBar(range) {
     const vals = years.map(yr => expiry[yr] && expiry[yr][m]).filter(v => v != null);
     return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
   });
-  const maxAvg = Math.max(...avgs, 0.01);
+  const counts = MONTHS.map(m =>
+    years.map(yr => expiry[yr] && expiry[yr][m]).filter(v => v != null).length
+  );
+  const maxAvg  = Math.max(...avgs, 0.01);
+  const meanAvg = avgs.filter(v => v > 0).reduce((a, b) => a + b, 0) / (avgs.filter(v => v > 0).length || 1);
+  // Rank months by avg settlement descending
+  const sortedMonthIdxs = [...avgs.keys()].sort((a, b) => avgs[b] - avgs[a]);
+  const monthRanks = avgs.map((_, i) => sortedMonthIdxs.indexOf(i) + 1);
+  // Mean reference line height as fraction of bar area
+  const BAR_H = 120; // px of usable bar area
+  const meanLineH = Math.floor(meanAvg / maxAvg * BAR_H);
+  const yearLabel = range === 'all' ? `All years (${years[0]}–${years[years.length-1]})` : `Last ${range} completed years (${years[0]}–${years[years.length-1]})`;
 
-  let html = '<div class="card-title" style="padding:10px 14px 4px;">SEASONAL EXPIRY PROFILE <span style="font-size:10px;color:var(--text-muted);font-weight:400;">avg settlement by month</span></div>' +
-    '<div style="display:flex;align-items:flex-end;justify-content:space-around;padding:8px 14px 0;gap:4px;height:140px;">';
+  let html = `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;padding:10px 14px 4px;">` +
+    `<div><span class="card-title" style="padding:0;">SEASONAL EXPIRY PROFILE</span> <span style="font-size:10px;color:var(--text-muted);font-weight:400;">avg settlement by month · ${yearLabel}</span></div>` +
+    `<div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">mean across months: <span style="color:var(--text-secondary);">$${meanAvg.toFixed(2)}</span></div>` +
+    `</div>` +
+    `<div style="position:relative;display:flex;align-items:flex-end;justify-content:space-around;padding:8px 14px 0;gap:4px;height:${BAR_H + 36}px;">` +
+    // Mean reference line
+    `<div style="position:absolute;bottom:${36 + meanLineH}px;left:14px;right:14px;border-top:1px dashed rgba(255,255,255,0.22);pointer-events:none;z-index:1;">` +
+    `<span style="position:absolute;right:0;top:-14px;font-size:9px;color:rgba(255,255,255,0.35);font-family:var(--font-mono);">avg $${meanAvg.toFixed(2)}</span></div>`;
 
   MONTHS.forEach((m, i) => {
-    const h = Math.max(8, Math.floor(avgs[i] / maxAvg * 92));
-    html += '<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;cursor:pointer;" ' +
-      'onclick="showExpiryMonthProfile(\'' + m + '\')" title="Click to view ' + m + ' history">' +
-      '<span style="font-family:var(--font-mono);font-size:9px;color:var(--text-secondary);">$' + avgs[i].toFixed(2) + '</span>' +
-      '<div style="width:100%;height:' + h + 'px;background:' + SEASON_COLORS[m] + ';border-radius:2px 2px 0 0;" class="expiry-bar-col" data-month="' + m + '"></div>' +
-      '<span style="font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);padding-bottom:4px;">' + m + '</span>' +
-      '</div>';
+    const h = Math.max(8, Math.floor(avgs[i] / maxAvg * BAR_H));
+    const isActive = m === _expirySelectedMonth;
+    const aboveAvg = avgs[i] >= meanAvg;
+    const barColor = isActive
+      ? (aboveAvg ? 'rgba(0,255,136,0.85)' : 'rgba(255,68,85,0.80)')
+      : SEASON_COLORS[m];
+    const borderStyle = isActive ? 'outline:2px solid rgba(255,255,255,0.55);outline-offset:-2px;' : '';
+    const tip = `${m}: avg $${avgs[i].toFixed(3)} · rank #${monthRanks[i]} of 12 · ${counts[i]} contracts · ${avgs[i] >= meanAvg ? '+' : ''}${((avgs[i] - meanAvg) / meanAvg * 100).toFixed(1)}% vs cross-month avg. Click to view full ${m} price history.`;
+    html += `<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;cursor:pointer;" ` +
+      `onclick="showExpiryMonthProfile('${m}')" data-tooltip="${tip}">` +
+      `<span style="font-family:var(--font-mono);font-size:9px;color:${isActive ? 'var(--text-primary)' : 'var(--text-secondary)'};">$${avgs[i].toFixed(2)}</span>` +
+      `<div style="width:100%;height:${h}px;background:${barColor};border-radius:2px 2px 0 0;${borderStyle}" class="expiry-bar-col" data-month="${m}"></div>` +
+      `<span style="font-family:var(--font-mono);font-size:10px;color:${isActive ? 'var(--text-primary)' : 'var(--text-muted)'};padding-bottom:4px;font-weight:${isActive ? '700' : '400'};">${m}</span>` +
+      `</div>`;
   });
 
   html += '</div>';
