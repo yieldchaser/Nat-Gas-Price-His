@@ -2071,13 +2071,24 @@ function updateHHChart() {
   // Update header
   const last = data[data.length - 1];
   const first = data[0];
-  document.getElementById('hh-ticker').textContent = ticker;
-  document.getElementById('hh-desc').textContent = `${month.toUpperCase()} ${year}`;
-  document.getElementById('hh-price').textContent = `$${last.p.toFixed(3)}`;
   const totalChange = ((last.p - first.p) / first.p * 100);
+
+  const tickerEl = document.getElementById('hh-ticker');
+  tickerEl.textContent = ticker;
+  tickerEl.dataset.tooltip = `${ticker} — NYMEX Henry Hub Natural Gas futures contract for ${month} ${year} delivery. Click Prev/Next Year in the stats panel to navigate contracts.`;
+
+  const descEl = document.getElementById('hh-desc');
+  descEl.textContent = `${month} ${year} · USD/MMBtu`;
+  descEl.dataset.tooltip = `${month} ${year} delivery month · Henry Hub Natural Gas · prices in USD per MMBtu. First trade: ${first.date || 'N/A'} · Last print: ${last.date || 'N/A'}.`;
+
+  const priceEl = document.getElementById('hh-price');
+  priceEl.textContent = `$${last.p.toFixed(3)}`;
+  priceEl.dataset.tooltip = `Last traded price: $${last.p.toFixed(3)} on ${last.date || 'N/A'}. This is the ${last.date ? '' : 'most recent '}settlement price for this contract.`;
+
   const changeEl = document.getElementById('hh-change');
   changeEl.textContent = `${totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)}% from contract open`;
   changeEl.className = 'change ' + (totalChange >= 0 ? 'positive' : 'negative');
+  changeEl.dataset.tooltip = `Total return from first listed price ($${first.p.toFixed(3)} on ${first.date || 'N/A'}) to last print ($${last.p.toFixed(3)}) — the market's full re-pricing of this delivery month over its lifecycle.`;
 
   // Build chart
   renderHHChartWidget(filtered, data, month, year, calendarMode, compareOn);
@@ -2415,12 +2426,12 @@ function renderHHStats(data, month, year) {
   const last = data[data.length - 1];
   const first = data[0];
   const { max: high, min: low, avg } = getSeriesStats(data);
-  
+
   const _windowBtn = document.querySelector('#hh-seasonal-window .segment-btn.active');
   const _windowKey = _windowBtn ? _windowBtn.dataset.window : '5y';
   const _cacheMap = { '5y': STATE.seasonalCache, '15y': STATE.seasonalCache15y, 'all': STATE.seasonalCacheAll };
   const seasonal = (_cacheMap[_windowKey] || STATE.seasonalCache)[month] || STATE.seasonalCache[month];
-  
+
   const currentDay = last.d;
 
   let vs5yAvg = '—';
@@ -2428,7 +2439,6 @@ function renderHHStats(data, month, year) {
   let seasonalYLabel = { '5y': '5Y', '15y': '15Y', 'all': 'ALL' }[_windowKey] || '5Y';
   if (seasonal && seasonal[currentDay]) {
     const s = seasonal[currentDay];
-    // s.count = how many prior-year contracts contributed
     if (_windowKey !== 'all' && s.count < parseInt(_windowKey)) seasonalYLabel = `${s.count}Y`;
     const delta = ((last.p - s.avg) / s.avg * 100);
     vs5yAvg = `<span class="${delta >= 0 ? 'positive' : 'negative'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}%</span> vs ${seasonalYLabel} avg`;
@@ -2442,36 +2452,48 @@ function renderHHStats(data, month, year) {
   const _hhSeasonalEntry = seasonal && seasonal[currentDay] ? seasonal[currentDay] : null;
   const hhZScore = computeZScore(last.p, _hhSeasonalEntry, data.length);
 
-  // Check if contract is active (has live data) or expired
+  // Determine actual contract expiry status from the NYMEX schedule, not just Yahoo data.
+  // A contract can still have cached Yahoo data after it has expired — we should not show
+  // it as "ACTIVE" in that case. isExpired is the ground truth; hasLiveData only indicates
+  // whether fresh Yahoo prices were loaded this session.
   const code = MONTH_CODES[month];
   const yy = year % 100;
   const pad = yy < 10 ? '0' + yy : '' + yy;
   const liveTicker = `NG${code}${pad}.NYM`;
-  const isLive = !!STATE.liveData[liveTicker];
+  const hasLiveData = !!STATE.liveData[liveTicker];
+
+  let contractExpDate = null;
+  let isExpired = !hasLiveData; // fallback: if no Yahoo data assume expired
+  let expiryDateStr = null;
+  const monthIdx = MONTHS.indexOf(month);
+  if (typeof computeNGExpiry === 'function' && monthIdx >= 0) {
+    contractExpDate = computeNGExpiry(year, monthIdx);
+    isExpired = contractExpDate < new Date();
+    expiryDateStr = contractExpDate.toISOString().slice(0, 10);
+  }
+
+  // isLive: has fresh data AND contract has not yet expired
+  const isLive = hasLiveData && !isExpired;
 
   let expiryProgressHtml = '';
-  if (isLive && typeof computeNGExpiry === 'function') {
-    const monthIdx = MONTHS.indexOf(month); // convert month name to 0-based index
-    const expDate = computeNGExpiry(year, monthIdx >= 0 ? monthIdx : 0);
+  if (isLive && contractExpDate) {
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
-    const daysLeft = Math.ceil((expDate - today) / 86400000);
+    const daysLeft = Math.ceil((contractExpDate - today) / 86400000);
     if (daysLeft > 0) {
       const elapsed = data.length;
       const total = 519;
       const elapsedPct = Math.min(100, Math.round(elapsed / total * 100));
-      // Convert calendar days remaining → approximate trading days for the progress bar.
-      // Using approxTradingDaysTo ensures same unit (trading days / 519) as elapsedPct.
-      const tradingDaysLeft = approxTradingDaysTo(todayStr, expDate);
+      const tradingDaysLeft = approxTradingDaysTo(todayStr, contractExpDate);
       const remainingPct = Math.max(0, Math.min(100, Math.round(tradingDaysLeft / total * 100)));
       expiryProgressHtml = `
         <div class="stat">
-          <div class="stat-label">Days to Expiry</div>
+          <div class="stat-label" data-tooltip="Calendar days until this contract expires on NYMEX. After expiry, the contract settles and trading ceases.">Days to Expiry</div>
           <div class="stat-value" style="color:var(--accent-hh);">${daysLeft} <span style="font-size:11px;color:var(--text-muted);font-weight:400;">calendar days</span></div>
           <div class="progress-bar" style="margin-top:4px;background:rgba(255,255,255,0.1);"><div class="progress-fill" style="width:${100 - remainingPct}%;background:var(--accent-hh);"></div></div>
         </div>
         <div class="stat">
-          <div class="stat-label">Trading Days Elapsed</div>
+          <div class="stat-label" data-tooltip="How many of the 519-day analysis window have elapsed. T-Day 519 = expiry day. The chart and seasonal band show prices plotted on this T-Day axis.">Trading Days Elapsed</div>
           <div class="stat-value" style="color:var(--text-primary);">${elapsed} <span style="font-size:13px;color:var(--text-muted);">/ ${total}</span> <span style="font-size:11px;color:var(--accent-hh);font-weight:400;">${elapsedPct}%</span></div>
           <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${elapsedPct}%;background:var(--accent-hh);"></div></div>
         </div>
@@ -2479,45 +2501,65 @@ function renderHHStats(data, month, year) {
     }
   }
 
-  statsEl.innerHTML = `
+  // For expired contracts, show a completed lifecycle bar.
+  // data.length may exceed 519 for older contracts whose CSV includes pre-window data —
+  // cap the displayed count at 519 (the analysis window size) to avoid misleading "754/519".
+  const completedDays = Math.min(data.length, 519);
+  const completedBarHtml = (!isLive) ? `
+    <div class="stat">
+      <div class="stat-label" data-tooltip="Number of trading days within the 519-day analysis window captured for this contract. A completed contract fills the full 519-day window.">Trading Days in Window</div>
+      <div class="stat-value">${completedDays} <span style="font-size:13px;color:var(--text-muted);">/ 519</span> <span style="font-size:11px;color:var(--text-muted);">— full lifecycle</span></div>
+      <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:100%;background:var(--accent-hh);opacity:0.5;"></div></div>
+    </div>` : '';
 
-    <div class="card-title">Contract Statistics</div>
-    ${isLive ? '' : `<div class="stat">
-      <div class="stat-label">Trading Days</div>
-      <div class="stat-value">${data.length} <span style="font-size:13px;color:var(--text-muted)">/ 519</span></div>
-      <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${Math.round(data.length/519*100)}%;background:var(--accent-hh);"></div></div>
-    </div>`}
+  // Last print date (settlement date for expired contracts, last live date for active)
+  const lastPrintDate = last.date
+    ? `<div class="stat">
+        <div class="stat-label" data-tooltip="${isExpired ? 'Date of final settlement — the last traded price before NYMEX expiry.' : 'Date of the most recent live price update for this contract.'}">Last Print</div>
+        <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${last.date}</div>
+      </div>` : '';
+
+  // Status badge colour and text based on actual expiry date
+  const statusBg    = isLive ? 'rgba(0,255,136,0.1)' : isExpired ? 'rgba(136,136,170,0.1)' : 'rgba(255,200,0,0.12)';
+  const statusColor = isLive ? 'var(--positive)' : isExpired ? 'var(--text-muted)' : '#ffc800';
+  const statusText  = isLive ? 'ACTIVE — LIVE DATA'
+    : isExpired ? `EXPIRED${expiryDateStr ? ' · ' + expiryDateStr : ''}`
+    : 'HISTORICAL';
+
+  statsEl.innerHTML = `
+    <div class="card-title" data-tooltip="Statistics for the selected NYMEX natural gas futures contract — lifecycle progress, seasonal comparison, price range, and settlement status.">Contract Statistics</div>
+    ${completedBarHtml}
     ${expiryProgressHtml}
     <div class="stat">
-      <div class="stat-label" data-tooltip="% deviation of the current price from the ${seasonalYLabel} seasonal average at this exact T-Day. Positive = trading above historical norm.">vs ${seasonalYLabel} Seasonal Avg</div>
+      <div class="stat-label" data-tooltip="% deviation of the ${isExpired ? 'settlement' : 'current'} price from the ${seasonalYLabel} seasonal average at T-Day ${currentDay}. Positive = above historical norm for this lifecycle stage.">vs ${seasonalYLabel} Seasonal Avg</div>
       <div style="font-family:var(--font-mono);font-size:14px;">${vs5yAvg}</div>
     </div>
     <div class="stat">
-      <div class="stat-label" data-tooltip="Where the current price sits within the ${seasonalYLabel} min–max band at this T-Day. 50th = at the historical midpoint; 100th = all-time high for this lifecycle window.">${seasonalYLabel} Range Position</div>
+      <div class="stat-label" data-tooltip="Where the ${isExpired ? 'settlement' : 'current'} price sits within the ${seasonalYLabel} min–max band at T-Day ${currentDay}. 50th = historical midpoint; 100th = all-time high at this lifecycle stage.">${seasonalYLabel} Range Position</div>
       <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${percentile}</div>
     </div>
     ${zScoreStatHtml(hhZScore, seasonalYLabel)}
     <div class="stat">
-      <div class="stat-label" data-tooltip="Absolute price range over the contract's full traded history — High is the intra-contract peak, Low is the trough, Avg is the mean close.">High / Low / Avg</div>
+      <div class="stat-label" data-tooltip="Absolute price range over the contract's full traded history — High is the intra-contract peak, Low is the trough, Avg is the mean close price.">High / Low / Avg</div>
       <div style="font-family:var(--font-mono);font-size:13px;">$${high.toFixed(3)} / $${low.toFixed(3)} / $${avg.toFixed(3)}</div>
     </div>
     <div class="stat">
-      <div class="stat-label" data-tooltip="Total return from the contract's first traded day to today — measures how much the market has repriced this delivery month since it first listed.">From Contract Open</div>
+      <div class="stat-label" data-tooltip="Total price return from the contract's first listed trading day to its last print — measures the full lifecycle re-pricing of this delivery month.">From Contract Open</div>
       <div style="font-family:var(--font-mono);font-size:13px;" class="${last.p >= first.p ? 'positive' : 'negative'}">
-        ${((last.p - first.p) / first.p * 100).toFixed(1)}%
+        ${((last.p - first.p) / first.p * 100).toFixed(1)}% <span style="font-size:11px;color:var(--text-muted);">($${first.p.toFixed(3)} → $${last.p.toFixed(3)})</span>
       </div>
     </div>
+    ${lastPrintDate}
     <div class="stat">
-      <div class="stat-label" data-tooltip="Whether this contract is still actively trading (live quote from NYMEX) or has expired and is shown as a completed historical record.">Status</div>
+      <div class="stat-label" data-tooltip="Whether this contract is still actively trading on NYMEX (live quote) or has expired. Expiry is 3 business days before the 1st of the delivery month.">Status</div>
       <div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;
-        background:${isLive ? 'rgba(0,255,136,0.1)' : 'rgba(136,136,170,0.1)'};
-        color:${isLive ? 'var(--positive)' : 'var(--text-muted)'};">
-        ${isLive ? 'ACTIVE — LIVE DATA' : 'EXPIRED — HISTORICAL'}
+        background:${statusBg};color:${statusColor};">
+        ${statusText}
       </div>
     </div>
     <div style="margin-top:12px;display:flex;gap:8px;">
-      <button class="toggle-btn" onclick="cycleHHContract(-1)">◀ Prev Year</button>
-      <button class="toggle-btn" onclick="cycleHHContract(1)">Next Year ▶</button>
+      <button class="toggle-btn" onclick="cycleHHContract(-1)" data-tooltip="Load the same delivery month one year earlier (e.g. Apr 2026 → Apr 2025).">◀ Prev Year</button>
+      <button class="toggle-btn" onclick="cycleHHContract(1)" data-tooltip="Load the same delivery month one year later (e.g. Apr 2026 → Apr 2027).">Next Year ▶</button>
     </div>
   `;
 }
@@ -2562,7 +2604,8 @@ function renderHHHistoryTable(month, currentYear) {
     const bar = `<div style="width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;opacity:0.6;margin-top:2px;"></div>`;
     
     // Make row clickable: selection logic using cycleHHContract or directly setting the select box
-    rows += `<tr style="${rowBg}cursor:pointer;" onclick="const sel=document.getElementById('hh-year'); sel.value='${yr}'; window.updateHHChart();" title="Load ${yr} contract">
+    const rowTip = `${yr} ${month} expiry: $${price.toFixed(3)} · Rank #${rank} of ${allPrices.length}${delta !== null ? ' · YoY: ' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : ''}. Click to load this contract.`;
+    rows += `<tr style="${rowBg}cursor:pointer;" onclick="const sel=document.getElementById('hh-year'); sel.value='${yr}'; window.updateHHChart();" data-tooltip="${rowTip}">
       <td style="text-align:left;">${yr}</td>
       <td style="font-family:var(--font-mono);">$${price.toFixed(3)}${bar}</td>
       <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">#${rank}<span style="font-size:9px;">/${allPrices.length}</span></td>
@@ -2571,14 +2614,14 @@ function renderHHHistoryTable(month, currentYear) {
   });
 
   tableEl.innerHTML = `
-    <div class="card-title" style="padding:10px 14px 6px;">Same Month Expiry History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">(${years.length} yrs)</span></div>
+    <div class="card-title" style="padding:10px 14px 6px;" data-tooltip="Final settlement price for ${month} contracts across all available years. Click any row to load that year's contract on the chart. Highlighted row = currently selected year.">Same Month History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${month} · ${years.length} contracts</span></div>
     <div style="overflow-y:auto;max-height:220px;">
       <table>
         <thead><tr>
-          <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Year</th>
-          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Expiry</th>
-          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Rank</th>
-          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">YoY Δ</th>
+          <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Contract delivery year">Year</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Final settlement price on NYMEX expiry day. For the current year, this is the last available print.">Expiry Price</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Settlement price rank across all ${years.length} years of ${month} contracts, from highest (#1) to lowest (#${years.length}).">Rank</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Year-over-year change: this year's expiry price vs the prior year's expiry price for the same month.">YoY Δ</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
