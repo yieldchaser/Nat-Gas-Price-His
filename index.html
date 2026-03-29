@@ -1564,15 +1564,17 @@ async function buildSeasonalCacheExtended(yearsBack, stateKey) {
 }
 
 async function ensureSeasonalCache15y() {
-  if (STATE._seasonal15yBuilt) return;
-  STATE._seasonal15yBuilt = true; // set early to prevent concurrent builds
-  await buildSeasonalCacheExtended(15, 'seasonalCache15y');
+  if (!STATE._promise15y) {
+    STATE._promise15y = buildSeasonalCacheExtended(15, 'seasonalCache15y');
+  }
+  await STATE._promise15y;
 }
 
 async function ensureSeasonalCacheAll() {
-  if (STATE._seasonalAllBuilt) return;
-  STATE._seasonalAllBuilt = true;
-  await buildSeasonalCacheExtended(Infinity, 'seasonalCacheAll');
+  if (!STATE._promiseAll) {
+    STATE._promiseAll = buildSeasonalCacheExtended(Infinity, 'seasonalCacheAll');
+  }
+  await STATE._promiseAll;
 }
 
 async function buildTTFSeasonalCache() {
@@ -2348,13 +2350,18 @@ function baseChartOptions() {
 }
 
 /* ─── Z-Score helper (used by HH, TTF, and Spot stats panels) ─── */
-function computeZScore(price, s) {
+function computeZScore(price, s, len) {
+  if (len !== undefined && len < 20) return null;
   if (!s || !s.stddev || s.stddev === 0) return null;
   return (price - s.avg) / s.stddev;
 }
 
 function zScoreStatHtml(z, yLabel) {
-  if (z === null) return '';
+  if (z === null) return `
+    <div class="stat">
+      <div class="stat-label">Seasonality (${yLabel}) Z-Score</div>
+      <div class="stat-value" style="color:var(--text-secondary);">-</div>
+    </div>`;
   const absZ = Math.abs(z);
   const sign = z >= 0 ? '+' : '';
   const formatted = `${sign}${z.toFixed(1)}σ`;
@@ -2408,7 +2415,7 @@ function renderHHStats(data, month, year) {
 
   // Z-score: distance from 5Y seasonal mean in stddev units
   const _hhSeasonalEntry = seasonal && seasonal[currentDay] ? seasonal[currentDay] : null;
-  const hhZScore = computeZScore(last.p, _hhSeasonalEntry);
+  const hhZScore = computeZScore(last.p, _hhSeasonalEntry, data.length);
 
   // Check if contract is active (has live data) or expired
   const code = MONTH_CODES[month];
@@ -2625,8 +2632,18 @@ function renderHHForwardReturns(data, month, year) {
 
     HORIZONS.forEach((h, hi) => {
       const targetD = matchPt.d + h;
-      // Find the closest point at or just past targetD
-      const fwdPt = series.find(pt => pt.d >= targetD);
+      // Find the closest point to targetD
+      let fwdPt = null;
+      const fwdIdx = series.findIndex(pt => pt.d >= targetD);
+      if (fwdIdx !== -1) {
+        if (fwdIdx > 0) {
+          const ptA = series[fwdIdx];
+          const ptB = series[fwdIdx - 1];
+          fwdPt = Math.abs(ptA.d - targetD) <= Math.abs(ptB.d - targetD) ? ptA : ptB;
+        } else {
+          fwdPt = series[fwdIdx];
+        }
+      }
       if (!fwdPt) return;
       const ret = (fwdPt.p - matchPt.p) / matchPt.p * 100;
       if (!Number.isFinite(ret)) return;
@@ -3123,7 +3140,7 @@ function updateTTFChart() {
   // Z-score from TTF 5Y seasonal cache at current T-day
   const _ttfSeasonal = STATE.ttfSeasonalCache[month];
   const _ttfSeasonalEntry = _ttfSeasonal && _ttfSeasonal[last.d] ? _ttfSeasonal[last.d] : null;
-  const ttfZScore = computeZScore(last.p, _ttfSeasonalEntry);
+  const ttfZScore = computeZScore(last.p, _ttfSeasonalEntry, data.length);
   const ttfYLabel = _ttfSeasonalEntry ? (_ttfSeasonalEntry.count < 5 ? `${_ttfSeasonalEntry.count}Y` : '5Y') : '5Y';
   document.getElementById('ttf-stats').innerHTML = `
     <div class="card-title">Contract Statistics</div>
@@ -3322,7 +3339,7 @@ function updateSpotChart() {
   const _spotSeasonalKey = last.date ? last.date.slice(5) : null;
   const _spotSeasonalEntry = _spotSeasonalKey && STATE.spotSeasonalCache[_spotSeasonalKey]
     ? STATE.spotSeasonalCache[_spotSeasonalKey] : null;
-  const spotZScore = computeZScore(last.p, _spotSeasonalEntry);
+  const spotZScore = computeZScore(last.p, _spotSeasonalEntry, unique.length);
   const spotYLabel = _spotSeasonalEntry ? (_spotSeasonalEntry.count < 5 ? `${_spotSeasonalEntry.count}Y` : '5Y') : '5Y';
   document.getElementById('spot-stats').innerHTML = `
     <div class="card-title">Spot Statistics — ${year}</div>
@@ -5652,7 +5669,7 @@ function renderCurveTable(curveData, windowContext) {
   curveData.slots.forEach((slot, index) => {
     const inWindow = index >= windowContext.start && index <= windowContext.end;
     const rowStyle = `${inWindow ? 'background:rgba(255,255,255,0.03);' : ''}${slot.missing ? 'opacity:0.72;' : ''}cursor:pointer;`;
-    const barWidth = Number.isFinite(slot.price) ? ((slot.price - priceMin) / priceRange * 40).toFixed(1) : '0';
+    const barWidth = (Number.isFinite(slot.price) && priceRange > 0) ? ((slot.price - priceMin) / priceRange * 40).toFixed(1) : '0';
     const bar = Number.isFinite(slot.price)
       ? `<span style="display:inline-block;width:${barWidth}px;height:3px;background:${meta.color};border-radius:2px;vertical-align:middle;opacity:0.5;margin-left:4px;"></span>`
       : '';
@@ -6306,12 +6323,12 @@ function buildExpiryTable(range) {
   // Bug fix: compute averages using ONLY the visible/filtered years so the
   // heat-map coloring is relative to whatever the user is looking at.
   const avg5y = {}, avg3y = {}, avgVisible = {};
-  MONTHS.forEach(m => {
+MONTHS.forEach(m => {
     let sv = 0, cv = 0, s5 = 0, c5 = 0, s3 = 0, c3 = 0;
     years.forEach(yr => {
       const v = expiry[yr] && expiry[yr][m];
       if (v == null) return;
-      sv += v; cv++;
+      if (parseInt(yr) < currentYear) { sv += v; cv++; }
       if (parseInt(yr) >= currentYear - 5 && parseInt(yr) < currentYear) { s5 += v; c5++; }
       if (parseInt(yr) >= currentYear - 3 && parseInt(yr) < currentYear) { s3 += v; c3++; }
     });
@@ -6357,7 +6374,7 @@ function buildExpiryTable(range) {
       const sortedM = monthRankLookup[m];
       const rank = sortedM.indexOf(v) + 1;
       const rankN = sortedM.length;
-      const vs5y = avg5y[m] != null ? ((v - avg5y[m]) / avg5y[m] * 100) : null;
+      const vs5y = (avg5y[m] != null && avg5y[m] > 0) ? ((v - avg5y[m]) / avg5y[m] * 100) : null;
       const priorYr = String(parseInt(yr) - 1);
       const priorV = expiry[priorYr] ? expiry[priorYr][m] : null;
       const yoyCell = (priorV != null && priorV !== 0) ? ((v - priorV) / priorV * 100) : null;
@@ -6378,7 +6395,7 @@ function buildExpiryTable(range) {
     const prevYr = years[years.length - 2];
     const lastV = lastYr && expiry[lastYr] ? expiry[lastYr][m] : null;
     const prevV = prevYr && expiry[prevYr] ? expiry[prevYr][m] : null;
-    const yoy = (lastV != null && prevV != null && prevV !== 0)
+    const yoy = (lastV != null && prevV != null && prevV > 0)
       ? (lastV - prevV) / prevV * 100 : null;
     html += '<td style="color:' + (yoy == null ? 'var(--text-muted)' : yoy >= 0 ? 'var(--positive)' : 'var(--negative)') + ';font-style:italic;">' +
       (yoy == null ? '\u2014' : (yoy >= 0 ? '+' : '') + yoy.toFixed(1) + '%') + '</td>';
@@ -6420,7 +6437,7 @@ function buildExpiryTable(range) {
   years.forEach((yr, i) => {
     const thisAvg = yearAvgs[i];
     const priorAvg = i > 0 ? yearAvgs[i - 1] : null;
-    const yoyRow = (thisAvg != null && priorAvg != null && priorAvg !== 0)
+    const yoyRow = (thisAvg != null && priorAvg != null && priorAvg > 0)
       ? (thisAvg - priorAvg) / priorAvg * 100 : null;
     html += '<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;color:' +
       (yoyRow == null ? 'var(--text-muted)' : yoyRow >= 0 ? '#00ff88' : '#ff4455') + ';">' +
@@ -6695,8 +6712,9 @@ function syncExpiryProfileRangeFooter() {
   const s = view.rangeStart;
   const e = view.rangeEnd;
 
-  const pctS = ((s - min) / range) * 100;
-  const pctE = ((e - min) / range) * 100;
+  const safeRange = range > 0 ? range : 1;
+  const pctS = ((s - min) / safeRange) * 100;
+  const pctE = ((e - min) / safeRange) * 100;
   if (selection) {
     selection.style.left = `${pctS}%`;
     selection.style.width = `${pctE - pctS}%`;
@@ -7174,7 +7192,7 @@ function updateDailyTracker() {
 
   const last = data[data.length - 1];
   const prev = data.length > 1 ? data[data.length - 2] : last;
-  const dayDelta = (last.p - prev.p) / prev.p * 100;
+  const dayDelta = prev.p > 0 ? (last.p - prev.p) / prev.p * 100 : 0;
   document.getElementById('daily-price').textContent = '$' + last.p.toFixed(3);
   const changeEl = document.getElementById('daily-change');
   changeEl.textContent = (dayDelta >= 0 ? '+' : '') + dayDelta.toFixed(2) + '% day';
@@ -7783,7 +7801,7 @@ function _renderWeeklyChart(data) {
   let distHtml = '<div class="card-title" style="padding:10px 14px 0;">Return Distribution</div><div style="padding:6px 14px 12px;font-family:var(--font-mono);font-size:11px;">';
   counts.forEach((c, i) => {
     const isPos = BUCKETS[i][0] >= 0;
-    const barW = (c / maxCount * 100).toFixed(1);
+    const barW = maxCount > 0 ? (c / maxCount * 100).toFixed(1) : '0.0';
     distHtml += '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">' +
       '<span style="width:88px;text-align:right;color:var(--text-secondary);flex-shrink:0;">' + BLABELS[i] + '</span>' +
       '<div style="flex:1;background:var(--bg-primary);border-radius:2px;height:11px;">' +
@@ -7925,8 +7943,8 @@ function _renderPriceLogPage(el) {
   pageData.forEach((pt, i) => {
     const globalIdx = start + i;
     const prevPt = globalIdx < data.length - 1 ? data[globalIdx + 1] : pt;
-    const delta = (pt.p - prevPt.p) / prevPt.p * 100;
-    const barW = ((pt.p - pMin) / pRange * 56).toFixed(1);
+    const delta = prevPt.p > 0 ? (pt.p - prevPt.p) / prevPt.p * 100 : 0;
+    const barW = pRange > 0 ? ((pt.p - pMin) / pRange * 56).toFixed(1) : '0.0';
     html += '<tr>' +
       '<td style="text-align:left;">' + formatDailyDate(pt.date) + '</td>' +
       '<td style="font-family:var(--font-mono);">$' + pt.p.toFixed(3) + '</td>' +
@@ -8039,7 +8057,7 @@ function _renderMonthlySeasonality(data) {
     const PLOT_H = SVG_H - SVG_TOP - SVG_BOT; // drawable height
 
     function percentile(sorted, p) {
-      if (sorted.length === 0) return 0;
+      if (sorted.length < 20) return 0;
       const idx = p / 100 * (sorted.length - 1);
       const lo = Math.floor(idx), hi = Math.ceil(idx);
       return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
@@ -8182,8 +8200,9 @@ function _renderAnnualPerformance(data) {
   const byYear = new Map(rows.map(r => [r.year, r]));
 
   const posYears = rows.filter(r => r.pct >= 0).length;
-  const allPcts = rows.map(r => r.pct);
-  const avgAnn = allPcts.reduce((s, v) => s + v, 0) / allPcts.length;
+  const currentYearStr = new Date().getFullYear().toString();
+  const allPcts = rows.filter(r => r.year !== currentYearStr).map(r => r.pct);
+  const avgAnn = allPcts.length ? allPcts.reduce((s, v) => s + v, 0) / allPcts.length : 0;
   const best = sorted[0];
   const worst = sorted[sorted.length - 1];
 
@@ -8306,7 +8325,7 @@ function _renderStreakTable(data) {
 
   // ── Compute summary stats from an array of returns ──────────────────────────
   function streakSummary(rets) {
-    if (!rets || rets.length === 0) return null;
+    if (!rets || rets.length < 20) return null;
     const sorted = [...rets].sort((a, b) => a - b);
     const n = sorted.length;
     const median = n % 2 === 0

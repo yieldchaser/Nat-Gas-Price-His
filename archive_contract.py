@@ -101,6 +101,25 @@ def _contract_expiry(ticker: str) -> date:
     return d
 
 
+def _ttf_contract_expiry(ticker: str) -> date:
+    """
+    Return the ICE expiry date for a TTF contract.
+    Rule: 2 business days before the 1st of the delivery month.
+    """
+    code = ticker[2].upper()
+    yy   = ticker[3:]
+    _, month_num = MONTH_CODES[code]
+    month = int(month_num)
+    year  = _full_year(yy)
+    d = date(year, month, 1)
+    biz = 2
+    while biz > 0:
+        d -= timedelta(days=1)
+        if d.weekday() < 5:   # Mon–Fri
+            biz -= 1
+    return d
+
+
 def _csv_row_count(path: str) -> int:
     """Count data rows (excluding the header line)."""
     with open(path, 'r') as f:
@@ -359,10 +378,8 @@ def find_stale_ttf() -> list[str]:
             if not f.endswith('.csv'):
                 continue
             ticker = f.replace('.csv', '').upper()
-            # Convert TG prefix to NG to reuse the NYMEX expiry rule as a proxy
-            hh_equiv = 'NG' + ticker[2:]
             try:
-                expiry = _contract_expiry(hh_equiv)
+                expiry = _ttf_contract_expiry(ticker)
             except (KeyError, ValueError):
                 continue
 
@@ -459,8 +476,7 @@ def main() -> None:
         if stale_ttf:
             print(f'Found {len(stale_ttf)} stale expired TTF contract(s) to refresh:')
             for t in stale_ttf:
-                hh_equiv = 'NG' + t[2:]
-                expiry = _contract_expiry(hh_equiv)
+                expiry = _ttf_contract_expiry(t)
                 csv_path_check = os.path.join(
                     TTF_DIR, _month_folder(t[2])[1], f'{t.lower()}.csv'
                 )
@@ -502,6 +518,7 @@ def main() -> None:
     print(f'Archived {len(archived)} contract(s).')
     if errors:
         print(f'Failed:  {errors}')
+        sys.exit(1)
 
     if args.rebuild and archived:
         print()
