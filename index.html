@@ -5204,21 +5204,25 @@ function getForwardCurveStatusHtml() {
   const hhLive = STATE.hhLiveCount || 0;
   const ttfLive = STATE.ttfLiveCount || 0;
   const totalLive = hhLive + ttfLive;
-  
-  const getBadge = (used, stale, age) => {
+
+  const getBadge = (used, stale, age, market) => {
     if (!used) return '';
     const color = stale ? 'var(--negative)' : 'var(--warning)';
     const text = stale ? 'STALE' : 'CACHED';
     const sym = stale ? '\u26A0' : '\u231B';
-    return `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,0.05);border:1px solid ${color};color:${color};margin-right:4px;font-weight:700;" title="${age}h ago">${sym} ${text}</span>`;
+    const tip = stale
+      ? `${market} data is stale — loaded from browser cache ${age}h ago. Prices may not reflect the latest market. Refresh the page to attempt a new fetch.`
+      : `${market} prices loaded from browser cache (${age}h old) rather than a live Yahoo Finance fetch. Prices are recent but may not be real-time.`;
+    return `<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,0.05);border:1px solid ${color};color:${color};margin-right:4px;font-weight:700;" data-tooltip="${tip}">${sym} ${text}</span>`;
   };
 
-  const hhBadge = getBadge(STATE.hhCacheUsed, STATE.hhCacheIsStale, STATE.hhCacheAgeH);
-  const ttfBadge = getBadge(STATE.ttfCacheUsed, STATE.ttfCacheIsStale, STATE.ttfCacheAgeH);
+  const hhBadge = getBadge(STATE.hhCacheUsed, STATE.hhCacheIsStale, STATE.hhCacheAgeH, 'Henry Hub');
+  const ttfBadge = getBadge(STATE.ttfCacheUsed, STATE.ttfCacheIsStale, STATE.ttfCacheAgeH, 'Dutch TTF');
 
-  let html = `${hhBadge}HH: ${hhLive}/72 · ${ttfBadge}TTF: ${ttfLive}/36 quoted`;
+  let html = `<span data-tooltip="Number of Henry Hub (NYMEX) monthly contracts with live quotes out of the maximum 72-month strip.">${hhBadge}HH: ${hhLive}/72</span>`
+    + ` · <span data-tooltip="Number of Dutch TTF (ICE) monthly contracts with live quotes out of the maximum 36-month strip.">${ttfBadge}TTF: ${ttfLive}/36 quoted</span>`;
   if (totalLive < 20 && totalLive > 0 && !STATE.hhCacheUsed && !STATE.ttfCacheUsed) {
-    html = `<span style="color:var(--warning);font-weight:700;">\u26A0 PARTIAL DATA</span> \u2014 ` + html;
+    html = `<span style="color:var(--warning);font-weight:700;" data-tooltip="Fewer than 20 contracts quoted — the strip may be loading or market data is limited. Wait a moment and refresh if the count remains low.">\u26A0 PARTIAL DATA</span> \u2014 ` + html;
   }
   return html;
 }
@@ -5988,13 +5992,13 @@ function renderCurveTab() {
       <div class="contract-header" id="curve-header">
         <div class="ch-left">
           <div class="ch-top">
-            <span class="ticker" id="curve-ticker" style="color:var(--accent-hh);">FORWARD CURVE</span>
-            <span class="instrument-stamp"><span class="instrument-dot" id="curve-dot" style="background:var(--accent-hh);border-radius:50%;display:inline-block;width:7px;height:7px;"></span><span id="curve-instrument-label">Henry Hub</span></span>
+            <span class="ticker" id="curve-ticker" style="color:var(--accent-hh);" data-tooltip="NYMEX Henry Hub natural gas forward strip — monthly futures contracts from the prompt month out to 72 months.">FORWARD CURVE</span>
+            <span class="instrument-stamp" data-tooltip="Currently displayed market. Switch between Henry Hub (NYMEX, USD/MMBtu) and Dutch TTF (ICE, EUR/MWh) using the Market toggle below."><span class="instrument-dot" id="curve-dot" style="background:var(--accent-hh);border-radius:50%;display:inline-block;width:7px;height:7px;"></span><span id="curve-instrument-label">Henry Hub</span></span>
           </div>
           <span class="desc" id="curve-desc">Live Futures Strip</span>
         </div>
         <div class="ch-right">
-          <span class="price" id="curve-price" style="margin-left:0;">--</span>
+          <span class="price" id="curve-price" style="margin-left:0;" data-tooltip="Front (prompt) month price — the nearest actively-traded contract in the strip.">--</span>
           <span class="change" id="curve-change" style="font-size:12px;color:var(--text-muted);"></span>
         </div>
       </div>
@@ -6049,12 +6053,12 @@ function renderCurveTab() {
           <div class="card chart-footer" style="margin-top:var(--gap);">
             <div class="range-toolbar">
               <div class="flex flex-col gap-sm">
-                <span class="range-kicker">Window</span>
+                <span class="range-kicker" data-tooltip="Drag the sliders below to select a sub-range of the forward strip. All metrics in the Window strip (Coverage, Slope, Averages) update to reflect only the contracts within the selected window.">Window</span>
                 <span class="range-helper" id="curve-range-helper">Full strip</span>
               </div>
               <div class="range-scale-labels">
-                <span id="curve-range-min-label">--</span>
-                <span id="curve-range-max-label">--</span>
+                <span id="curve-range-min-label" data-tooltip="First contract in the current window selection">--</span>
+                <span id="curve-range-max-label" data-tooltip="Last contract in the current window selection">--</span>
               </div>
             </div>
             <div class="range-input-shell">
@@ -6065,7 +6069,7 @@ function renderCurveTab() {
             <div class="chart-readout" id="curve-range-readout">Awaiting data</div>
           </div>
           <div class="card" style="margin-top:var(--gap);">
-            <div class="ctrl-toolbar" id="curve-metrics"></div>
+            <div id="curve-metrics"></div>
           </div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="curve-table"></div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="curve-strips"></div>
@@ -6181,7 +6185,9 @@ function updateCurveChart() {
   document.getElementById('curve-dot').style.background = meta.color;
   document.getElementById('curve-instrument-label').textContent = meta.label;
 
-  document.getElementById('curve-desc').textContent = `${slots.length}-month strip — ${slots[0].label} to ${slots[slots.length - 1].label} • ${curveData.quotedSlots.length}/${slots.length} quoted`;
+  const descEl = document.getElementById('curve-desc');
+  descEl.textContent = `${slots.length}-month strip — ${slots[0].label} to ${slots[slots.length - 1].label} • ${curveData.quotedSlots.length}/${slots.length} quoted`;
+  descEl.dataset.tooltip = `Forward strip spanning ${slots.length} monthly delivery contracts (${slots[0].label}–${slots[slots.length - 1].label}). ${curveData.quotedSlots.length} of ${slots.length} contracts have live quotes. Contracts without quotes are excluded from all window averages.`;
 
   // Chart
   const chartContainer = document.getElementById('curve-chart-container');
@@ -6333,9 +6339,10 @@ function updateCurveChart() {
   if (curveHeaderPrice) {
     curveHeaderPrice.textContent = `${meta.currency}${curveData.firstQuoted.price.toFixed(3)}`;
     curveHeaderPrice.style.color = meta.color;
+    curveHeaderPrice.dataset.tooltip = `Prompt month: ${curveData.firstQuoted.label} at ${meta.currency}${curveData.firstQuoted.price.toFixed(3)}. This is the nearest actively-traded contract — the front of the forward curve.`;
   }
   if (curveHeaderChange) {
-    const promptMonth = curveData.firstQuoted ? `${curveData.firstQuoted.label} prompt month · ` : '';
+    const promptMonth = curveData.firstQuoted ? `${curveData.firstQuoted.label} prompt · ` : '';
     curveHeaderChange.innerHTML = `${promptMonth}${getForwardCurveStatusHtml()}`;
   }
 
