@@ -890,8 +890,8 @@ tr:hover td { background: var(--bg-card-hover); }
   <button class="tab-btn" data-tab="expiry" data-tooltip="Final settlement price heatmap — every contract month ranked all-time, with 5Y/3Y averages and era drift columns.">Expiry Prices</button>
   <button class="tab-btn" data-tab="daily" data-tooltip="NG=F continuous front-month series — daily/weekly returns, streak probability table, box plots, and calendar seasonality.">Daily Tracker</button>
   <div class="nav-spacer"></div>
-  <div class="live-price"><span class="label">NG FRONT</span> <span id="live-price-val">—</span></div>
-  <div class="freshness"><span class="freshness-dot" id="freshness-dot"></span><span id="freshness-time">—</span></div>
+  <div class="live-price" data-tooltip="Live NYMEX front-month Henry Hub quote — auto-refreshed from Yahoo Finance."><span class="label">NG FRONT</span> <span id="live-price-val">—</span></div>
+  <div class="freshness" data-tooltip="Time since last successful data refresh. Green dot = data is current; amber = stale (>1h)."><span class="freshness-dot" id="freshness-dot"></span><span id="freshness-time">—</span></div>
 </nav>
 
 <!-- MAIN CONTENT -->
@@ -2700,18 +2700,24 @@ function renderHHForwardReturns(data, month, year) {
     return;
   }
 
+  const horizonTips = {
+    '+10T': 'Forward return 10 trading days (~2 weeks) from the current T-Day. Short-horizon momentum signal.',
+    '+20T': 'Forward return 20 trading days (~1 month) from the current T-Day. Medium-horizon directional signal.',
+    '+60T': 'Forward return 60 trading days (~3 months) from the current T-Day. Seasonal repositioning window.'
+  };
   function renderHorizonCol(label, stat) {
-    if (!stat) return `<div style="flex:1;text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">${label}</div><div style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);">—</div></div>`;
+    const tip = horizonTips[label] || '';
+    if (!stat) return `<div style="flex:1;text-align:center;"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;" data-tooltip="${tip}">${label}</div><div style="font-family:var(--font-mono);font-size:13px;color:var(--text-muted);">—</div></div>`;
     const lowN = stat.n < 5;
     const medColor = stat.median >= 0 ? 'var(--positive)' : 'var(--negative)';
     const medSign = stat.median >= 0 ? '+' : '';
     const pctColor = stat.pctPos >= 60 ? 'var(--positive)' : stat.pctPos <= 40 ? 'var(--negative)' : 'var(--text-secondary)';
     return `
       <div style="flex:1;text-align:center;padding:0 4px;">
-        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">${label}</div>
-        <div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${medColor};">${medSign}${stat.median.toFixed(1)}%</div>
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;" data-tooltip="${tip}">${label}</div>
+        <div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${medColor};" data-tooltip="Median historical return at this horizon across all matched analog T-Days.">${medSign}${stat.median.toFixed(1)}%</div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:1px;">median</div>
-        <div style="font-family:var(--font-mono);font-size:12px;color:${pctColor};margin-top:4px;">${stat.pctPos}% ↑</div>
+        <div style="font-family:var(--font-mono);font-size:12px;color:${pctColor};margin-top:4px;" data-tooltip="% of historical instances where price was higher ${label.replace('+','')} after the matched T-Day. Above 60% = historically bullish; below 40% = historically bearish.">${stat.pctPos}% ↑</div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:1px;">${lowN ? '<span title="Low sample count — interpret with caution">⚠️ ' : ''}n=${stat.n}${lowN ? '</span>' : ''}</div>
       </div>`;
   }
@@ -3010,9 +3016,9 @@ function renderDrawdownHeatmap(month) {
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr>
-            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px 0;">T-Day</th>
-            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px;">Avg DD Depth</th>
-            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px;">% Max DD Here</th>
+            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px 0;" data-tooltip="50-T-day lifecycle bucket (e.g. T1–50 = first ~10 weeks after listing).">T-Day</th>
+            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px;" data-tooltip="Average depth of the running-peak drawdown across all historical contracts during this lifecycle window. More negative = deeper average pullbacks here.">Avg DD Depth</th>
+            <th style="text-align:left;font-size:10px;color:var(--text-muted);font-family:var(--font-mono);padding:2px 6px 4px;" data-tooltip="% of historical contracts whose single deepest drawdown (from running peak) occurred within this T-Day bucket. High % = this is where contracts historically bottom out.">% Max DD Here</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -3573,25 +3579,25 @@ function renderSpreadTab() {
       <div class="card" style="margin-bottom:var(--gap);">
         <div class="ctrl-toolbar">
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Market</div>
+            <div class="ctrl-group-label" data-tooltip="Choose Henry Hub (NYMEX, USD/MMBtu) or Dutch TTF (ICE, EUR/MWh) for all spread calculations.">Market</div>
             <div class="segment-switch" id="spread-instrument-switch">
-              <button class="segment-btn active" data-tone="hh" data-val="hh">Henry Hub</button>
-              <button class="segment-btn" data-tone="ttf" data-val="ttf">Dutch TTF</button>
+              <button class="segment-btn active" data-tone="hh" data-val="hh" data-tooltip="Henry Hub Natural Gas — NYMEX futures, USD/MMBtu. The North American benchmark.">Henry Hub</button>
+              <button class="segment-btn" data-tone="ttf" data-val="ttf" data-tooltip="Dutch TTF Natural Gas — ICE futures, EUR/MWh. The European benchmark.">Dutch TTF</button>
             </div>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Front Leg</div>
+            <div class="ctrl-group-label" data-tooltip="The nearer delivery month — the contract you are long (buying). Spread = Front − Back.">Front Leg</div>
             <select id="spread-front">${MONTHS.map((m,i)=>`<option value="${m}" ${i===0?'selected':''}>${m}</option>`).join('')}</select>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Back Leg</div>
+            <div class="ctrl-group-label" data-tooltip="The farther delivery month — the contract you are short (selling). Spread = Front − Back.">Back Leg</div>
             <select id="spread-back">${MONTHS.map((m,i)=>`<option value="${m}" ${i===1?'selected':''}>${m}</option>`).join('')}</select>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Year</div>
+            <div class="ctrl-group-label" data-tooltip="Contract year for the active (highlighted) spread series. All other years are shown as faded overlays.">Year</div>
             <select id="spread-year"></select>
           </div>
         </div>
@@ -3623,11 +3629,11 @@ function renderSpreadTab() {
           </div>
           <div class="card" style="margin-top:var(--gap);" id="spread-resolution-card">
             <div class="card-title" style="padding:10px 14px 4px; display:flex; justify-content:space-between; align-items:center;">
-              <span id="spread-resolution-title">Lifecycle Resolution <span style="font-size:10px;color:var(--text-muted);font-weight:400;">(vs Trading Day)</span></span>
+              <span id="spread-resolution-title" data-tooltip="Multi-year overlay of the same spread pair plotted on the T-Day axis — shows how each year's spread evolved over the contract lifecycle from listing to expiry.">Lifecycle Resolution <span style="font-size:10px;color:var(--text-muted);font-weight:400;">(vs Trading Day)</span></span>
               <div class="segment-switch" id="spread-resolution-mode">
-                <button class="segment-btn active" data-mode="all">All</button>
-                <button class="segment-btn" data-mode="5y">5Y</button>
-                <button class="segment-btn" data-mode="current">Current</button>
+                <button class="segment-btn active" data-mode="all" data-tooltip="Show all available historical years as overlay lines.">All</button>
+                <button class="segment-btn" data-mode="5y" data-tooltip="Show only the last 5 completed years — reduces noise.">5Y</button>
+                <button class="segment-btn" data-mode="current" data-tooltip="Show only the currently selected year.">Current</button>
               </div>
             </div>
             <div class="ctrl-toolbar" style="padding:8px 14px;border-top:1px solid var(--border);">
@@ -3664,7 +3670,7 @@ function renderSpreadTab() {
             </div>
           </div>
           <div class="card" style="margin-top:var(--gap);">
-            <div class="card-title" id="spread-heatmap-title">Spread Heatmap — Average Calendar Spread (Last 5 Years)</div>
+            <div class="card-title" id="spread-heatmap-title" data-tooltip="Cross-tabulated matrix of average calendar spreads (Front − Back) over the last 5 completed years. Green = contango (front cheaper), Red = backwardation (front more expensive).">Spread Heatmap — Average Calendar Spread (Last 5 Years)</div>
             <div id="spread-heatmap" style="overflow-x:auto;"></div>
           </div>
           <div class="card" style="margin-top:var(--gap);padding:0;" id="spread-table"></div>
@@ -4095,16 +4101,16 @@ function updateSpreadChart() {
 
   let html = `<div class="card-title" style="padding:12px 16px 8px;">${legInfo.shortLabel} Spread History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${tableRows.length} years</span></div>`;
   html += SCROLL_WRAP(`<table><thead><tr>
-    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;">Year</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Last</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Rank</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Max</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Min</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">Avg</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-519</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-PENULT</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-90D</th>
-    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">AT-10D</th>
+    <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Contract year.">Year</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Last traded spread value — expiry price for historical years, latest quote for the active year.">Last</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="All-time rank of the expiry/last spread value — #1 = widest ever recorded.">Rank</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Maximum (widest) spread value recorded over the full contract lifecycle.">Max</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Minimum (narrowest / most inverted) spread value recorded over the lifecycle.">Min</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Average spread value over the full traded lifecycle of this contract.">Avg</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="AT-519: spread value on the very first trading day of the contract's lifecycle (T-Day 1 — ~2 years before expiry).">AT-519</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="AT-PENULT: spread value on the penultimate (second-to-last) trading day before expiry.">AT-PENULT</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="AT-90D: spread value at approximately 90 trading days before expiry — a key mid-lifecycle reference.">AT-90D</th>
+    <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="AT-10D: spread value at approximately 10 trading days before expiry — the final approach window.">AT-10D</th>
   </tr></thead><tbody>`);
 
   tableRows.sort((a, b) => b.yr - a.yr).forEach(r => {
@@ -5846,36 +5852,36 @@ function renderCurveTab() {
       <div class="card" style="margin-bottom:var(--gap);">
         <div class="ctrl-toolbar">
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Market</div>
+            <div class="ctrl-group-label" data-tooltip="Switch between Henry Hub (NYMEX) and Dutch TTF (ICE) forward strips.">Market</div>
             <div class="segment-switch" id="curve-instrument-switch">
-              <button class="segment-btn active" data-tone="hh" data-val="hh">Henry Hub</button>
-              <button class="segment-btn" data-tone="ttf" data-val="ttf">Dutch TTF</button>
+              <button class="segment-btn active" data-tone="hh" data-val="hh" data-tooltip="Henry Hub — next 72 monthly NYMEX contracts, USD/MMBtu.">Henry Hub</button>
+              <button class="segment-btn" data-tone="ttf" data-val="ttf" data-tooltip="Dutch TTF — next 36 monthly ICE contracts, EUR/MWh.">Dutch TTF</button>
             </div>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Horizon</div>
+            <div class="ctrl-group-label" data-tooltip="How many months of the forward strip to display.">Horizon</div>
             <div class="segment-switch" id="curve-horizon-switch">
-              <button class="segment-btn" data-val="12">12M</button>
-              <button class="segment-btn" data-val="24">24M</button>
-              <button class="segment-btn active" data-val="72">Full Strip (72M)</button>
+              <button class="segment-btn" data-val="12" data-tooltip="Show the front 12 months of the strip.">12M</button>
+              <button class="segment-btn" data-val="24" data-tooltip="Show the front 24 months of the strip.">24M</button>
+              <button class="segment-btn active" data-val="72" data-tooltip="Show the full available strip (up to 72 months for HH, 36 for TTF).">Full Strip (72M)</button>
             </div>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label" style="color:var(--accent-hh);">Compare</div>
+            <div class="ctrl-group-label" style="color:var(--accent-hh);" data-tooltip="Overlay a historical curve from N days/weeks/months ago — reveals how the market has re-priced each delivery month over time.">Compare</div>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
               <div class="segment-switch" id="curve-compare-pills">
-                <button class="segment-btn active" data-val="none">None</button>
-                <button class="segment-btn" data-val="1d">1D</button>
-                <button class="segment-btn" data-val="3d">3D</button>
-                <button class="segment-btn" data-val="1w">1W</button>
-                <button class="segment-btn" data-val="2w">2W</button>
-                <button class="segment-btn" data-val="1m">1M</button>
-                <button class="segment-btn" data-val="3m">3M</button>
-                <button class="segment-btn" data-val="6m">6M</button>
-                <button class="segment-btn" data-val="1y">1Y</button>
-                <button class="segment-btn" data-val="custom">Custom</button>
+                <button class="segment-btn active" data-val="none" data-tooltip="No comparison overlay.">None</button>
+                <button class="segment-btn" data-val="1d" data-tooltip="Overlay the curve from 1 trading day ago.">1D</button>
+                <button class="segment-btn" data-val="3d" data-tooltip="Overlay the curve from 3 trading days ago.">3D</button>
+                <button class="segment-btn" data-val="1w" data-tooltip="Overlay the curve from 1 week ago.">1W</button>
+                <button class="segment-btn" data-val="2w" data-tooltip="Overlay the curve from 2 weeks ago.">2W</button>
+                <button class="segment-btn" data-val="1m" data-tooltip="Overlay the curve from 1 month ago.">1M</button>
+                <button class="segment-btn" data-val="3m" data-tooltip="Overlay the curve from 3 months ago.">3M</button>
+                <button class="segment-btn" data-val="6m" data-tooltip="Overlay the curve from 6 months ago.">6M</button>
+                <button class="segment-btn" data-val="1y" data-tooltip="Overlay the curve from 1 year ago.">1Y</button>
+                <button class="segment-btn" data-val="custom" data-tooltip="Enter a custom number of calendar days for the comparison offset.">Custom</button>
               </div>
               <div id="curve-custom-days-wrap" style="display:none;align-items:center;gap:4px;">
                 <input type="number" id="curve-custom-days" min="1" max="1825" placeholder="days"
@@ -6310,12 +6316,12 @@ function renderExpiryTab() {
       <div class="card" style="margin-bottom:var(--gap);">
         <div class="ctrl-toolbar">
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Time Window</div>
+            <div class="ctrl-group-label" data-tooltip="Filter the expiry table to show only contracts from the last N years. Also adjusts the heatmap coloring baseline — narrower windows highlight recent regime changes.">Time Window</div>
             <div class="segment-switch" id="expiry-range-switch">
-              <button class="segment-btn active" data-range="all" data-tone="hh" onclick="filterExpiry(this)">All</button>
-              <button class="segment-btn" data-range="10" data-tone="hh" onclick="filterExpiry(this)">10Y</button>
-              <button class="segment-btn" data-range="5" data-tone="hh" onclick="filterExpiry(this)">5Y</button>
-              <button class="segment-btn" data-range="3" data-tone="hh" onclick="filterExpiry(this)">3Y</button>
+              <button class="segment-btn active" data-range="all" data-tone="hh" onclick="filterExpiry(this)" data-tooltip="Show all available years (~1990–present). Heatmap colors relative to the full-history average.">All</button>
+              <button class="segment-btn" data-range="10" data-tone="hh" onclick="filterExpiry(this)" data-tooltip="Show the last 10 years only. Useful for filtering out pre-shale price levels.">10Y</button>
+              <button class="segment-btn" data-range="5" data-tone="hh" onclick="filterExpiry(this)" data-tooltip="Show the last 5 years only. Best for spotting near-term seasonal patterns.">5Y</button>
+              <button class="segment-btn" data-range="3" data-tone="hh" onclick="filterExpiry(this)" data-tooltip="Show the last 3 years only. Tightest focus — most sensitive to recent price regime.">3Y</button>
             </div>
           </div>
         </div>
@@ -6381,12 +6387,12 @@ MONTHS.forEach(m => {
   const rangeLabel = range === 'all' ? 'All' : range + 'Y';
 
   let html = '<table style="white-space:nowrap;"><thead><tr>' +
-    '<th style="text-align:left;">Month</th>';
-  years.forEach(y => { html += '<th>' + y + '</th>'; });
-  html += '<th style="color:var(--text-muted);font-size:10px;">YoY%</th>' +
-    '<th style="color:var(--accent-hh);">Avg(' + rangeLabel + ')</th>' +
-    '<th style="color:var(--accent-hh);" title="Average of 5 completed years (excludes current year)">5Y Avg</th>' +
-    '<th style="color:var(--accent-hh);" title="Average of 3 completed years (excludes current year)">3Y Avg</th>' +
+    '<th style="text-align:left;" data-tooltip="Click any month label to expand its full expiry history chart below.">Month</th>';
+  years.forEach(y => { html += '<th data-tooltip="Final settlement price for contracts expiring in ' + y + '. Click a cell to jump to that contract in the Prices tab.">' + y + '</th>'; });
+  html += '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Year-over-year % change vs the most recent prior year shown in the table.">YoY%</th>' +
+    '<th style="color:var(--accent-hh);" data-tooltip="Average final settlement price across all visible years in the current time window filter.">Avg(' + rangeLabel + ')</th>' +
+    '<th style="color:var(--accent-hh);" data-tooltip="Average of the last 5 completed contract years (excludes current year to avoid self-reference).">5Y Avg</th>' +
+    '<th style="color:var(--accent-hh);" data-tooltip="Average of the last 3 completed contract years — tighter, more recent reference.">3Y Avg</th>' +
     '<th style="color:var(--text-muted);font-size:10px;border-left:1px solid var(--border);" data-tooltip="Era Drift — Pre-Shale era avg (contracts expiring before 2011). Compare against modern eras to see how the price regime has shifted.">Pre-11</th>' +
     '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — Shale revolution era avg (2011–2019). US production surge structurally repriced the HH curve.">11–19</th>' +
     '<th style="color:var(--text-muted);font-size:10px;" data-tooltip="Era Drift — LNG Export era avg (2020–present). Global linkage and export capacity have added new volatility drivers.">20+</th>' +
@@ -7047,23 +7053,23 @@ function renderDailyTab() {
 
       <div class="card" style="padding:0;margin-bottom:var(--gap);">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 0;flex-wrap:wrap;gap:6px;">
-          <span class="card-title" style="padding:0;">Price History &mdash; NG=F</span>
+          <span class="card-title" style="padding:0;" data-tooltip="NG=F continuous front-month futures price — rolls to the next contract automatically. ~9,000+ daily sessions from the early 1990s.">Price History &mdash; NG=F</span>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="series-toggle-bar" id="daily-ref-toggles" style="padding:0;">
-              <button class="series-pill active" data-ref="52wh" style="border-color:rgba(255,140,0,0.45);"><span class="swatch" style="background:#ff8c00;"></span>52W H</button>
-              <button class="series-pill active" data-ref="52wl" style="border-color:rgba(0,212,255,0.45);"><span class="swatch" style="background:#00d4ff;"></span>52W L</button>
-              <button class="series-pill active" data-ref="avg360" style="border-color:rgba(167,139,250,0.45);"><span class="swatch" style="background:#a78bfa;"></span>360D Avg</button>
+              <button class="series-pill active" data-ref="52wh" style="border-color:rgba(255,140,0,0.45);" data-tooltip="52-week high — rolling highest close over the trailing 52 weeks. Key resistance level watched by technical traders."><span class="swatch" style="background:#ff8c00;"></span>52W H</button>
+              <button class="series-pill active" data-ref="52wl" style="border-color:rgba(0,212,255,0.45);" data-tooltip="52-week low — rolling lowest close over the trailing 52 weeks. Key support level watched by technical traders."><span class="swatch" style="background:#00d4ff;"></span>52W L</button>
+              <button class="series-pill active" data-ref="avg360" style="border-color:rgba(167,139,250,0.45);" data-tooltip="360-day rolling average close — a medium-term trend reference. Price above = bullish bias; below = bearish bias."><span class="swatch" style="background:#a78bfa;"></span>360D Avg</button>
             </div>
             <div class="segment-switch" id="daily-range-switch">
-            <button class="segment-btn ${STATE.dailyRange === '1M' ? 'active' : ''}" data-range="1M">1M</button>
-            <button class="segment-btn ${STATE.dailyRange === '3M' ? 'active' : ''}" data-range="3M">3M</button>
-            <button class="segment-btn ${STATE.dailyRange === '6M' ? 'active' : ''}" data-range="6M">6M</button>
-            <button class="segment-btn ${(STATE.dailyRange === '1Y' || !STATE.dailyRange) ? 'active' : ''}" data-range="1Y">1Y</button>
-            <button class="segment-btn ${STATE.dailyRange === '2Y' ? 'active' : ''}" data-range="2Y">2Y</button>
-            <button class="segment-btn ${STATE.dailyRange === '3Y' ? 'active' : ''}" data-range="3Y">3Y</button>
-            <button class="segment-btn ${STATE.dailyRange === '5Y' ? 'active' : ''}" data-range="5Y">5Y</button>
-            <button class="segment-btn ${STATE.dailyRange === '10Y' ? 'active' : ''}" data-range="10Y">10Y</button>
-            <button class="segment-btn ${STATE.dailyRange === 'ALL' ? 'active' : ''}" data-range="ALL">All</button>
+            <button class="segment-btn ${STATE.dailyRange === '1M' ? 'active' : ''}" data-range="1M" data-tooltip="Zoom chart to the last 1 month.">1M</button>
+            <button class="segment-btn ${STATE.dailyRange === '3M' ? 'active' : ''}" data-range="3M" data-tooltip="Zoom chart to the last 3 months.">3M</button>
+            <button class="segment-btn ${STATE.dailyRange === '6M' ? 'active' : ''}" data-range="6M" data-tooltip="Zoom chart to the last 6 months.">6M</button>
+            <button class="segment-btn ${(STATE.dailyRange === '1Y' || !STATE.dailyRange) ? 'active' : ''}" data-range="1Y" data-tooltip="Zoom chart to the last 1 year.">1Y</button>
+            <button class="segment-btn ${STATE.dailyRange === '2Y' ? 'active' : ''}" data-range="2Y" data-tooltip="Zoom chart to the last 2 years.">2Y</button>
+            <button class="segment-btn ${STATE.dailyRange === '3Y' ? 'active' : ''}" data-range="3Y" data-tooltip="Zoom chart to the last 3 years.">3Y</button>
+            <button class="segment-btn ${STATE.dailyRange === '5Y' ? 'active' : ''}" data-range="5Y" data-tooltip="Zoom chart to the last 5 years.">5Y</button>
+            <button class="segment-btn ${STATE.dailyRange === '10Y' ? 'active' : ''}" data-range="10Y" data-tooltip="Zoom chart to the last 10 years.">10Y</button>
+            <button class="segment-btn ${STATE.dailyRange === 'ALL' ? 'active' : ''}" data-range="ALL" data-tooltip="Show full history from ~1990 to today.">All</button>
           </div>
           </div>
         </div>
@@ -7080,7 +7086,7 @@ function renderDailyTab() {
 
       <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
         <div class="card grow" style="min-width:260px;padding:0;">
-          <div class="card-title" style="padding:10px 14px 0;">NG vs TTF Spread</div>
+          <div class="card-title" style="padding:10px 14px 0;" data-tooltip="Henry Hub (USD/MMBtu) vs Dutch TTF (EUR/MWh) price ratio — a proxy for transatlantic LNG arbitrage. Compression signals US LNG export demand is tightening the spread.">NG vs TTF Spread</div>
           <div id="daily-spread-legend" style="padding:6px 14px 0;display:flex;flex-wrap:wrap;gap:5px;"></div>
           <div id="daily-spread-kpis" class="ctrl-toolbar" style="padding:10px 14px;margin:0 14px 12px;width:calc(100% - 28px);flex-wrap:wrap;gap:8px;border-radius:var(--radius);"></div>
           <div class="chart-wrap" id="daily-spread-chart" style="height:190px;"></div>
@@ -7116,7 +7122,7 @@ function renderDailyTab() {
       <div class="flex gap" style="flex-wrap:wrap;margin-bottom:var(--gap);">
         <div class="card grow" style="min-width:0;padding:0;">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 0;flex-wrap:wrap;gap:6px;">
-            <span class="card-title" style="padding:0;">Weekly % Change</span>
+            <span class="card-title" style="padding:0;" data-tooltip="Week-over-week % return for NG=F — each bar = one week's close-to-close change. Useful for identifying momentum regimes.">Weekly % Change</span>
             <span id="daily-weekly-subtitle" style="font-size:11px;color:var(--text-muted);"></span>
           </div>
           <div class="chart-wrap" id="daily-weekly-chart" style="height:220px;"></div>
@@ -8089,12 +8095,12 @@ function _renderMonthlySeasonality(data) {
   // ── Header with toggle ────────────────────────────────────────────────────
   const headerHtml = `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:10px 14px 6px;border-bottom:1px solid var(--border);">
-      <div class="card-title" style="padding:0;">AVERAGE MONTHLY RETURN — NG=F
+      <div class="card-title" style="padding:0;" data-tooltip="Average month-over-month % return grouped by calendar month across all available history. Reveals seasonal tendencies — e.g. winter demand peaks, shoulder-season weakness.">AVERAGE MONTHLY RETURN — NG=F
         <span style="font-size:10px;color:var(--text-muted);font-weight:400;">full history</span>
       </div>
       <div class="segment-switch" id="season-view-toggle">
-        <button class="segment-btn${viewMode === 'bar' ? ' active' : ''}" data-view="bar">BAR</button>
-        <button class="segment-btn${viewMode === 'box' ? ' active' : ''}" data-view="box">BOX</button>
+        <button class="segment-btn${viewMode === 'bar' ? ' active' : ''}" data-view="bar" data-tooltip="Bar chart — shows average return per calendar month.">BAR</button>
+        <button class="segment-btn${viewMode === 'box' ? ' active' : ''}" data-view="box" data-tooltip="Box plot — shows full distribution (p5/p25/median/p75/p95) per calendar month. Better for understanding variance and outlier risk.">BOX</button>
       </div>
     </div>`;
 
@@ -8277,7 +8283,7 @@ function _renderAnnualPerformance(data) {
   const worst = sorted[sorted.length - 1];
 
   const th = label => '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;">' + label + '</th>';
-  let html = '<div class="card-title" style="padding:10px 14px 6px;">ANNUAL PERFORMANCE \u2014 NG=F <span style="font-size:10px;color:var(--text-muted);font-weight:400;">' + rows.length + ' years</span></div>';
+  let html = '<div class="card-title" style="padding:10px 14px 6px;" data-tooltip="Month-by-month and total annual % returns for NG=F across all available years. Each cell = that month\'s close-to-close return. Total = full-year compounded return.">ANNUAL PERFORMANCE \u2014 NG=F <span style="font-size:10px;color:var(--text-muted);font-weight:400;">' + rows.length + ' years</span></div>';
   html += '<div style="overflow-y:auto;max-height:360px;"><table><thead><tr>' +
     '<th style="position:sticky;top:0;background:var(--bg-card);z-index:2;text-align:left;">Year</th>' +
     th('Jan Price') + th('Dec Price') + th('Annual \u0394%') + th('Rank') + '</tr></thead><tbody>';
