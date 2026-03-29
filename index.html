@@ -8114,23 +8114,55 @@ function _renderMonthlySeasonality(data) {
   // ── BAR view (existing) ───────────────────────────────────────────────────
   let bodyHtml = '';
   if (viewMode === 'bar') {
-    bodyHtml = '<div style="display:flex;align-items:flex-end;justify-content:space-around;padding:8px 14px 4px;gap:4px;height:140px;">';
+    // Centered bar chart — shared zero baseline, bars grow up (positive) or down (negative)
+    const CHART_H = 90;  // half-height above and below zero
+    const TOTAL_H = CHART_H * 2;
+    bodyHtml = '<div style="padding:8px 14px 2px;">';
+    // Zero line label
+    bodyHtml += '<div style="position:relative;height:' + TOTAL_H + 'px;margin-bottom:2px;">';
+    // Horizontal zero line
+    bodyHtml += '<div style="position:absolute;top:' + CHART_H + 'px;left:0;right:0;height:1px;background:rgba(255,255,255,0.15);z-index:1;"></div>';
+    bodyHtml += '<div style="position:absolute;top:' + (CHART_H - 10) + 'px;right:0;font-family:var(--font-mono);font-size:8px;color:rgba(255,255,255,0.25);">0%</div>';
+    bodyHtml += '<div style="display:flex;height:100%;align-items:stretch;gap:4px;">';
     avgs.forEach((avg, i) => {
-      const pct = Math.abs(avg) / maxAbs;
       const isPos = avg >= 0;
-      const barH = Math.max(4, Math.floor(pct * 80));
+      const barH = Math.max(3, Math.round((Math.abs(avg) / maxAbs) * (CHART_H - 4)));
       const { pos, total } = monthYearCounts[i];
+      const pctPos = total ? Math.round(pos / total * 100) : 0;
       const label = (isPos ? '+' : '') + avg.toFixed(2) + '%';
-      bodyHtml += '<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;" title="' + MONTH_NAMES[i] + ': ' + pos + ' of ' + total + ' months positive">' +
-        '<span style="font-family:var(--font-mono);font-size:9px;color:' + (isPos ? 'var(--positive)' : 'var(--negative)') + ';">' + label + '</span>' +
-        '<div style="width:100%;display:flex;flex-direction:column;justify-content:' + (isPos ? 'flex-end' : 'flex-start') + ';height:84px;">' +
-          '<div style="width:100%;height:' + barH + 'px;background:' + (isPos ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)') + ';border-radius:2px;"></div>' +
-        '</div>' +
-        '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);">' + MONTH_NAMES[i] + '</span>' +
-        '<span style="font-size:9px;color:var(--text-muted);">' + pos + '/' + total + '</span>' +
-      '</div>';
+      const tip = MONTH_NAMES[i] + ': avg ' + label + ' · ' + pos + '/' + total + ' years positive (' + pctPos + '%) · ' + (total - pos) + '/' + total + ' years negative';
+      const barColor = isPos ? 'rgba(0,255,136,0.75)' : 'rgba(255,68,85,0.75)';
+      const labelColor = isPos ? 'var(--positive)' : 'var(--negative)';
+      const pctColor = pctPos >= 60 ? 'var(--positive)' : pctPos <= 40 ? 'var(--negative)' : 'var(--text-muted)';
+      bodyHtml +=
+        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative;" data-tooltip="' + tip + '">' +
+          // avg % label — above zero for positive, below bar top for negative
+          '<div style="height:' + CHART_H + 'px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;width:100%;">' +
+            (isPos ? '<span style="font-family:var(--font-mono);font-size:9px;color:' + labelColor + ';margin-bottom:2px;">' + label + '</span>' : '') +
+            (isPos ? '<div style="width:100%;height:' + barH + 'px;background:' + barColor + ';border-radius:2px 2px 0 0;"></div>' : '<div style="flex:1;"></div>') +
+          '</div>' +
+          // below-zero half
+          '<div style="height:' + CHART_H + 'px;display:flex;flex-direction:column;justify-content:flex-start;align-items:center;width:100%;">' +
+            (!isPos ? '<div style="width:100%;height:' + barH + 'px;background:' + barColor + ';border-radius:0 0 2px 2px;"></div>' : '<div></div>') +
+            (!isPos ? '<span style="font-family:var(--font-mono);font-size:9px;color:' + labelColor + ';margin-top:2px;">' + label + '</span>' : '') +
+          '</div>' +
+        '</div>';
+    });
+    bodyHtml += '</div></div>'; // close flex + relative container
+    // Month labels + % positive row
+    bodyHtml += '<div style="display:flex;gap:4px;padding:0 14px 4px;">';
+    avgs.forEach((avg, i) => {
+      const { pos, total } = monthYearCounts[i];
+      const pctPos = total ? Math.round(pos / total * 100) : 0;
+      const pctColor = pctPos >= 60 ? 'var(--positive)' : pctPos <= 40 ? 'var(--negative)' : 'var(--text-muted)';
+      bodyHtml +=
+        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;">' +
+          '<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);">' + MONTH_NAMES[i] + '</span>' +
+          '<span style="font-size:9px;color:' + pctColor + ';" data-tooltip="' + pos + ' of ' + total + ' years closed positive in ' + MONTH_NAMES[i] + '">' + pctPos + '% ↑</span>' +
+        '</div>';
     });
     bodyHtml += '</div>';
+    bodyHtml += '<div style="padding:2px 14px 6px;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">bar height = avg return · % ↑ = years that closed positive</div>';
   } else {
     // ── BOX PLOT view ────────────────────────────────────────────────────────
     // SVG box plot: 12 columns, each shows p5, p25, median, p75, p95 + avg diamond + outliers
