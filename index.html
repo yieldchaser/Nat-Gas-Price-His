@@ -2614,8 +2614,13 @@ function renderHHForwardReturns(data, month, year) {
     const tickerYear = parseInt('20' + ticker.slice(-2), 10);
     if (tickerYear === year) return;
 
-    // Find a point within ±WINDOW of currentDay
-    const matchPt = series.find(pt => Math.abs(pt.d - currentDay) <= WINDOW);
+    // Find the closest point within ±WINDOW of currentDay
+    let matchPt = null;
+    let minDiff = Infinity;
+    for (const pt of series) {
+      const diff = Math.abs(pt.d - currentDay);
+      if (diff <= WINDOW && diff < minDiff) { matchPt = pt; minDiff = diff; }
+    }
     if (!matchPt) return;
 
     HORIZONS.forEach((h, hi) => {
@@ -4210,8 +4215,13 @@ function renderSpreadConvergenceCone(front, back, year, instrument) {
       if (yr === year) return; // no self-reference
       const sp = computeSpread(front, back, yr, instrument);
       if (!sp.points.length) return;
-      // Find a point within ±TDAY_WINDOW of currentD
-      const matchPt = sp.points.find(pt => Math.abs(pt.d - currentD) <= TDAY_WINDOW);
+      // Find the closest point within ±TDAY_WINDOW of currentD
+      let matchPt = null;
+      let minDiff = Infinity;
+      for (const pt of sp.points) {
+        const diff = Math.abs(pt.d - currentD);
+        if (diff <= TDAY_WINDOW && diff < minDiff) { matchPt = pt; minDiff = diff; }
+      }
       if (!matchPt) return;
       // Check value proximity
       if (Math.abs(matchPt.value - currentV) > valueBand) return;
