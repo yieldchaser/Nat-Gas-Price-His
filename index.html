@@ -3522,13 +3522,37 @@ function setSpreadPair(front, back) {
   if (frontEl) frontEl.value = front;
   if (backEl) backEl.value = back;
   onSpreadPairChange();
+  highlightHeatmapPair();
 }
 
 function syncSpreadHeatmapTitle() {
   const titleEl = document.getElementById('spread-heatmap-title');
   if (!titleEl) return;
   const instrument = getSpreadInstrument();
-  titleEl.textContent = `Spread Heatmap — Average Calendar Spread (Last 5 Years · ${instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub'})`;
+  const instrLabel = instrument === 'ttf' ? 'Dutch TTF' : 'Henry Hub';
+  titleEl.textContent = `Spread Heatmap — Average Calendar Spread (Last 5 Years · ${instrLabel})`;
+  titleEl.dataset.tooltip = `Cross-tabulated 12×12 matrix of average calendar spreads (Front − Back) over the last 5 completed years. Green = contango (front cheaper than back), Red = backwardation (front more expensive). Click any cell to view that spread in the chart above.`;
+}
+
+function highlightHeatmapPair() {
+  const activeFront = document.getElementById('spread-front')?.value || '';
+  const activeBack  = document.getElementById('spread-back')?.value  || '';
+  // Reset all row/col headers
+  document.querySelectorAll('#spread-heatmap-tbl [data-hm-row], #spread-heatmap-tbl [data-hm-col]').forEach(el => {
+    el.style.color = 'var(--text-secondary)';
+  });
+  // Reset all cell outlines
+  document.querySelectorAll('#spread-heatmap-tbl .hm-cell').forEach(el => {
+    el.style.outline = '';
+    el.style.outlineOffset = '';
+  });
+  if (!activeFront || !activeBack) return;
+  const rowEl  = document.querySelector(`#spread-heatmap-tbl [data-hm-row="${activeFront}"]`);
+  if (rowEl)  rowEl.style.color  = 'var(--accent-hh)';
+  const colEl  = document.querySelector(`#spread-heatmap-tbl [data-hm-col="${activeBack}"]`);
+  if (colEl)  colEl.style.color  = 'var(--accent-hh)';
+  const cellEl = document.querySelector(`#spread-heatmap-tbl .hm-cell[data-hm-front="${activeFront}"][data-hm-back="${activeBack}"]`);
+  if (cellEl) { cellEl.style.outline = '1.5px solid var(--accent-hh)'; cellEl.style.outlineOffset = '-1.5px'; }
 }
 
 function clearSpreadPins() {
@@ -4549,23 +4573,34 @@ async function buildSpreadHeatmap(force = false) {
   }
   if (STATE.spreadHeatmapHtml) {
     heatmapEl.innerHTML = STATE.spreadHeatmapHtml;
+    highlightHeatmapPair();
     return;
   }
 
   // 12x12 grid: front(row) x back(col)
   const currentYear = new Date().getFullYear();
-  let html = '<table style="font-size:11px;"><thead><tr><th></th>';
+  const y1 = currentYear - 5, y2 = currentYear - 1;
+
+  let html = `<style>#spread-heatmap-tbl td.hm-cell:hover{filter:brightness(1.28);}</style>`;
+  html += `<div style="font-size:10px;color:var(--text-muted);padding:2px 14px 8px;font-family:var(--font-mono);letter-spacing:0.04em;">${y1}–${y2} · 5 completed years · Green = contango · Red = backwardation</div>`;
+  html += `<div style="overflow-x:auto;"><table id="spread-heatmap-tbl" style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>`;
+  html += `<th style="width:44px;"></th>`;
   for (const month of MONTHS) {
-    html += `<th style="text-align:center;padding:4px 6px;">${month.slice(0,3)}</th>`;
+    const m3 = month.slice(0,3).toUpperCase();
+    html += `<th data-hm-col="${month}" style="text-align:center;padding:5px 6px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:0.06em;color:var(--text-secondary);border-bottom:1px solid rgba(255,255,255,0.06);" data-tooltip="Back leg: ${month} — this column shows ${month} as the back contract month.">${m3}</th>`;
   }
-  html += '</tr></thead><tbody>';
+  html += `</tr></thead><tbody>`;
 
   for (let fi = 0; fi < MONTHS.length; fi++) {
     const front = MONTHS[fi];
-    html += `<tr><td style="text-align:left;font-weight:600;padding:4px 6px;">${front.slice(0,3)}</td>`;
+    const f3 = front.slice(0,3).toUpperCase();
+    html += `<tr><td data-hm-row="${front}" style="text-align:left;font-weight:600;padding:5px 8px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.06em;color:var(--text-secondary);white-space:nowrap;" data-tooltip="Front leg: ${front} — this row shows ${front} as the front contract month.">${f3}</td>`;
     for (let bi = 0; bi < MONTHS.length; bi++) {
       const back = MONTHS[bi];
-      if (fi === bi) { html += '<td style="background:var(--bg-primary);"></td>'; continue; }
+      if (fi === bi) {
+        html += `<td style="background:rgba(255,255,255,0.015);text-align:center;color:rgba(255,255,255,0.08);font-size:10px;font-family:var(--font-mono);">·</td>`;
+        continue;
+      }
       // Compute avg spread across last 5 years
       let sum = 0, count = 0;
       for (let yr = currentYear - 5; yr < currentYear; yr++) {
@@ -4579,18 +4614,29 @@ async function buildSpreadHeatmap(force = false) {
       const intensity = avg != null ? Math.min(Math.abs(avg) / 2, 1) : 0;
       const color = avg == null
         ? 'transparent'
-        : (avg > 0 ? `rgba(0,255,136,${intensity * 0.4})` : `rgba(255,68,85,${intensity * 0.4})`);
-      const cursor = avg == null ? 'default' : 'pointer';
+        : (avg > 0 ? `rgba(0,255,136,${intensity * 0.45})` : `rgba(255,68,85,${intensity * 0.45})`);
       const value = avg == null ? '—' : avg.toFixed(2);
+      const sign = avg != null && avg >= 0 ? '+' : '';
+      const tip = avg == null
+        ? `${front.slice(0,3)}/${back.slice(0,3)} — No spread data available.`
+        : `${front.slice(0,3)} / ${back.slice(0,3)} · 5Y Avg: ${sign}${avg.toFixed(3)} · ${count}/5 years with data · Click to select this spread`;
       const click = avg == null ? '' : ` onclick="setSpreadPair('${front}','${back}')"`;
-      html += `<td style="text-align:center;padding:4px 6px;background:${color};cursor:${cursor};font-family:var(--font-mono);font-size:11px;"${click}>${value}</td>`;
+      html += `<td class="hm-cell" data-hm-front="${front}" data-hm-back="${back}" style="text-align:center;padding:5px 6px;background:${color};cursor:${avg == null ? 'default' : 'pointer'};font-family:var(--font-mono);font-size:11px;color:${avg == null ? 'rgba(255,255,255,0.2)' : 'inherit'};transition:filter 0.1s;" data-tooltip="${tip}"${click}>${value}</td>`;
     }
-    html += '</tr>';
+    html += `</tr>`;
     await yieldToBrowser();
   }
-  html += '</tbody></table>';
+  html += `</tbody></table></div>`;
+  html += `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px 12px;">
+    <div style="width:72px;height:3px;background:linear-gradient(to right,rgba(255,68,85,0.75),rgba(255,68,85,0.12));border-radius:2px;"></div>
+    <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:0.04em;">Backwardation</span>
+    <div style="width:20px;height:3px;background:rgba(255,255,255,0.04);border-radius:2px;"></div>
+    <div style="width:72px;height:3px;background:linear-gradient(to right,rgba(0,255,136,0.12),rgba(0,255,136,0.75));border-radius:2px;"></div>
+    <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:0.04em;">Contango</span>
+  </div>`;
   STATE.spreadHeatmapHtml = html;
   heatmapEl.innerHTML = html;
+  highlightHeatmapPair();
 }
 
 
@@ -5050,6 +5096,7 @@ function scheduleSpreadHeatmap(force = false) {
   const cacheKey = `${getSpreadInstrument()}|last5`;
   if (STATE.spreadHeatmapHtml && STATE.spreadHeatmapKey === cacheKey && !force) {
     heatmapEl.innerHTML = STATE.spreadHeatmapHtml;
+    highlightHeatmapPair();
     return;
   }
   if (STATE.spreadHeatmapPending && !force) return;
