@@ -3716,12 +3716,12 @@ function renderSpreadTab() {
             </div>
             <div class="ctrl-toolbar" style="padding:8px 14px;border-top:1px solid var(--border);">
               <div class="ctrl-group">
-                <div class="ctrl-group-label">Front Leg</div>
+                <div class="ctrl-group-label" data-tooltip="The front (near) month of the calendar spread — each line plots Front − Back. Negative values mean front is cheaper than back (contango).">Front Leg</div>
                 <select id="resolution-front">${MONTHS.map((m,i)=>`<option value="${m}" ${i===10?'selected':''}>${m}</option>`).join('')}</select>
               </div>
               <div class="ctrl-sep"></div>
               <div class="ctrl-group">
-                <div class="ctrl-group-label">Back Leg</div>
+                <div class="ctrl-group-label" data-tooltip="The back (far) month of the calendar spread. The spread value = Front price − Back price. A negative reading means the back month commands a premium (seasonal demand).">Back Leg</div>
                 <select id="resolution-back">${MONTHS.map((m,i)=>`<option value="${m}" ${i===0?'selected':''}>${m}</option>`).join('')}</select>
               </div>
             </div>
@@ -3731,12 +3731,12 @@ function renderSpreadTab() {
             <div class="card chart-footer" style="margin-top:0;border-top:1px solid var(--border);padding:10px 14px;">
               <div class="range-toolbar">
                 <div class="flex flex-col gap-sm">
-                  <span class="range-kicker">T-Day Range</span>
+                  <span class="range-kicker" data-tooltip="Drag the handles to zoom into a specific phase of the contract lifecycle. T-518 = first trading day after listing, T-0 = expiry. KPI chips below update to reflect the windowed range.">T-Day Range</span>
                   <span class="range-helper" id="resolution-range-helper">Full lifecycle</span>
                 </div>
                 <div class="range-scale-labels">
-                  <span id="resolution-range-min-label">T-518</span>
-                  <span id="resolution-range-max-label">T-0</span>
+                  <span id="resolution-range-min-label" data-tooltip="Left edge of the window — T-518 is the earliest trading day (contract listing).">T-518</span>
+                  <span id="resolution-range-max-label" data-tooltip="Right edge of the window — T-0 is the final trading day (contract expiry).">T-0</span>
                 </div>
               </div>
               <div class="range-input-shell" style="margin:10px 0;">
@@ -4775,7 +4775,13 @@ function renderSpreadResolutionChart() {
       const on = STATE.resolutionVisibleYears.has(yr);
       const isSelected = yr === year;
       const color = isSelected ? '#ffffff' : getSpreadYearColor(yr);
-      return `<span data-resolution-yr="${yr}" onclick="toggleResolutionYear(${yr})" style="
+      const spreadResult = computeSpread(front, back, yr, instrument);
+      const sp = spreadResult.points;
+      const avg = sp.length ? sp.reduce((s,p) => s + p.value, 0) / sp.length : null;
+      const tip = sp.length
+        ? `${yr} ${front.slice(0,3)}/${back.slice(0,3)} — Full-lifecycle avg: ${avg != null ? (avg >= 0 ? '+' : '') + avg.toFixed(3) : 'N/A'} · ${sp.length} trading days${isSelected ? ' · Currently selected year' : ''} · Click to toggle visibility`
+        : `${yr} ${front.slice(0,3)}/${back.slice(0,3)} — No data available`;
+      return `<span data-resolution-yr="${yr}" onclick="toggleResolutionYear(${yr})" data-tooltip="${tip}" style="
         display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:4px;
         border:1px solid ${on ? color : 'rgba(255,255,255,0.15)'};
         background:${on ? color + '22' : 'transparent'};
@@ -4787,8 +4793,8 @@ function renderSpreadResolutionChart() {
       "><span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>${yr}</span>`;
     }).join('') + `
       <div style="flex-grow:1;"></div>
-      <span onclick="toggleAllResolutionYears(true)" style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">ALL</span>
-      <span onclick="toggleAllResolutionYears(false)" style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">NONE</span>
+      <span onclick="toggleAllResolutionYears(true)" data-tooltip="Show all available years as overlay lines." style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">ALL</span>
+      <span onclick="toggleAllResolutionYears(false)" data-tooltip="Hide all years except the currently selected one." style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">NONE</span>
     `;
   }
   
@@ -4838,9 +4844,18 @@ function renderSpreadResolutionChart() {
       seriesConfigs: seriesConfigs.reverse(), // Put newest/selected at top
       getTitle: p => {
         const d = (new Date(p.time).getTime() - new Date("2000-01-01T00:00:00Z").getTime()) / 86400000;
-        return `T-${519 - Math.round(d)}`;
+        const tDay = 519 - Math.round(d);
+        return `T-${tDay} · ${front.slice(0,3)}/${back.slice(0,3)}`;
       },
-      getMetrics: p => []
+      getMetrics: p => {
+        const d = (new Date(p.time).getTime() - new Date("2000-01-01T00:00:00Z").getTime()) / 86400000;
+        const tDay = 519 - Math.round(d);
+        const pctDone = ((519 - tDay) / 519 * 100).toFixed(0);
+        return [
+          { label: 'Days to Expiry', value: `${tDay}` },
+          { label: 'Lifecycle', value: `${pctDone}% complete` },
+        ];
+      }
     });
   }
   syncResolutionRangeFooter();
@@ -4958,12 +4973,14 @@ function updateResolutionKPI(start, end) {
       const mn = Math.min(...pts);
       const mx = Math.max(...pts);
       const color = yr === selectedYear ? '#ffffff' : getSpreadYearColor(yr);
-      items.push(`<div style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;border:1px solid ${color}33;background:${color}11;">
+      const rangeSpread = (mx - mn).toFixed(3);
+      const tip = `${yr} ${front || ''}/${back || ''} · Window avg: ${(avg >= 0 ? '+' : '') + avg.toFixed(3)} · Min: ${mn.toFixed(3)} · Max: ${(mx >= 0 ? '+' : '') + mx.toFixed(3)} · Range: ${rangeSpread} · ${pts.length} days in window${yr === selectedYear ? ' · Selected year' : ''}`;
+      items.push(`<div data-tooltip="${tip}" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;border:1px solid ${color}33;background:${color}11;cursor:default;">
         <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>
         <span style="font-family:var(--font-mono);font-size:11px;color:${color};font-weight:${yr===selectedYear?'700':'400'};">${yr}</span>
         <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">avg</span>
         <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-primary);">${formatSignedSpread(avg,3)}</span>
-        <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">${formatSignedSpread(mn,3)}/${formatSignedSpread(mx,3)}</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--negative);">${formatSignedSpread(mn,3)}</span><span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">/</span><span style="font-family:var(--font-mono);font-size:10px;color:var(--positive);">${formatSignedSpread(mx,3)}</span>
       </div>`);
     });
   kpiEl.innerHTML = items.join('');
