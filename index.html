@@ -4167,6 +4167,11 @@ function updateSpreadChart() {
     <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="AT-10D: spread value at approximately 10 trading days before expiry — the final approach window.">AT-10D</th>
   </tr></thead><tbody>`);
 
+  const fmtSnap = v => v != null
+    ? `<span style="color:${v >= 0 ? 'var(--positive)' : 'var(--negative)'};">${v.toFixed(3)}</span>`
+    : '<span style="color:var(--text-muted);">—</span>';
+  const fmtAvg = v => v != null ? v.toFixed(3) : '—';
+
   tableRows.sort((a, b) => b.yr - a.yr).forEach(r => {
     const cls = r.last >= 0 ? 'positive' : 'negative';
     const rank = Number.isFinite(r.last) ? sortedDesc.indexOf(r.last) + 1 : null;
@@ -4174,19 +4179,34 @@ function updateSpreadChart() {
     const barW = ((r.last - lastMin) / lastRange * 44).toFixed(1);
     const barColor = r.last >= 0 ? 'var(--positive)' : 'var(--negative)';
     const bar = `<span style="display:inline-block;width:${barW}px;height:3px;background:${barColor};border-radius:2px;vertical-align:middle;opacity:0.55;margin-left:4px;"></span>`;
-    const rowStyle = r.yr === year ? 'background:rgba(157,78,221,0.08);font-weight:600;' : '';
+    const isSelected = r.yr === year;
+    const rowStyle = isSelected ? 'background:rgba(157,78,221,0.12);font-weight:600;' : '';
     const sign = r.last >= 0 ? '+' : '';
-    html += `<tr style="${rowStyle}cursor:pointer;" title="View ${front} ${r.yr} in Prices tab" onclick="navigateTo('prices',{month:'${front}',year:'${r.yr}'})">
-      <td style="text-align:left;">${r.yr}</td>
+    const dot = isSelected ? `<span style="font-size:10px;margin-right:4px;color:#a78bfa;">●</span>` : '';
+
+    // Rich row tooltip
+    const snapParts = [
+      r.at519 != null ? `AT-519: ${r.at519 >= 0 ? '+' : ''}${r.at519.toFixed(3)}` : null,
+      r.at90  != null ? `AT-90D: ${r.at90  >= 0 ? '+' : ''}${r.at90.toFixed(3)}`  : null,
+      r.penult != null ? `AT-PENULT: ${r.penult >= 0 ? '+' : ''}${r.penult.toFixed(3)}` : null,
+      r.at10  != null ? `AT-10D: ${r.at10  >= 0 ? '+' : ''}${r.at10.toFixed(3)}`  : null,
+    ].filter(Boolean).join(' · ');
+    const rowTip = `${front}/${back} ${r.yr} — Last: ${sign}${r.last.toFixed(3)} · Rank #${rank ?? '?'}/${allLasts.length}`
+      + ` · Range: ${r.min.toFixed(3)} – ${r.max.toFixed(3)} · Avg: ${r.avg.toFixed(3)}`
+      + (snapParts ? ` · ${snapParts}` : '')
+      + `. Click to view ${front} ${r.yr} in Prices tab.`;
+
+    html += `<tr style="${rowStyle}cursor:pointer;" data-tooltip="${rowTip}" onclick="navigateTo('prices',{month:'${front}',year:'${r.yr}'})">
+      <td style="text-align:left;${isSelected ? 'color:#a78bfa;' : ''}">${dot}${r.yr}</td>
       <td class="${cls}">${sign}${r.last.toFixed(3)}${bar}</td>
       <td style="font-family:var(--font-mono);font-size:11px;">${rank ? rankOf : '—'}</td>
       <td>${r.max.toFixed(3)}</td>
-      <td>${r.min.toFixed(3)}</td>
-      <td>${r.avg.toFixed(3)}</td>
-      <td>${r.at519 != null ? r.at519.toFixed(3) : '—'}</td>
-      <td>${r.penult != null ? r.penult.toFixed(3) : '—'}</td>
-      <td>${r.at90 != null ? r.at90.toFixed(3) : '—'}</td>
-      <td>${r.at10 != null ? r.at10.toFixed(3) : '—'}</td>
+      <td style="color:${r.min >= 0 ? 'var(--positive)' : 'var(--negative)'};">${r.min.toFixed(3)}</td>
+      <td>${fmtAvg(r.avg)}</td>
+      <td>${fmtSnap(r.at519)}</td>
+      <td>${fmtSnap(r.penult)}</td>
+      <td>${fmtSnap(r.at90)}</td>
+      <td>${fmtSnap(r.at10)}</td>
     </tr>`;
   });
 
@@ -4205,21 +4225,29 @@ function updateSpreadChart() {
     y5: { last: calcAvg5y('last'), max: calcAvg5y('max'), min: calcAvg5y('min'), avg: calcAvg5y('avg'), at519: calcAvg5y('at519'), penult: calcAvg5y('penult'), at90: calcAvg5y('at90'), at10: calcAvg5y('at10') }
   };
 
-  const mkRow = (label, data) => `
+  const currentYearStr = String(currentYear);
+  const y5Range = tableRows.filter(r => r.yr >= currentYear - 5 && r.yr < currentYear).map(r => r.yr).sort((a,b) => a - b);
+  const y5Label = y5Range.length ? `${y5Range[0]}–${y5Range[y5Range.length - 1]}` : 'N/A';
+  const mkRow = (label, data, tip = '') => `
     <tr style="background:var(--bg-card);font-weight:600;border-top:1px solid rgba(255,255,255,0.1);">
-      <td style="text-align:left;">${label}</td>
-      <td>${data.last != null ? data.last.toFixed(3) : '—'}</td>
-      <td>—</td>
+      <td style="text-align:left;color:var(--text-muted);" data-tooltip="${tip}">${label}</td>
+      <td style="color:${data.last != null ? (data.last >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'};">${data.last != null ? (data.last >= 0 ? '+' : '') + data.last.toFixed(3) : '—'}</td>
+      <td style="color:var(--text-muted);">—</td>
       <td>${data.max != null ? data.max.toFixed(3) : '—'}</td>
-      <td>${data.min != null ? data.min.toFixed(3) : '—'}</td>
+      <td style="color:${data.min != null ? (data.min >= 0 ? 'var(--positive)' : 'var(--negative)') : 'inherit'};">${data.min != null ? data.min.toFixed(3) : '—'}</td>
       <td>${data.avg != null ? data.avg.toFixed(3) : '—'}</td>
-      <td>${data.at519 != null ? data.at519.toFixed(3) : '—'}</td>
-      <td>${data.penult != null ? data.penult.toFixed(3) : '—'}</td>
-      <td>${data.at90 != null ? data.at90.toFixed(3) : '—'}</td>
-      <td>${data.at10 != null ? data.at10.toFixed(3) : '—'}</td>
+      <td>${fmtSnap(data.at519)}</td>
+      <td>${fmtSnap(data.penult)}</td>
+      <td>${fmtSnap(data.at90)}</td>
+      <td>${fmtSnap(data.at10)}</td>
     </tr>
   `;
-  html = html.replace('</tbody>', mkRow('Avg (All Time)', sums.all) + mkRow('Avg (5 Completed Yrs)', sums.y5) + '</tbody>');
+  const allYrs = tableRows.map(r => r.yr).sort((a,b) => a - b);
+  const allRange = allYrs.length ? `${allYrs[0]}–${allYrs[allYrs.length-1]}` : 'N/A';
+  html = html.replace('</tbody>',
+    mkRow('Avg (All Time)', sums.all, `Mean of each column across all ${tableRows.length} available years (${allRange}), excluding any year with missing data for that column.`) +
+    mkRow(`Avg (5Y: ${y5Label})`, sums.y5, `Mean of each column across the 5 most recently completed years (${y5Label}). A tighter seasonal reference than the all-time average.`) +
+    '</tbody>');
 
   html += `</tbody></table></div>`;
   document.getElementById('spread-table').innerHTML = html;
