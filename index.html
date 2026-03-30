@@ -2579,49 +2579,60 @@ function renderHHHistoryTable(month, currentYear) {
   if (!tableEl) return;
   const expiry = STATE.expiry;
   const years = Object.keys(expiry).sort((a, b) => b - a);
-  
-  // Calculate ranks
+
+  // Calculate ranks and price range for mini bars
   const allPrices = years.map(yr => expiry[yr][month]).filter(Number.isFinite);
   const sortedPricesDesc = [...allPrices].sort((a, b) => b - a);
   const priceRange = (Math.max(...allPrices) - Math.min(...allPrices)) || 1;
   const priceMin = Math.min(...allPrices);
+  const contractCount = allPrices.length;
 
   let rows = '';
-  // Show ALL available years for the contract's month
   years.forEach(yr => {
     const price = expiry[yr][month];
     if (price == null) return;
-    
-    // Find prior year for YoY delta
+
     const priorYr = '' + (parseInt(yr) - 1);
     const prior = expiry[priorYr] ? expiry[priorYr][month] : null;
     const delta = prior ? ((price - prior) / prior * 100) : null;
     const rank = sortedPricesDesc.indexOf(price) + 1;
-    
+
     const isSelected = yr === currentYear;
-    const rowBg = isSelected ? 'background:rgba(0,212,255,0.15);font-weight:600;' : '';
-    const barW = ((price - priceMin) / priceRange * 36).toFixed(1);
-    const bar = `<div style="width:${barW}px;height:3px;background:var(--accent-hh);border-radius:2px;opacity:0.6;margin-top:2px;"></div>`;
-    
-    // Make row clickable: selection logic using cycleHHContract or directly setting the select box
-    const rowTip = `${yr} ${month} expiry: $${price.toFixed(3)} · Rank #${rank} of ${allPrices.length}${delta !== null ? ' · YoY: ' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : ''}. Click to load this contract.`;
+    const rowBg = isSelected ? 'background:rgba(0,212,255,0.12);' : '';
+    const yearCell = isSelected
+      ? `<td style="text-align:left;font-weight:700;color:var(--accent-hh);white-space:nowrap;"><span style="margin-right:4px;font-size:10px;">●</span>${yr}</td>`
+      : `<td style="text-align:left;color:var(--text-secondary);">${yr}</td>`;
+
+    // Mini bar: proportional to price within the all-time range (max 52px)
+    const barW = Math.max(2, Math.round((price - priceMin) / priceRange * 52));
+    const barColor = isSelected ? 'var(--accent-hh)' : 'rgba(0,212,255,0.4)';
+    const barCell = `<td style="padding-right:14px;vertical-align:middle;"><div style="width:${barW}px;height:3px;background:${barColor};border-radius:2px;"></div></td>`;
+
+    const rowTip = `${yr} ${month} expiry: $${price.toFixed(3)} · Rank #${rank} of ${contractCount}${delta !== null ? ' · YoY: ' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : ''}. Click to load this contract.`;
     rows += `<tr style="${rowBg}cursor:pointer;" onclick="const sel=document.getElementById('hh-year'); sel.value='${yr}'; window.updateHHChart();" data-tooltip="${rowTip}">
-      <td style="text-align:left;">${yr}</td>
-      <td style="font-family:var(--font-mono);">$${price.toFixed(3)}${bar}</td>
-      <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">#${rank}<span style="font-size:9px;">/${allPrices.length}</span></td>
-      <td class="${delta !== null ? (delta >= 0 ? 'positive' : 'negative') : ''}" style="font-family:var(--font-mono);">${delta !== null ? (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : '—'}</td>
+      ${yearCell}
+      <td style="font-family:var(--font-mono);font-weight:${isSelected ? '700' : '400'};">$${price.toFixed(3)}</td>
+      <td style="font-family:var(--font-mono);font-size:11px;color:${isSelected ? 'var(--text-primary)' : 'var(--text-muted)'};">#${rank}<span style="font-size:9px;opacity:0.6;">/${contractCount}</span></td>
+      <td class="${delta !== null ? (delta >= 0 ? 'positive' : 'negative') : ''}" style="font-family:var(--font-mono);font-size:11px;">${delta !== null ? (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : '—'}</td>
+      ${barCell}
     </tr>`;
   });
 
+  const monthLabel = month.slice(0, 3).toUpperCase();
   tableEl.innerHTML = `
-    <div class="card-title" style="padding:10px 14px 6px;" data-tooltip="Final settlement price for ${month} contracts across all available years. Click any row to load that year's contract on the chart. Highlighted row = currently selected year.">Same Month History <span style="font-size:11px;color:var(--text-muted);font-weight:400;">${month} · ${years.length} contracts</span></div>
-    <div style="overflow-y:auto;max-height:220px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px;">
+      <span class="card-title" style="padding:0;" data-tooltip="Final settlement price for ${month} HH contracts across all available years. Click any row to load that contract year on the chart. The highlighted row is the currently viewed year.">Same Month HH History</span>
+      <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(0,212,255,0.1);color:var(--accent-hh);border:1px solid rgba(0,212,255,0.25);font-weight:700;font-family:var(--font-mono);letter-spacing:0.05em;">${monthLabel} · HH</span>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);padding:0 14px 8px;">${contractCount} contracts</div>
+    <div style="overflow-y:auto;max-height:260px;">
       <table>
         <thead><tr>
-          <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Contract delivery year">Year</th>
-          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Final settlement price on NYMEX expiry day. For the current year, this is the last available print.">Expiry Price</th>
-          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Settlement price rank across all ${years.length} years of ${month} contracts, from highest (#1) to lowest (#${years.length}).">Rank</th>
-          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Year-over-year change: this year's expiry price vs the prior year's expiry price for the same month.">YoY Δ</th>
+          <th style="text-align:left;position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Contract delivery year. Click any row to view that year's full lifecycle on the chart.">Year</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Final settlement price on NYMEX expiry day. For the current year this is the most recent available print.">Last Print</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Price rank among all ${contractCount} ${month} contracts, from highest (#1) to lowest (#${contractCount}). Reflects how expensive or cheap this year's settlement was historically.">Rank</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;" data-tooltip="Year-over-year change: this year's settlement vs the previous year's settlement for the same month.">YoY Δ</th>
+          <th style="position:sticky;top:0;background:var(--bg-card);z-index:2;width:60px;"></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
