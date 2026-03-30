@@ -3565,6 +3565,34 @@ function clearSpreadPins() {
   scheduleSpreadChartUpdate(true);
 }
 
+function toggleAllSpreadYears(on) {
+  const yearSelect = document.getElementById('spread-year');
+  const selectedYear = parseInt(yearSelect?.value, 10);
+  if (!STATE.spreadPinnedYears) STATE.spreadPinnedYears = new Set();
+  if (on) {
+    document.querySelectorAll('[data-spread-yr]').forEach(el => {
+      const yr = parseInt(el.dataset.spreadYr);
+      if (yr !== selectedYear) STATE.spreadPinnedYears.add(yr);
+    });
+  } else {
+    STATE.spreadPinnedYears.clear();
+  }
+  STATE.spreadVisibleYears = new Set(STATE.spreadPinnedYears);
+  STATE.spreadVisibleYears.add(selectedYear);
+  if (STATE.spreadSeriesMap) {
+    STATE.spreadSeriesMap.forEach((series, yr) => series.applyOptions({ visible: STATE.spreadVisibleYears.has(yr) }));
+  }
+  document.querySelectorAll('[data-spread-yr]').forEach(el => {
+    const yr = parseInt(el.dataset.spreadYr);
+    const isSelected = yr === selectedYear;
+    const isOn = STATE.spreadVisibleYears.has(yr);
+    const color = isSelected ? '#ffffff' : getSpreadYearColor(yr);
+    el.style.opacity = isOn ? '1' : '0.28';
+    el.style.background = isOn ? `${color}22` : 'transparent';
+    el.style.border = `1px solid ${isOn ? color : 'rgba(255,255,255,0.15)'}`;
+  });
+}
+
 function toggleSpreadYear(yr) {
   yr = parseInt(yr);
   const yearSelect = document.getElementById('spread-year');
@@ -3690,12 +3718,12 @@ function renderSpreadTab() {
           <div class="card chart-footer" style="margin-top:var(--gap);">
             <div class="range-toolbar">
               <div class="flex flex-col gap-sm">
-                <span class="range-kicker">Window</span>
+                <span class="range-kicker" data-tooltip="Drag the handles to zoom the spread chart to a specific date range. The T-Day reference in the KPI bar updates to match the right edge of the window.">Window</span>
                 <span class="range-helper" id="spread-range-helper">Full span</span>
               </div>
               <div class="range-scale-labels">
-                <span id="spread-range-min-label">--</span>
-                <span id="spread-range-max-label">--</span>
+                <span id="spread-range-min-label" data-tooltip="Left (earliest) edge of the visible window.">--</span>
+                <span id="spread-range-max-label" data-tooltip="Right (latest) edge of the visible window — the T-Day reference in the KPI bar is anchored here.">--</span>
               </div>
             </div>
             <div class="range-input-shell">
@@ -4044,8 +4072,8 @@ function updateSpreadChart() {
     const pct5y = getSpreadRelativePercent(curLast, refs.avg5y);
     const pct10y = getSpreadRelativePercent(curLast, refs.avg10y);
     const refAvailabilityNote = getSpreadReferenceAvailabilityMessage(refs, year, instrument);
-    const chip = (label, val, color = 'var(--text-primary)') =>
-      `<div class="ctrl-group"><div class="ctrl-group-label">${label}</div><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${color};">${val}</div></div>`;
+    const chip = (label, val, color = 'var(--text-primary)', tip = '') =>
+      `<div class="ctrl-group"><div class="ctrl-group-label" ${tip ? `data-tooltip="${tip}"` : ''}>${label}</div><div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:${color};">${val}</div></div>`;
     const sep = `<div class="ctrl-sep"></div>`;
     const formatKpiSpread = value => Number.isFinite(value) ? formatSignedSpread(value) : 'N/A';
     const formatDeltaWithPercent = (delta, pct, reference, color) => {
@@ -4055,18 +4083,29 @@ function updateSpreadChart() {
       if (!pctText) return formatSignedSpread(delta);
       return `${formatSignedSpread(delta)} <span style="font-size:12px;color:${color};opacity:0.82;">(${pctText})</span>`;
     };
+    const color5y  = delta5y  != null ? (delta5y  >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)';
+    const color10y = delta10y != null ? (delta10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)';
+    const yr5range  = `${year - 5}–${year - 1}`;
+    const yr10range = `${year - 10}–${year - 1}`;
+    const priorN = refs.priorYearsCount;
     kpiEl.innerHTML = [
-      chip('Ref T-Day', referenceDay != null ? String(referenceDay) : '—'),
+      chip('Ref T-Day', referenceDay != null ? String(referenceDay) : '—', 'var(--text-primary)',
+        `The current T-Day for the ${year} contract. T-Day counts down from 519 (first listing day) to 0 (expiry). All reference averages are anchored to this same T-Day across prior years.`),
       sep,
-      chip('All-Time Ref', formatKpiSpread(refs.allTime)),
+      chip('All-Time Ref', formatKpiSpread(refs.allTime), 'var(--text-primary)',
+        `Same-T-Day average for this spread pair across ALL ${priorN} prior years with data (${refs.historyStart ?? '?'}–${refs.historyEnd ?? '?'}). The long-run historical baseline at T-Day ${referenceDay}.`),
       sep,
-      chip('5Y Ref', formatKpiSpread(refs.avg5y)),
+      chip('5Y Ref', formatKpiSpread(refs.avg5y), 'var(--text-primary)',
+        `Same-T-Day average across the 5 prior years (${yr5range}). A tighter, more recent benchmark that captures the current market regime.`),
       sep,
-      chip('10Y Ref', formatKpiSpread(refs.avg10y)),
+      chip('10Y Ref', formatKpiSpread(refs.avg10y), 'var(--text-primary)',
+        `Same-T-Day average across the 10 prior years (${yr10range}). Bridges short-cycle and long-run seasonality.`),
       sep,
-      chip('Curr - 5Y', formatDeltaWithPercent(delta5y, pct5y, refs.avg5y, delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'), delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+      chip('Curr − 5Y', formatDeltaWithPercent(delta5y, pct5y, refs.avg5y, color5y), color5y,
+        `Current ${year} value minus the 5Y reference (${yr5range} avg). ${delta5y != null ? (delta5y >= 0 ? 'Currently ABOVE' : 'Currently BELOW') + ' the 5Y avg by ' + Math.abs(delta5y).toFixed(3) : 'No data'}.`),
       sep,
-      chip('Curr - 10Y', formatDeltaWithPercent(delta10y, pct10y, refs.avg10y, delta10y != null ? (delta10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'), delta10y != null ? (delta10y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+      chip('Curr − 10Y', formatDeltaWithPercent(delta10y, pct10y, refs.avg10y, color10y), color10y,
+        `Current ${year} value minus the 10Y reference (${yr10range} avg). ${delta10y != null ? (delta10y >= 0 ? 'Currently ABOVE' : 'Currently BELOW') + ' the 10Y avg by ' + Math.abs(delta10y).toFixed(3) : 'No data'}.`),
     ].join('') + (refAvailabilityNote
       ? `<div style="flex-basis:100%;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-family:var(--font-mono);font-size:11px;letter-spacing:0.04em;color:var(--text-muted);">${refAvailabilityNote}</div>`
       : '');
@@ -4083,17 +4122,27 @@ function updateSpreadChart() {
       const on = STATE.spreadVisibleYears.has(yr);
       const color = yr === year ? '#ffffff' : getSpreadYearColor(yr);
       const isSelected = yr === year;
-      return `<span data-spread-yr="${yr}" onclick="toggleSpreadYear(${yr})" style="
+      const sr = computeSpread(front, back, yr, instrument);
+      const avg = sr.stats ? sr.stats.avg : null;
+      const tip = isSelected
+        ? `${yr} ${front.slice(0,3)}/${back.slice(0,3)} — Primary year. Anchors all T-Day reference metrics in the KPI bar above. Always visible — use the Year selector to change the primary year.`
+        : sr.points.length
+          ? `${yr} ${front.slice(0,3)}/${back.slice(0,3)} — Lifecycle avg: ${avg != null ? (avg >= 0 ? '+' : '') + avg.toFixed(3) : 'N/A'} · ${sr.points.length} trading days · Click to toggle overlay`
+          : `${yr} — No spread data`;
+      return `<span data-spread-yr="${yr}" onclick="toggleSpreadYear(${yr})" data-tooltip="${tip}" style="
         display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:4px;
         border:1px solid ${on ? color : 'rgba(255,255,255,0.15)'};
         background:${on ? color + '22' : 'transparent'};
         opacity:${on ? '1' : '0.28'};
-        cursor:pointer;font-family:var(--font-mono);font-size:11px;
+        cursor:${isSelected ? 'default' : 'pointer'};font-family:var(--font-mono);font-size:11px;
         color:${color};font-weight:${isSelected ? '700' : '400'};
         transition:opacity 0.15s,background 0.15s;
         ${isSelected ? 'box-shadow:0 0 0 1px '+color+';' : ''}
       "><span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>${yr}</span>`;
-    }).join('');
+    }).join('') + `
+      <div style="flex-grow:1;"></div>
+      <span onclick="toggleAllSpreadYears(true)" data-tooltip="Show all available years as overlay lines." style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">ALL</span>
+      <span onclick="toggleAllSpreadYears(false)" data-tooltip="Hide all overlay years — show only the primary selected year." style="cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.15);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);user-select:none;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'">NONE</span>`;
   }
 
   // Zero line
