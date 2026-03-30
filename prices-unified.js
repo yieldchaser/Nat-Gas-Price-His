@@ -754,12 +754,12 @@ function renderPricesTab() {
           <div class="card chart-footer" style="margin-top:var(--gap);">
             <div class="range-toolbar">
               <div class="flex flex-col gap-sm">
-                <span class="range-kicker">Window</span>
+                <span class="range-kicker" data-tooltip="Drag the sliders to focus on a sub-range of the contract's history. All Window Metrics below update instantly to reflect only the selected window.">Window</span>
                 <span class="range-helper" id="prices-range-helper">Drag handles to move and resize the visible range</span>
               </div>
               <div class="range-scale-labels">
-                <span id="prices-range-min-label">--</span>
-                <span id="prices-range-max-label">--</span>
+                <span id="prices-range-min-label" data-tooltip="Start of the available data range">--</span>
+                <span id="prices-range-max-label" data-tooltip="End of the available data range">--</span>
               </div>
             </div>
             <div class="range-input-shell">
@@ -1017,22 +1017,23 @@ function renderPricesSummaryBar(context) {
   const metrics = [
     {
       label: 'POINTS',
+      tip: `Data points in the selected window out of the full dataset (${fullData.length} total). Drag the sliders above to narrow the window.`,
       html: `<span style="color:var(--text-primary);">${filteredData.length}</span><span style="color:var(--text-muted);font-size:11px;margin-left:3px;">/ ${fullData.length}</span>`,
     },
-    { label: 'HIGH',   html: `<span style="color:var(--text-primary);">${fmt(stats.max)}</span>` },
-    { label: 'LOW',    html: `<span style="color:var(--text-primary);">${fmt(stats.min)}</span>` },
-    { label: 'AVG',    html: `<span style="color:var(--text-secondary);">${fmt(stats.avg)}</span>` },
+    { label: 'HIGH',   tip: `Highest closing price within the selected window.`,   html: `<span style="color:var(--text-primary);">${fmt(stats.max)}</span>` },
+    { label: 'LOW',    tip: `Lowest closing price within the selected window.`,    html: `<span style="color:var(--text-primary);">${fmt(stats.min)}</span>` },
+    { label: 'AVG',    tip: `Mean closing price across all points in the window.`, html: `<span style="color:var(--text-secondary);">${fmt(stats.avg)}</span>` },
     spread != null
-      ? { label: 'SPREAD', html: `<span style="color:var(--text-secondary);">${fmt(spread)}</span>` }
+      ? { label: 'SPREAD', tip: `Price range within the window: High minus Low (${fmt(stats.max)} − ${fmt(stats.min)}). Measures how much the contract has moved inside the selected period.`, html: `<span style="color:var(--text-secondary);">${fmt(spread)}</span>` }
       : null,
     windowDelta != null
-      ? { label: 'WINDOW \u0394', html: `<span style="color:${col(windowDelta)};">${formatPercent(windowDelta)}</span>` }
+      ? { label: 'WINDOW \u0394', tip: `Percentage change from the first to the last point in the window (${fmt(wFirst.p)} → ${fmt(wLast.p)}). Captures the net directional move across the selected period.`, html: `<span style="color:${col(windowDelta)};">${formatPercent(windowDelta)}</span>` }
       : null,
     seasonalDelta != null
-      ? { label: 'vs 5Y AVG', html: `<span style="color:${col(seasonalDelta)};">${formatPercent(seasonalDelta)}</span>` }
+      ? { label: 'vs 5Y AVG', tip: `% deviation of the last price in the window from the 5-year seasonal average at that T-Day. Positive = above historical norm; negative = below.`, html: `<span style="color:${col(seasonalDelta)};">${formatPercent(seasonalDelta)}</span>` }
       : null,
     rangePosition
-      ? { label: '5Y BAND', html: `<span style="color:${bandColor};">${formatPercentileLabel(rangePosition, { compact: true })}</span>` }
+      ? { label: '5Y BAND', tip: `Percentile position of the last window price within the 5-year seasonal min–max band at that T-Day. 0th = all-time low for this T-Day stage; 100th = all-time high.`, html: `<span style="color:${bandColor};">${formatPercentileLabel(rangePosition, { compact: true })}</span>` }
       : null,
   ].filter(Boolean);
 
@@ -1041,11 +1042,11 @@ function renderPricesSummaryBar(context) {
   const VALUE_STYLE = `font-family:var(--font-mono);font-size:13px;`;
 
   summaryBar.innerHTML = `
-    <div style="font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;text-align:center;">Window Metrics</div>
+    <div style="font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;text-align:center;" data-tooltip="Statistics computed over the selected chart window. Drag the range sliders above to narrow the window — all values update instantly.">Window Metrics</div>
     <div style="display:flex;align-items:center;justify-content:center;overflow-x:auto;padding-bottom:2px;">
       ${metrics.map((m, i) => `
         ${i > 0 ? DIVIDER : ''}
-        <div style="display:flex;flex-direction:column;flex-shrink:0;align-items:center;text-align:center;">
+        <div style="display:flex;flex-direction:column;flex-shrink:0;align-items:center;text-align:center;" data-tooltip="${m.tip || ''}">
           <div style="${LABEL_STYLE}">${m.label}</div>
           <div style="${VALUE_STYLE}">${m.html}</div>
         </div>
@@ -1149,7 +1150,8 @@ function renderPricesHistoryTable(context) {
       const isActive = String(r.year) === String(view.year);
       const activeBg = isActive ? 'background:rgba(0,212,255,0.12);outline:1px solid rgba(0,212,255,0.3);' : rowBg;
       const dot = isActive ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-hh);margin-right:5px;vertical-align:middle;"></span>` : '';
-      return `<tr style="${activeBg}cursor:pointer;" title="Load ${r.year} contract" onclick="(function(){STATE.priceView.month='${view.month}';STATE.priceView.year=${r.year};STATE.priceView.instrument='hh';resetPriceWindow(STATE.priceView);renderPricesControls();schedulePricesChartUpdate();})()">
+      const rowTip = `${r.year} ${view.month} — Last print: ${formatInstrumentValue('hh', r.price)}${r.rank != null ? ' · Rank #' + r.rank + ' of ' + total : ''}. Click to view this contract year.`;
+      return `<tr style="${activeBg}cursor:pointer;" data-tooltip="${rowTip}" onclick="(function(){STATE.priceView.month='${view.month}';STATE.priceView.year=${r.year};STATE.priceView.instrument='hh';resetPriceWindow(STATE.priceView);renderPricesControls();schedulePricesChartUpdate();})()">
         <td style="text-align:left;color:${isActive ? 'var(--accent-hh)' : isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
         <td>${formatInstrumentValue('hh', r.price)}</td>
         <td style="color:var(--text-secondary);font-size:12px;">${r.rank != null ? `#${r.rank}` : '--'}</td>
@@ -1158,15 +1160,15 @@ function renderPricesHistoryTable(context) {
     }).join('');
 
     tableEl.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;" data-tooltip="Final settlement price for ${view.month} HH contracts across all years. Click any row to load that contract year.">
         <div class="card-title" style="margin-bottom:0;">Same Month HH History</div>
         ${badge}
       </div>
       ${subtitle}
       ${SCROLL_WRAP(`<table><thead><tr>
-        <th style="text-align:left;">Year</th>
-        <th>Last Print</th>
-        <th>Rank</th>
+        <th style="text-align:left;" data-tooltip="Contract delivery year">Year</th>
+        <th data-tooltip="Last traded or settlement price for this contract year">Last Print</th>
+        <th data-tooltip="Price rank among all ${total} ${view.month} contracts, #1 = highest">Rank</th>
         <th style="width:52px;"></th>
       </tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No expiry data</td></tr>`}</tbody></table>`)}`;
     return;
@@ -1203,7 +1205,8 @@ function renderPricesHistoryTable(context) {
       const isActive = String(r.year) === String(view.year);
       const activeBg = isActive ? 'background:rgba(255,140,0,0.12);outline:1px solid rgba(255,140,0,0.3);' : (isNewest ? 'background:rgba(255,255,255,0.03);' : '');
       const dot = isActive ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-ttf);margin-right:5px;vertical-align:middle;"></span>` : '';
-      return `<tr style="${activeBg}cursor:pointer;" title="Load ${r.year} contract" onclick="(function(){STATE.priceView.month='${view.month}';STATE.priceView.year=${r.year};STATE.priceView.instrument='ttf';resetPriceWindow(STATE.priceView);renderPricesControls();schedulePricesChartUpdate();})()">
+      const rowTip = `${r.year} ${view.month} TTF — Last print: ${formatInstrumentValue('ttf', r.price)}${r.rank != null ? ' · Rank #' + r.rank + ' of ' + total : ''}. Click to view this contract year.`;
+      return `<tr style="${activeBg}cursor:pointer;" data-tooltip="${rowTip}" onclick="(function(){STATE.priceView.month='${view.month}';STATE.priceView.year=${r.year};STATE.priceView.instrument='ttf';resetPriceWindow(STATE.priceView);renderPricesControls();schedulePricesChartUpdate();})()">
         <td style="text-align:left;color:${isActive ? 'var(--accent-ttf)' : isNewest ? 'var(--text-primary)' : 'var(--text-secondary)'};">${dot}${r.year}</td>
         <td>${formatInstrumentValue('ttf', r.price)}</td>
         <td style="color:var(--text-secondary);font-size:12px;">${r.rank != null ? `#${r.rank}` : '--'}</td>
@@ -1212,15 +1215,15 @@ function renderPricesHistoryTable(context) {
     }).join('');
 
     tableEl.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;" data-tooltip="Last traded price for ${view.month} TTF contracts across all years. Click any row to load that contract year.">
         <div class="card-title" style="margin-bottom:0;">Same Month TTF History</div>
         ${badge}
       </div>
       ${subtitle}
       ${SCROLL_WRAP(`<table><thead><tr>
-        <th style="text-align:left;">Year</th>
-        <th>Last Print</th>
-        <th>Rank</th>
+        <th style="text-align:left;" data-tooltip="Contract delivery year">Year</th>
+        <th data-tooltip="Last traded price for this contract year">Last Print</th>
+        <th data-tooltip="Price rank among all ${total} ${view.month} TTF contracts, #1 = highest">Rank</th>
         <th style="width:52px;"></th>
       </tr></thead><tbody>${rows || `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No TTF data</td></tr>`}</tbody></table>`)}`;
     return;
