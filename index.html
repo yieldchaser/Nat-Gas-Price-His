@@ -5096,22 +5096,22 @@ function renderButterflyBuilder() {
         </div>
         <div class="ctrl-toolbar" style="gap:10px;flex-wrap:wrap;">
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Front</div>
+            <div class="ctrl-group-label" data-tooltip="Near-leg month — this contract is bought (+1) in the butterfly structure.">Front</div>
             <select id="fly-front">${MONTHS.map((m,i)=>`<option value="${m}" ${m==='Jan'?'selected':''}>${m}</option>`).join('')}</select>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Middle (×2)</div>
+            <div class="ctrl-group-label" data-tooltip="Middle-leg month — sold twice (−2) in the butterfly. Changing this month reshapes the seasonal structure.">Middle (×2)</div>
             <select id="fly-mid">${MONTHS.map((m,i)=>`<option value="${m}" ${m==='Feb'?'selected':''}>${m}</option>`).join('')}</select>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Back</div>
+            <div class="ctrl-group-label" data-tooltip="Far-leg month — this contract is bought (+1). Together with Front, it forms the two wings of the butterfly.">Back</div>
             <select id="fly-back">${MONTHS.map((m,i)=>`<option value="${m}" ${m==='Mar'?'selected':''}>${m}</option>`).join('')}</select>
           </div>
           <div class="ctrl-sep"></div>
           <div class="ctrl-group">
-            <div class="ctrl-group-label">Year</div>
+            <div class="ctrl-group-label" data-tooltip="Delivery year — all three legs use the same year. This determines which contract vintages are plotted on the chart.">Year</div>
             <select id="fly-year"></select>
           </div>
         </div>
@@ -5206,21 +5206,43 @@ function _flyUpdate() {
   const delta5y = (curr != null && avg5y != null) ? curr - avg5y : null;
   const deltaAll = (curr != null && allAvg != null) ? curr - allAvg : null;
 
-  const chip = (label, val, color = 'var(--text-primary)') =>
-    `<div class="stat"><div class="stat-label">${label}</div><div style="font-family:var(--font-mono);font-size:13px;color:${color};">${val}</div></div>`;
+  const priorYearsLabel = priorYears.length
+    ? `${priorYears[priorYears.length - 1]}–${priorYears[0]}`
+    : 'N/A';
+  const allYearsLabel = [...allYearsSet].filter(y => y !== year).sort((a,b) => a - b);
+  const allYearsRange = allYearsLabel.length
+    ? `${allYearsLabel[0]}–${allYearsLabel[allYearsLabel.length - 1]}`
+    : 'N/A';
+  const lastDate = last ? last.date : null;
+
+  const chip = (label, val, color = 'var(--text-primary)', tip = '') =>
+    `<div class="stat" ${tip ? `data-tooltip="${tip}"` : ''}>` +
+    `<div class="stat-label">${label}</div>` +
+    `<div style="font-family:var(--font-mono);font-size:13px;color:${color};">${val}</div></div>`;
   const sep = `<div style="height:1px;background:var(--border);margin:4px 0;"></div>`;
 
   statsEl.innerHTML = [
-    chip('Fly Formula', `${front} + ${back} − 2×${mid}`, 'var(--text-muted)'),
-    chip('Current', curr != null ? fmt(curr) + ' ' + unit : '—', curr != null ? (curr >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+    chip('Fly Formula', `${front} + ${back} − 2×${mid}`, 'var(--text-muted)',
+      `Butterfly = Front (${front}) + Back (${back}) − 2×Middle (${mid}). Positive = wings trade above belly; negative = belly above wings.`),
+    chip('Current', curr != null ? fmt(curr) + ' ' + unit : '—',
+      curr != null ? (curr >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)',
+      `Last computed butterfly value for ${year}${lastDate ? ' on ' + lastDate : ''}. Calculated as ${front} + ${back} − 2×${mid} at that date.`),
     sep,
-    chip('5Y Avg', avg5y != null ? fmt(avg5y) : '—', 'var(--text-secondary)'),
-    chip('vs 5Y', delta5y != null ? fmt(delta5y) : '—', delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
+    chip('5Y Avg', avg5y != null ? fmt(avg5y) : '—', 'var(--text-secondary)',
+      `Mean butterfly value across all points in the ${priorYears.length} prior years (${priorYearsLabel}). Used as the seasonal reference line on the chart.`),
+    chip('vs 5Y', delta5y != null ? fmt(delta5y) : '—',
+      delta5y != null ? (delta5y >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)',
+      `Current minus 5Y average (${priorYearsLabel}): ${curr != null ? fmt(curr) : '—'} − ${avg5y != null ? fmt(avg5y) : '—'}. Positive = current year is structurally richer than the prior 5Y mean.`),
     sep,
-    chip('All-Time Avg', allAvg != null ? fmt(allAvg) : '—', 'var(--text-secondary)'),
-    chip('All-Time Range', (allMin != null && allMax != null) ? `${fmtAbs(allMin)} – ${fmtAbs(allMax)}` : '—', 'var(--text-muted)'),
-    chip('vs All-Time', deltaAll != null ? fmt(deltaAll) : '—', deltaAll != null ? (deltaAll >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)'),
-    chip('Data Points', String(pts.length)),
+    chip('All-Time Avg', allAvg != null ? fmt(allAvg) : '—', 'var(--text-secondary)',
+      `Mean butterfly value across all available history (${allYearsRange}), excluding the selected year. Longer-term structural reference.`),
+    chip('All-Time Range', (allMin != null && allMax != null) ? `${fmtAbs(allMin)} – ${fmtAbs(allMax)}` : '—', 'var(--text-muted)',
+      `Minimum to maximum butterfly value ever recorded (${allYearsRange}). Context for how extreme today's reading is in historical terms.`),
+    chip('vs All-Time', deltaAll != null ? fmt(deltaAll) : '—',
+      deltaAll != null ? (deltaAll >= 0 ? 'var(--positive)' : 'var(--negative)') : 'var(--text-muted)',
+      `Current minus all-time average (${allYearsRange}): ${curr != null ? fmt(curr) : '—'} − ${allAvg != null ? fmt(allAvg) : '—'}.`),
+    chip('Data Points', String(pts.length), 'var(--text-secondary)',
+      `Number of calendar dates where all three legs (${front}, ${mid}, ${back}) had a price for the ${year} contracts. Gaps cause days to be skipped.`),
   ].join('');
 
   // ── Chart ─────────────────────────────────────────────────────────────────
@@ -5239,11 +5261,65 @@ function _flyUpdate() {
     { time: dayToTime(pts[pts.length - 1].d), value: 0 },
   ]);
 
+  // 5Y avg reference line
+  if (avg5y != null) {
+    const avg5ySeries = chart.addLineSeries({
+      color: 'rgba(167,139,250,0.35)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+    });
+    avg5ySeries.setData([
+      { time: dayToTime(pts[0].d), value: avg5y },
+      { time: dayToTime(pts[pts.length - 1].d), value: avg5y },
+    ]);
+  }
+
   const mainSeries = chart.addLineSeries({
     color: '#a78bfa', lineWidth: 2,
     priceLineVisible: true, lastValueVisible: true, crosshairMarkerVisible: true,
+    crosshairMarkerRadius: 4,
   });
   mainSeries.setData(pts.map(p => ({ time: dayToTime(p.d), value: p.value })));
+
+  // Chart tooltip
+  const ptLookup = new Map(pts.map(p => [dayToTime(p.d), p]));
+  attachChartTooltip({
+    chart,
+    container: chartEl,
+    titleColor: '#a78bfa',
+    seriesConfigs: [{
+      series: mainSeries,
+      label: `${front} + ${back} − 2×${mid}`,
+      color: '#a78bfa',
+      emphasis: true,
+      getPoint: param => ptLookup.get(typeof param.time === 'string' ? param.time : ''),
+      formatValue: v => `${v >= 0 ? '+' : ''}${v.toFixed(3)} $/MMBtu`,
+    }],
+    getTitle: param => {
+      const pt = ptLookup.get(typeof param.time === 'string' ? param.time : '');
+      return pt ? `${pt.date} · T-Day ${pt.d}` : 'Butterfly';
+    },
+    getMetrics: param => {
+      const pt = ptLookup.get(typeof param.time === 'string' ? param.time : '');
+      if (!pt) return [];
+      const m = [];
+      if (avg5y != null) {
+        m.push({ label: `5Y Avg (${priorYearsLabel})`, value: `${avg5y >= 0 ? '+' : ''}${avg5y.toFixed(3)}` });
+        const d5 = pt.value - avg5y;
+        m.push({ label: 'vs 5Y', value: `<span style="color:${d5 >= 0 ? 'var(--positive)' : 'var(--negative)'};">${d5 >= 0 ? '+' : ''}${d5.toFixed(3)}</span>` });
+      }
+      if (allAvg != null) {
+        const dAll = pt.value - allAvg;
+        m.push({ label: `All-Time Avg (${allYearsRange})`, value: `${allAvg >= 0 ? '+' : ''}${allAvg.toFixed(3)}` });
+        m.push({ label: 'vs All-Time', value: `<span style="color:${dAll >= 0 ? 'var(--positive)' : 'var(--negative)'};">${dAll >= 0 ? '+' : ''}${dAll.toFixed(3)}</span>` });
+      }
+      return m;
+    },
+    getNote: param => {
+      const pt = ptLookup.get(typeof param.time === 'string' ? param.time : '');
+      if (!pt) return '';
+      return `Formula: ${front} + ${back} − 2×${mid} · T-Day ${pt.d}`;
+    },
+  });
 
   applyChartTimeScaleOptions(chart, {});
   chart.timeScale().fitContent();
