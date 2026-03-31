@@ -1738,11 +1738,13 @@ function getContractData(ticker) {
       ? anchorPts(newLive)
       : newLive.map((pt, i) => ({ d: baseD + i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
     const merged = [...processedHist, ...liveExt];
-    STATE.contractCache[ticker] = merged;
-    return merged;
+    const filtered = merged.filter(pt => pt.d >= 1 && pt.d <= 519);
+    STATE.contractCache[ticker] = filtered;
+    return filtered;
   }
 
-  const result = isActive ? anchorPts(hist) : hist;
+  const rawResult = isActive ? anchorPts(hist) : hist;
+  const result = rawResult.filter(pt => pt.d >= 1 && pt.d <= 519);
   STATE.contractCache[ticker] = result;
   return result;
 }
@@ -1801,11 +1803,13 @@ function getTTFContractData(ticker) {
       ? anchorPts(newLive)
       : newLive.map((pt, i) => ({ d: baseD2 + i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
     const merged = [...processedHist, ...liveExt];
-    STATE.contractCache[ticker] = merged;
-    return merged;
+    const filtered = merged.filter(pt => pt.d >= 1 && pt.d <= 519);
+    STATE.contractCache[ticker] = filtered;
+    return filtered;
   }
 
-  const result = isActive ? anchorPts(hist) : hist;
+  const rawResult = isActive ? anchorPts(hist) : hist;
+  const result = rawResult.filter(pt => pt.d >= 1 && pt.d <= 519);
   STATE.contractCache[ticker] = result;
   return result;
 }
