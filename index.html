@@ -1698,7 +1698,10 @@ function getContractData(ticker) {
   // opens. This inflates d for contracts whose window opened later (e.g.
   // NGQ26 shows the same d=503 as NGK26 despite being ~73 days further
   // from expiry). Expired contracts keep their authoritative CSV d values.
-  const isActive = expiry && expiry > new Date();
+  const now = new Date();
+  const isActive = expiry && expiry > now;
+  // Grace period: Anchor contracts that expired within the last year to maintain T-Day alignment.
+  const shouldAnchor = expiry && (expiry > now || (now - expiry) < 365 * 86400000);
   function anchorPts(pts) {
     const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
@@ -1728,13 +1731,13 @@ function getContractData(ticker) {
       return liveOnly;
     }
     // Merge: use historical, then append live data after last historical date.
-    // Re-anchor hist d values for active contracts so they reflect true lifecycle position.
-    const processedHist = isActive ? anchorPts(hist) : hist;
+    // Re-anchor hist d values for relevant contracts so they reflect true lifecycle position.
+    const processedHist = shouldAnchor ? anchorPts(hist) : hist;
     const lastHistPoint = processedHist[processedHist.length - 1];
     const lastHistDate = lastHistPoint && lastHistPoint.date;
     const newLive = lastHistDate ? live.filter(pt => pt.date > lastHistDate) : live;
     const baseD = lastHistPoint && lastHistPoint.d ? lastHistPoint.d : processedHist.length;
-    const liveExt = (isActive && expiry)
+    const liveExt = (shouldAnchor && expiry)
       ? anchorPts(newLive)
       : newLive.map((pt, i) => ({ d: baseD + i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
     const merged = [...processedHist, ...liveExt];
@@ -1743,7 +1746,7 @@ function getContractData(ticker) {
     return filtered;
   }
 
-  const rawResult = isActive ? anchorPts(hist) : hist;
+  const rawResult = shouldAnchor ? anchorPts(hist) : hist;
   const result = rawResult.filter(pt => pt.d >= 1 && pt.d <= 519);
   STATE.contractCache[ticker] = result;
   return result;
@@ -1762,7 +1765,9 @@ function getTTFContractData(ticker) {
   }
 
   const expiry = estimateContractExpiry(ticker);
-  const isActive = expiry && expiry > new Date();
+  const now = new Date();
+  const isActive = expiry && expiry > now;
+  const shouldAnchor = expiry && (expiry > now || (now - expiry) < 365 * 86400000);
   function anchorPts(pts) {
     const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
@@ -1793,13 +1798,13 @@ function getTTFContractData(ticker) {
       return liveOnly;
     }
     // Merge: append live points that fall after the last historical date.
-    // Re-anchor hist d values for active contracts so they reflect true lifecycle position.
-    const processedHist = isActive ? anchorPts(hist) : hist;
+    // Re-anchor hist d values for relevant contracts so they reflect true lifecycle position.
+    const processedHist = shouldAnchor ? anchorPts(hist) : hist;
     const lastHistPoint = processedHist[processedHist.length - 1];
     const lastHistDate = lastHistPoint && lastHistPoint.date;
     const newLive = lastHistDate ? live.filter(pt => pt.date > lastHistDate) : live;
     const baseD2 = lastHistPoint && lastHistPoint.d ? lastHistPoint.d : processedHist.length;
-    const liveExt = (isActive && expiry)
+    const liveExt = (shouldAnchor && expiry)
       ? anchorPts(newLive)
       : newLive.map((pt, i) => ({ d: baseD2 + i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
     const merged = [...processedHist, ...liveExt];
@@ -1808,7 +1813,7 @@ function getTTFContractData(ticker) {
     return filtered;
   }
 
-  const rawResult = isActive ? anchorPts(hist) : hist;
+  const rawResult = shouldAnchor ? anchorPts(hist) : hist;
   const result = rawResult.filter(pt => pt.d >= 1 && pt.d <= 519);
   STATE.contractCache[ticker] = result;
   return result;
