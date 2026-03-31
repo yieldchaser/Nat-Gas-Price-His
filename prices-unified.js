@@ -1093,8 +1093,8 @@ function renderPricesStats(context) {
     <div class="card-title">${meta.label} Snapshot</div>
     <div class="stat">
       <div class="stat-label">${instrument === 'spot' ? 'Observations' : 'Trading Days'}</div>
-      <div class="stat-value">${fullData.length} <span style="font-size:13px;color:var(--text-muted)">/ ${instrument === 'spot' ? fullData.length : 519}</span></div>
-      ${instrument === 'spot' ? '' : `<div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${Math.round(fullData.length / 519 * 100)}%;background:${meta.color};"></div></div>`}
+      <div class="stat-value">${instrument === 'spot' ? fullData.length : Math.min(fullData.length, 519)} <span style="font-size:13px;color:var(--text-muted)">/ ${instrument === 'spot' ? fullData.length : 519}</span></div>
+      ${instrument === 'spot' ? '' : `<div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${Math.min(100, Math.round(fullData.length / 519 * 100))}%;background:${meta.color};"></div></div>`}
     </div>
     <div class="stat"><div class="stat-label">High / Low / Avg</div><div style="font-family:var(--font-mono);font-size:13px;">${formatInstrumentValue(instrument, stats.max)} / ${formatInstrumentValue(instrument, stats.min)} / ${formatInstrumentValue(instrument, stats.avg)}</div></div>
     <div class="stat"><div class="stat-label">From Open</div><div style="font-family:var(--font-mono);font-size:13px;" class="${changePct >= 0 ? 'positive' : 'negative'}">${formatPercent(changePct)}</div></div>
@@ -1296,8 +1296,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     const isHH = view.instrument === 'hh';
     const isTTF = view.instrument === 'ttf';
     if ((isHH && STATE.hhCacheUsed) || (isTTF && STATE.ttfCacheUsed)) {
-      const isStale = isHH ? STATE.hhCacheStale : STATE.ttfCacheStale;
-      const age = isHH ? STATE.hhCacheAge : STATE.ttfCacheAge;
+      const isStale = isHH ? STATE.hhCacheIsStale : STATE.ttfCacheIsStale;
+      const age = isHH ? STATE.hhCacheAgeH : STATE.ttfCacheAgeH;
       cacheBadge = isStale 
         ? `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">⚠️ STALE CACHE (${age}h ago)</span>`
         : `<span class="ctrl-hint-badge" style="color:var(--warning);border-color:var(--warning);margin-left:8px;">🟡 CACHED (${age}h ago)</span>`;
