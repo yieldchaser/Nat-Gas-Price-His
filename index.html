@@ -1728,13 +1728,16 @@ function getContractData(ticker) {
       return liveOnly;
     }
     // Merge: use historical, then append live data after last historical date.
-    // Re-anchor hist d values for active contracts so they reflect true lifecycle position.
-    const processedHist = isActive ? anchorPts(hist) : hist;
+    // Re-anchor hist d values using expiry for all contracts (active and expired) so
+    // T-Day values reflect true lifecycle position and pre-window rows are filtered out.
+    // Without this, expired contracts with >519 CSV rows produce d=1..754 which breaks
+    // the seasonal band (only d=1..519 have seasonal entries).
+    const processedHist = expiry ? anchorPts(hist) : hist;
     const lastHistPoint = processedHist[processedHist.length - 1];
     const lastHistDate = lastHistPoint && lastHistPoint.date;
     const newLive = lastHistDate ? live.filter(pt => pt.date > lastHistDate) : live;
     const baseD = lastHistPoint && lastHistPoint.d ? lastHistPoint.d : processedHist.length;
-    const liveExt = (isActive && expiry)
+    const liveExt = expiry
       ? anchorPts(newLive)
       : newLive.map((pt, i) => ({ d: baseD + i + 1, p: pt.p, date: pt.date, o: pt.o, h: pt.h, l: pt.l }));
     const merged = [...processedHist, ...liveExt];
@@ -1742,7 +1745,8 @@ function getContractData(ticker) {
     return merged;
   }
 
-  const result = isActive ? anchorPts(hist) : hist;
+  // Re-anchor d values using expiry for all contracts (active and expired).
+  const result = expiry ? anchorPts(hist) : hist;
   STATE.contractCache[ticker] = result;
   return result;
 }
