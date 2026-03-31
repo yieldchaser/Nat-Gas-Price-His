@@ -370,10 +370,28 @@ function getPrimaryPriceSeries(view) {
     };
   }
   const ticker = getPriceTicker(view.instrument, view.month, view.year);
-  return {
-    ticker,
-    fullData: view.instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker),
-  };
+  const rawData = view.instrument === 'ttf' ? getTTFContractData(ticker) : getContractData(ticker);
+
+  let fullData = rawData;
+  // For expired futures with pre-window data (some d values exceed 519), re-anchor
+  // all d values so the newest point = d=519 and pre-window points = d<1.
+  // This ensures seasonal lookups work for the 519-day window portion while
+  // keeping all rows visible in the chart (pre-window points return null from
+  // getSeasonalEntry so they simply have no seasonal band).
+  if (rawData.length > 0 && rawData.some(p => p.d > 519) && typeof computeNGExpiry === 'function') {
+    const monthIdx = MONTHS.indexOf(view.month);
+    if (monthIdx >= 0) {
+      const expiry = computeNGExpiry(view.year, monthIdx);
+      fullData = rawData.map(pt => {
+        if (!pt.date) return pt;
+        const ms = expiry - new Date(pt.date + 'T00:00:00Z');
+        const daysLeft = ms <= 0 ? 0 : Math.round(ms / 86400000 * 5 / 7);
+        return { ...pt, d: 519 - daysLeft };
+      });
+    }
+  }
+
+  return { ticker, fullData };
 }
 
 function getComparePriceSeries(view) {
