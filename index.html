@@ -1510,8 +1510,8 @@ async function buildSeasonalCache() {
         data = rawData.map(pt => {
           const daysLeft = approxTradingDaysTo(pt.date, expiry);
           const d = 519 - daysLeft;
-          if (d < -250) return null;
-          return { d: d, p: pt.p, date: pt.date };
+          if (d < 1) return null;
+          return { d: Math.min(519, d), p: pt.p, date: pt.date };
         }).filter(Boolean);
       }
       data.forEach(pt => {
@@ -1561,8 +1561,8 @@ async function buildSeasonalCacheExtended(yearsBack, stateKey) {
         data = rawData.map(pt => {
           const daysLeft = approxTradingDaysTo(pt.date, expiry);
           const d = 519 - daysLeft;
-          if (d < -250) return null;
-          return { d: d, p: pt.p, date: pt.date };
+          if (d < 1) return null;
+          return { d: Math.min(519, d), p: pt.p, date: pt.date };
         }).filter(Boolean);
       }
       data.forEach(pt => {
@@ -1621,8 +1621,8 @@ async function buildTTFSeasonalCache() {
         data = rawData.map(pt => {
           const daysLeft = approxTradingDaysTo(pt.date, expiry);
           const d = 519 - daysLeft;
-          if (d < -250) return null;
-          return { d: d, p: pt.p, date: pt.date };
+          if (d < 1) return null;
+          return { d: Math.min(519, d), p: pt.p, date: pt.date };
         }).filter(Boolean);
       }
       data.forEach(pt => {
@@ -1703,8 +1703,8 @@ function getContractData(ticker) {
     const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
       const d = 519 - daysLeft;
-      if (d < -250) return null; // Allow history up to ~3 years before expiry (519 + 250)
-      return { ...pt, d: d };
+      if (d < 1) return null;
+      return { ...pt, d: Math.min(519, d) };
     }).filter(Boolean);
     // approxTradingDaysTo rounds ~1/7 consecutive weekday pairs to the same d,
     // producing duplicate dayToTime(d) values that LightweightCharts silently
@@ -1765,8 +1765,8 @@ function getTTFContractData(ticker) {
     const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
       const d = 519 - daysLeft;
-      if (d < -250) return null; // Allow history up to ~3 years before expiry
-      return { ...pt, d: d };
+      if (d < 1) return null;
+      return { ...pt, d: Math.min(519, d) };
     }).filter(Boolean);
     // approxTradingDaysTo rounds ~1/7 consecutive weekday pairs to the same d,
     // producing duplicate dayToTime(d) values that LightweightCharts silently
@@ -2840,8 +2840,8 @@ function renderAnalogCluster(data, month, year) {
       mapped = series.map(pt => {
         const daysLeft = approxTradingDaysTo(pt.date, expiry);
         const d = 519 - daysLeft;
-        if (d < -250) return null;
-        return { d: d, p: pt.p, date: pt.date };
+        if (d < 1) return null;
+        return { d: Math.min(519, d), p: pt.p, date: pt.date };
       }).filter(Boolean);
     }
     if (mapped.length < 10) return;
@@ -2983,8 +2983,8 @@ function renderDrawdownHeatmap(month) {
       mapped = series.map(pt => {
         const daysLeft = approxTradingDaysTo(pt.date, expiry);
         const d = 519 - daysLeft;
-        if (d < -250) return null;
-        return { d: d, p: pt.p };
+        if (d < 1) return null;
+        return { d: Math.min(519, d), p: pt.p };
       }).filter(Boolean);
     }
     if (mapped.length < 10) return;
