@@ -8360,6 +8360,31 @@ function _renderSpreadPanel(ngData) {
   STATE._dailySpreadSeries = sSeries;
   STATE._dailySpreadHighSeries = sHighSeries;
   STATE._dailySpreadLowSeries = sLowSeries;
+  
+  const sLookup = new Map(spreadSeries.map(s => [s.time, s]));
+  attachChartTooltip({
+    chart: spreadChart,
+    container: chartEl,
+    titleColor: '#f5f7fb',
+    seriesConfigs: [{
+      series: sSeries,
+      label: 'Spread',
+      color: '#a78bfa',
+      emphasis: true,
+      getPoint: p => sLookup.get(typeof p.time === 'string' ? p.time : ''),
+      formatValue: v => (v >= 0 ? '+' : '') + v.toFixed(3) + ' $/MMBtu'
+    }],
+    getTitle: p => {
+      const s = sLookup.get(typeof p.time === 'string' ? p.time : '');
+      return s ? formatDailyDate(s.time) : 'NG vs TTF Spread';
+    },
+    getMetrics: () => [
+      { label: '52W High', value: (high52w >= 0 ? '+' : '') + high52w.toFixed(3) },
+      { label: '52W Low', value: (low52w >= 0 ? '+' : '') + low52w.toFixed(3) },
+      { label: 'Avg Spread', value: (avgSpread >= 0 ? '+' : '') + avgSpread.toFixed(3) }
+    ],
+    getNote: () => 'HUB front month minus TTF front month (converted to USD/MMBtu)'
+  });
 
   spreadChart.timeScale().subscribeVisibleTimeRangeChange(() => {
     requestAnimationFrame(() => _syncDailySpreadSliderFromChart());
