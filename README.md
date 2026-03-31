@@ -11,7 +11,7 @@ A lightweight, information-dense analytics dashboard for Natural Gas futures and
 - **Lifecycle Chart**: Price history plotted on either a Calendar Date or T-Day axis (Day 1–519 of the 519-trading-day contract lifecycle)
 - **Seasonal Band + Window Toggle**: Min/max/avg band from the last 5 completed contract years. Toggle to **15Y** or **All-history** bands (lazy-built on first click). Dynamically shows actual contributing year count when fewer years are available
 - **Pre-Window View**: Contracts more than 519 trading days from expiry show a candlestick chart on a calendar-date axis with basic stats, labeled "PRE-ANALYSIS WINDOW"
-- **Contract Statistics**: Trading Days (with progress bar), Days to Expiry, Trading Days Elapsed, vs Seasonal Avg, Range Position (percentile), Z-Score, High/Low/Avg, From Contract Open %, Status
+- **Contract Statistics**: Trading Days (with progress bar showing **Lifecycle Stage** vs 519-day total), Days to Expiry, Trading Days Elapsed, vs Seasonal Avg, Range Position (percentile), Z-Score, High/Low/Avg, From Contract Open %, Status
 - **Same Month History**: Sidebar table of all same-month contracts with expiry prices ranked all-time
 - **T-Day Filter**: Slider to restrict chart and viewport to the last N trading days
 - **Compare Mode**: Multi-series overlay (Shift+Click years)
@@ -128,13 +128,11 @@ build_data.py                   # CSV → JSON
   data/ng_continuous.json       # continuous front-month NG=F series
 ```
 
-### T-Day Lifecycle Framework
+T-Day positioning is anchored to expiry via `approxTradingDaysTo(date, expiry) = round(calendarDays × 5/7)`. 
 
-Each NYMEX HH contract trades for exactly **519 trading days** before expiry:
-- **T-Day 1**: ~519 trading days (~727 calendar days) before expiry — lifecycle window opens
-- **T-Day 519**: expiry day (3 business days before 1st of delivery month)
-
-T-Day positioning is anchored to expiry via `approxTradingDaysTo(date, expiry) = round(calendarDays × 5/7)`. For **active contracts** (not yet expired), all CSV row numbers are re-anchored to this formula regardless of when or how much data Yahoo returned — this corrects for pre-window rows that Yahoo includes for far-dated contracts.
+- **Anchoring Rule**: For **active contracts** and **recently expired contracts** (within a 365-day grace period), all data points are re-anchored to this formula. This ensures that T-Day 519 always represents the final settlement/expiry day, correcting for variable Yahoo data density.
+- **Strict Filtering**: All contract views are strictly filtered to the **1–519 T-Day window**. This prevents "pre-window" history or post-expiry leakage from skewing the chart or statistics.
+- **Legacy Contracts**: Contracts expired more than one year ago maintain their authoritative historical CSV day-counts.
 
 ---
 
