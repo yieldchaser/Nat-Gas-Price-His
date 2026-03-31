@@ -1510,8 +1510,8 @@ async function buildSeasonalCache() {
         data = rawData.map(pt => {
           const daysLeft = approxTradingDaysTo(pt.date, expiry);
           const d = 519 - daysLeft;
-          if (d < 1) return null;
-          return { d: Math.min(519, d), p: pt.p, date: pt.date };
+          if (d < -250) return null;
+          return { d: d, p: pt.p, date: pt.date };
         }).filter(Boolean);
       }
       data.forEach(pt => {
@@ -1561,8 +1561,8 @@ async function buildSeasonalCacheExtended(yearsBack, stateKey) {
         data = rawData.map(pt => {
           const daysLeft = approxTradingDaysTo(pt.date, expiry);
           const d = 519 - daysLeft;
-          if (d < 1) return null;
-          return { d: Math.min(519, d), p: pt.p, date: pt.date };
+          if (d < -250) return null;
+          return { d: d, p: pt.p, date: pt.date };
         }).filter(Boolean);
       }
       data.forEach(pt => {
@@ -1621,8 +1621,8 @@ async function buildTTFSeasonalCache() {
         data = rawData.map(pt => {
           const daysLeft = approxTradingDaysTo(pt.date, expiry);
           const d = 519 - daysLeft;
-          if (d < 1) return null;
-          return { d: Math.min(519, d), p: pt.p, date: pt.date };
+          if (d < -250) return null;
+          return { d: d, p: pt.p, date: pt.date };
         }).filter(Boolean);
       }
       data.forEach(pt => {
@@ -1703,8 +1703,8 @@ function getContractData(ticker) {
     const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
       const d = 519 - daysLeft;
-      if (d < 1) return null;
-      return { ...pt, d: Math.min(519, d) };
+      if (d < -250) return null; // Allow history up to ~3 years before expiry (519 + 250)
+      return { ...pt, d: d };
     }).filter(Boolean);
     // approxTradingDaysTo rounds ~1/7 consecutive weekday pairs to the same d,
     // producing duplicate dayToTime(d) values that LightweightCharts silently
@@ -1765,8 +1765,8 @@ function getTTFContractData(ticker) {
     const anchored = pts.map(pt => {
       const daysLeft = approxTradingDaysTo(pt.date, expiry);
       const d = 519 - daysLeft;
-      if (d < 1) return null;
-      return { ...pt, d: Math.min(519, d) };
+      if (d < -250) return null; // Allow history up to ~3 years before expiry
+      return { ...pt, d: d };
     }).filter(Boolean);
     // approxTradingDaysTo rounds ~1/7 consecutive weekday pairs to the same d,
     // producing duplicate dayToTime(d) values that LightweightCharts silently
@@ -2027,7 +2027,14 @@ function populateHHYears() {
 
 const TDAY_STEPS = [0, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 450, 500, 519];
 
-function updateHHChart() {
+async function updateHHChart() {
+  const _windowBtn = document.querySelector('#hh-seasonal-window .segment-btn.active');
+  if (_windowBtn) {
+    const w = _windowBtn.dataset.window;
+    if (w === '15y' && STATE._promise15y) await STATE._promise15y;
+    else if (w === 'all' && STATE._promiseAll) await STATE._promiseAll;
+  }
+
   const month = document.getElementById('hh-month').value;
   const year = parseInt(document.getElementById('hh-year').value);
   const code = MONTH_CODES[month];
@@ -2481,7 +2488,7 @@ function renderHHStats(data, month, year) {
     const todayStr = today.toISOString().slice(0, 10);
     const daysLeft = Math.ceil((contractExpDate - today) / 86400000);
     if (daysLeft > 0) {
-      const elapsed = data.length;
+      const elapsed = Math.max(0, last.d);
       const total = 519;
       const elapsedPct = Math.min(100, Math.round(elapsed / total * 100));
       const tradingDaysLeft = approxTradingDaysTo(todayStr, contractExpDate);
@@ -2833,8 +2840,8 @@ function renderAnalogCluster(data, month, year) {
       mapped = series.map(pt => {
         const daysLeft = approxTradingDaysTo(pt.date, expiry);
         const d = 519 - daysLeft;
-        if (d < 1) return null;
-        return { d: Math.min(519, d), p: pt.p, date: pt.date };
+        if (d < -250) return null;
+        return { d: d, p: pt.p, date: pt.date };
       }).filter(Boolean);
     }
     if (mapped.length < 10) return;
@@ -2976,8 +2983,8 @@ function renderDrawdownHeatmap(month) {
       mapped = series.map(pt => {
         const daysLeft = approxTradingDaysTo(pt.date, expiry);
         const d = 519 - daysLeft;
-        if (d < 1) return null;
-        return { d: Math.min(519, d), p: pt.p };
+        if (d < -250) return null;
+        return { d: d, p: pt.p };
       }).filter(Boolean);
     }
     if (mapped.length < 10) return;
@@ -3229,7 +3236,7 @@ function updateTTFChart() {
   const ttfYLabel = _ttfSeasonalEntry ? (_ttfSeasonalEntry.count < 5 ? `${_ttfSeasonalEntry.count}Y` : '5Y') : '5Y';
   document.getElementById('ttf-stats').innerHTML = `
     <div class="card-title">Contract Statistics</div>
-    <div class="stat"><div class="stat-label">Trading Days</div><div class="stat-value">${data.length}</div></div>
+    <div class="stat"><div class="stat-label" data-tooltip="Lifecycle stage: T-Day 519 = expiry.">Trading Days</div><div class="stat-value">${Math.max(0, last.d)} <span style="font-size:12px;color:var(--text-muted);">/ 519</span></div></div>
     ${zScoreStatHtml(ttfZScore, ttfYLabel)}
     <div class="stat"><div class="stat-label">High / Low / Avg</div><div style="font-family:var(--font-mono);font-size:13px;">€${high.toFixed(3)} / €${low.toFixed(3)} / €${avg.toFixed(3)}</div></div>
     <div class="stat"><div class="stat-label">From Contract Open</div><div style="font-family:var(--font-mono);font-size:13px;" class="${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '+' : ''}${change.toFixed(1)}%</div></div>

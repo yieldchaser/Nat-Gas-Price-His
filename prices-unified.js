@@ -1121,9 +1121,9 @@ function renderPricesStats(context) {
   statsEl.innerHTML = `
     <div class="card-title">${meta.label} Snapshot</div>
     <div class="stat">
-      <div class="stat-label">${instrument === 'spot' ? 'Observations' : 'Trading Days'}</div>
-      <div class="stat-value">${instrument === 'spot' ? fullData.length : Math.min(fullData.length, 519)} <span style="font-size:13px;color:var(--text-muted)">/ ${instrument === 'spot' ? fullData.length : 519}</span></div>
-      ${instrument === 'spot' ? '' : `<div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${Math.min(100, Math.round(fullData.length / 519 * 100))}%;background:${meta.color};"></div></div>`}
+      <div class="stat-label" data-tooltip="Lifecycle stage: T-Day 519 = expiry.">${instrument === 'spot' ? 'Observations' : 'Trading Days'}</div>
+      <div class="stat-value">${instrument === 'spot' ? fullData.length : Math.max(0, currentPoint.d)} <span style="font-size:13px;color:var(--text-muted)">/ ${instrument === 'spot' ? fullData.length : 519}</span></div>
+      ${instrument === 'spot' ? '' : `<div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${Math.min(100, Math.round(Math.max(0, currentPoint.d) / 519 * 100))}%;background:${meta.color};"></div></div>`}
     </div>
     <div class="stat"><div class="stat-label">High / Low / Avg</div><div style="font-family:var(--font-mono);font-size:13px;">${formatInstrumentValue(instrument, stats.max)} / ${formatInstrumentValue(instrument, stats.min)} / ${formatInstrumentValue(instrument, stats.avg)}</div></div>
     <div class="stat"><div class="stat-label">From Open</div><div style="font-family:var(--font-mono);font-size:13px;" class="${changePct >= 0 ? 'positive' : 'negative'}">${formatPercent(changePct)}</div></div>
