@@ -1065,9 +1065,20 @@ function renderPricesStats(context) {
   if (seasonal && Number.isFinite(seasonal.avg) && seasonal.avg !== 0) {
     const seasonalDelta = ((currentPoint.p - seasonal.avg) / seasonal.avg) * 100;
     const rangePosition = getSeasonalRangePosition(currentPoint.p, seasonal);
-    const statusBlock = instrument === 'hh'
-      ? `<div class="stat"><div class="stat-label">Status</div><div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;background:${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'rgba(0,255,136,0.1)' : 'rgba(136,136,170,0.1)'};color:${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'var(--positive)' : 'var(--text-muted)'};">${Boolean(STATE.liveData[`${ticker}.NYM`]) ? 'ACTIVE - LIVE DATA' : 'HISTORICAL'}</div></div>`
-      : '';
+    let statusBlock = '';
+    if (instrument === 'hh') {
+      const hasLiveData = Boolean(STATE.liveData[`${ticker}.NYM`]);
+      let isExpired = !hasLiveData;
+      if (typeof computeNGExpiry === 'function') {
+        const monthIdx = typeof MONTHS !== 'undefined' ? MONTHS.indexOf(view.month) : -1;
+        if (monthIdx >= 0) isExpired = computeNGExpiry(view.year, monthIdx) < new Date();
+      }
+      const isLive = hasLiveData && !isExpired;
+      const statusBg    = isLive ? 'rgba(0,255,136,0.1)'    : isExpired ? 'rgba(136,136,170,0.1)' : 'rgba(255,200,0,0.12)';
+      const statusColor = isLive ? 'var(--positive)'         : isExpired ? 'var(--text-muted)'      : '#ffc800';
+      const statusText  = isLive ? 'ACTIVE — LIVE DATA'      : isExpired ? 'EXPIRED'                : 'HISTORICAL';
+      statusBlock = `<div class="stat"><div class="stat-label">Status</div><div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;background:${statusBg};color:${statusColor};">${statusText}</div></div>`;
+    }
     extraBlock = `
       <div class="stat"><div class="stat-label">vs 5Y Seasonal Avg</div><div style="font-family:var(--font-mono);font-size:14px;" class="${seasonalDelta >= 0 ? 'positive' : 'negative'}">${formatPercent(seasonalDelta)}</div></div>
       <div class="stat"><div class="stat-label">5Y Range Position</div><div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary);">${formatPercentileLabel(rangePosition, { includeStatus: true })}</div></div>
