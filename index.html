@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NG Price History</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
@@ -36,6 +37,24 @@
   --nav-height: 44px;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   GAS FLAME COMPONENT
+   ═══════════════════════════════════════════════════════════ */
+.gas-flame {
+  width: 20px; height: 24px;
+  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.4));
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.gas-flame.large { 
+  width: 80px; height: 96px; 
+  margin-bottom: 20px; 
+  filter: drop-shadow(0 0 25px rgba(0, 212, 255, 0.6)); 
+}
+.flame-outer { fill: #004de6; opacity: 0.6; }
+.flame-mid   { fill: #00d4ff; opacity: 0.8; }
+.flame-core  { fill: #ffffff; opacity: 0.95; }
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
@@ -61,6 +80,11 @@ html, body {
   transition: opacity 0.4s ease;
 }
 #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+#loading-overlay .gas-flame { animation: loading-float 4s ease-in-out infinite; }
+@keyframes loading-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
 #loading-overlay .logo { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: var(--accent-hh); }
 #loading-overlay .status { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 #loading-overlay .bar { width: 200px; height: 2px; background: var(--border); border-radius: 1px; overflow: hidden; }
@@ -80,6 +104,7 @@ html, body {
   gap: 4px;
 }
 #nav .brand {
+  display: flex; align-items: center; gap: 8px;
   font-family: var(--font-mono); font-weight: 700; font-size: 14px;
   color: var(--accent-hh); margin-right: 20px; white-space: nowrap;
   letter-spacing: -0.5px;
@@ -876,6 +901,11 @@ tr:hover td { background: var(--bg-card-hover); }
 
 <!-- LOADING OVERLAY -->
 <div id="loading-overlay">
+  <svg class="gas-flame large" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+    <path class="flame-outer" d="M50 115 Q 15 105 15 65 Q 15 15 50 0 Q 85 15 85 65 Q 85 105 50 115 Z" />
+    <path class="flame-mid" d="M50 110 Q 25 100 25 70 Q 25 30 50 15 Q 75 30 75 70 Q 75 100 50 110 Z" />
+    <path class="flame-core" d="M50 105 Q 35 100 35 75 Q 35 50 50 40 Q 65 50 65 75 Q 65 100 50 105 Z" />
+  </svg>
   <div class="logo">NG PRICE HISTORY</div>
   <div class="status" id="load-status">INITIALIZING...</div>
   <div class="bar"><div class="bar-fill" id="load-bar"></div></div>
@@ -883,7 +913,14 @@ tr:hover td { background: var(--bg-card-hover); }
 
 <!-- NAV BAR -->
 <nav id="nav">
-  <div class="brand">NG PRICE HISTORY <span>v1.0</span></div>
+  <div class="brand">
+    <svg class="gas-flame" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+      <path class="flame-outer" d="M50 115 Q 15 105 15 65 Q 15 15 50 0 Q 85 15 85 65 Q 85 105 50 115 Z" />
+      <path class="flame-mid" d="M50 110 Q 25 100 25 70 Q 25 30 50 15 Q 75 30 75 70 Q 75 100 50 110 Z" />
+      <path class="flame-core" d="M50 105 Q 35 100 35 75 Q 35 50 50 40 Q 65 50 65 75 Q 65 100 50 105 Z" />
+    </svg>
+    NG PRICE HISTORY <span>v1.0</span>
+  </div>
   <button class="tab-btn active" data-tab="prices" data-tooltip="Contract lifecycle charts — HH & TTF futures price history on a T-Day or calendar axis, with seasonal bands and stats panel.">Prices</button>
   <button class="tab-btn" data-tab="spread" data-tooltip="Calendar spread builder — compute any front/back leg spread with historical overlays, convergence cone, and butterfly fly builder.">Spreads</button>
   <button class="tab-btn" data-tab="curve" data-tooltip="Live forward strip — next 72 HH and 36 TTF months plotted on a pseudo-date axis directly from raw quote data.">Forward Curve</button>
