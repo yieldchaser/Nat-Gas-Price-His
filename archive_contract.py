@@ -46,6 +46,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, timedelta
@@ -126,6 +127,10 @@ def _csv_row_count(path: str) -> int:
         return sum(1 for _ in f) - 1
 
 
+class ContractNotAvailable(Exception):
+    """Raised when Yahoo Finance returns 404 for a contract ticker."""
+
+
 # ---------------------------------------------------------------------------
 # Yahoo Finance fetch (no external dependencies)
 # ---------------------------------------------------------------------------
@@ -151,6 +156,17 @@ def _yahoo_fetch(yahoo_ticker: str, period: str = '3y') -> list[dict]:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 payload = json.load(resp)
             break
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise ContractNotAvailable(
+                    f'{yahoo_ticker} not found on Yahoo Finance (HTTP 404) — '
+                    'contract may not be listed yet or has been delisted'
+                ) from exc
+            if attempt == 3:
+                raise RuntimeError(f'Yahoo fetch failed for {yahoo_ticker}: {exc}') from exc
+            wait = 2 ** attempt
+            print(f'  retry in {wait}s ({exc})')
+            time.sleep(wait)
         except Exception as exc:
             if attempt == 3:
                 raise RuntimeError(f'Yahoo fetch failed for {yahoo_ticker}: {exc}') from exc
@@ -498,6 +514,7 @@ def main() -> None:
 
     # --- Step 3: archive ---
     archived = []
+    skipped  = []   # 404 / not listed yet — not a hard failure
     errors   = []
 
     for ticker in tickers:
@@ -510,12 +527,17 @@ def main() -> None:
             else:
                 path = archive_hh(ticker)
             archived.append(path)
+        except ContractNotAvailable as exc:
+            print(f'  SKIP {ticker}: {exc}')
+            skipped.append(ticker)
         except Exception as exc:
             print(f'  ERROR {ticker}: {exc}')
             errors.append(ticker)
 
     print()
     print(f'Archived {len(archived)} contract(s).')
+    if skipped:
+        print(f'Skipped (not available on Yahoo): {skipped}')
     if errors:
         print(f'Failed:  {errors}')
         sys.exit(1)
