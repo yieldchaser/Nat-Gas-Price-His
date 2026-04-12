@@ -1,0 +1,5 @@
+<svg viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
+  <path d="M50 115 Q 15 105 15 65 Q 15 15 50 0 Q 85 15 85 65 Q 85 105 50 115 Z" fill="#004de6" fill-opacity="0.6" />
+  <path d="M50 110 Q 25 100 25 70 Q 25 30 50 15 Q 75 30 75 70 Q 75 100 50 110 Z" fill="#00d4ff" fill-opacity="0.8" />
+  <path d="M50 105 Q 35 100 35 75 Q 35 50 50 40 Q 65 50 65 75 Q 65 100 50 105 Z" fill="#ffffff" fill-opacity="0.95" />
+</svg>
