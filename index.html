@@ -1046,6 +1046,47 @@ function contractWindowOpenDate(ticker) {
   return new Date(expiry.getTime() - Math.round(519 * 7 / 5) * 86400000);
 }
 
+// Calculate today's active front-month contract (the contract next to expire based on Date.now())
+function getFrontMonthContract(market = 'hh') {
+  const now = new Date();
+  let targetYear = now.getFullYear();
+  let targetMonthIdx = now.getMonth() + 1; // delivery month (1-indexed offset)
+  if (targetMonthIdx > 11) {
+    targetMonthIdx = 0;
+    targetYear++;
+  }
+  
+  const mName = MONTHS[targetMonthIdx];
+  const mCode = MONTH_CODES[mName];
+  const yrTwo = targetYear % 100;
+  const padYr = yrTwo < 10 ? '0' + yrTwo : '' + yrTwo;
+  const prefix = market === 'ttf' ? 'TTF' : 'NG';
+  const ticker = `${prefix}${mCode}${padYr}`;
+  
+  const expiry = estimateContractExpiry(ticker);
+  if (expiry && now > expiry) {
+    targetMonthIdx = (targetMonthIdx + 1) % 12;
+    if (targetMonthIdx === 0) targetYear++;
+    const rollName = MONTHS[targetMonthIdx];
+    const rollCode = MONTH_CODES[rollName];
+    const rollYrTwo = targetYear % 100;
+    const rollPad = rollYrTwo < 10 ? '0' + rollYrTwo : '' + rollYrTwo;
+    return {
+      month: rollName,
+      year: targetYear,
+      monthCode: rollCode,
+      ticker: `${prefix}${rollCode}${rollPad}`
+    };
+  }
+
+  return {
+    month: mName,
+    year: targetYear,
+    monthCode: mCode,
+    ticker: ticker
+  };
+}
+
 function nextFrame() {
   return new Promise(resolve => requestAnimationFrame(resolve));
 }
@@ -2041,6 +2082,9 @@ function renderHHTab() {
       updateHHChart();
     });
     document.getElementById('hh-compare-year').addEventListener('change', updateHHChart);
+    const frontInfo = getFrontMonthContract('hh');
+    const monthEl = document.getElementById('hh-month');
+    if (monthEl && frontInfo && frontInfo.month) monthEl.value = frontInfo.month;
   }
   populateHHYears();
   updateHHChart();
@@ -2081,10 +2125,12 @@ function populateHHYears() {
     return;
   }
 
-  const selectedYear = currentVal && years.includes(currentVal) ? currentVal : years[0];
+  const frontInfo = getFrontMonthContract('hh');
+  const defaultYear = years.find(y => y <= frontInfo.year) || years[0];
+  const selectedYear = currentVal && years.includes(currentVal) ? currentVal : defaultYear;
   yearSel.value = String(selectedYear);
 
-  const compareFallback = years.find(y => y !== selectedYear) || selectedYear;
+  const compareFallback = years.find(y => y < selectedYear) || years.find(y => y !== selectedYear) || selectedYear;
   const selectedCompareYear = currentCompareVal && years.includes(currentCompareVal) && currentCompareVal !== selectedYear
     ? currentCompareVal
     : compareFallback;
