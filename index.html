@@ -1000,10 +1000,10 @@ const STATE = {
   spotStats: { avg: 0, stddev: 0, count: 0 },
   priceView: {
     instrument: 'hh',
-    month: 'Jan',
-    year: null,
+    month: 'Aug',
+    year: 2026,
     compare: false,
-    compareYear: null,
+    compareYear: 2025,
     tradingDays: false,
     rangeStart: 0,
     rangeEnd: null,
@@ -1960,19 +1960,9 @@ async function init() {
     setLoadProgress(100, 'READY');
     STATE.loaded = true;
     hideLoading();
-    // Snapshot of newest historical year per instrument+month before live data loads.
-    // Used below to auto-advance the year selector when live data adds a newer contract year.
-    const _prelivePricesYear = STATE.priceView.year;
-
     // Fetch live data in background after UI is up
     loadLiveData().then(() => {
       invalidateDerivedCaches();
-      // Auto-advance year if live data added a contract newer than what was selected
-      const _liveYears = typeof getAvailableContractYears === 'function'
-        ? getAvailableContractYears(STATE.priceView.instrument, STATE.priceView.month) : [];
-      if (_liveYears.length && _liveYears[0] > (_prelivePricesYear || 0) && STATE.priceView.year === _prelivePricesYear) {
-        STATE.priceView.year = _liveYears[0];
-      }
 
       if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
         syncPriceViewState();

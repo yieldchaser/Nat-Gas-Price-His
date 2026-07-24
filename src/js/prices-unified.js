@@ -634,15 +634,21 @@ function syncPriceViewState() {
     return;
   }
 
-  view.month = MONTHS.includes(view.month) ? view.month : 'Jan';
+  const frontInfo = typeof getFrontMonthContract === 'function' ? getFrontMonthContract(view.instrument) : null;
+  const defaultMonth = frontInfo ? frontInfo.month : 'Aug';
+  view.month = MONTHS.includes(view.month) ? view.month : defaultMonth;
+
   const years = getAvailableContractYears(view.instrument, view.month);
-  view.year = years.includes(view.year) ? view.year : (years[0] || null);
+  const defaultYear = frontInfo ? (years.find(y => y <= frontInfo.year) || years[0]) : years[0];
+  view.year = (view.year && years.includes(view.year)) ? view.year : (defaultYear || null);
+
   const compareYears = years.filter(year => year !== view.year);
   if (!compareYears.length) {
     view.compare = false;
     view.compareYear = null;
   } else if (!compareYears.includes(view.compareYear)) {
-    view.compareYear = compareYears[0];
+    const priorYear = years.find(y => y < view.year);
+    view.compareYear = compareYears.includes(priorYear) ? priorYear : compareYears[0];
   }
 }
 

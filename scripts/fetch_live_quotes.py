@@ -36,7 +36,7 @@ def get_active_ttf_tickers():
     return tickers
 
 def fetch_single_ticker(ticker):
-    range_param = 'max' if ticker == 'NG=F' else '2y'
+    range_param = '2y'
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={range_param}"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
     try:
