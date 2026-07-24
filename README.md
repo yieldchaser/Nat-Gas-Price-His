@@ -15,6 +15,34 @@ The dashboard features a curated **Blue Flux** aesthetic designed for institutio
 
 ---
 
+## 📁 Repository Structure & Documentation
+
+```
+Nat-Gas-Price-His/
+├── index.html                # Main application entry point & layout
+├── src/                      # Source code
+│   └── js/
+│       └── prices-unified.js # Core financial chart & state logic
+├── scripts/                  # Data pipeline scripts
+│   ├── archive_contract.py   # Yahoo Finance contract ingestion & auto-archive
+│   └── build_data.py         # JSON transformer pipeline
+├── tests/                    # Test suite
+│   └── test_ng_curve_depth.py# Curve depth validation script
+├── docs/                     # Project documentation & engineering blueprints
+│   ├── audit.md              # System audit methodology & checklists
+│   ├── bugs.md               # Diagnostic bug tracking & performance analysis
+│   ├── dashboard_improvements_plan.md # Historical dashboard feature specs
+│   ├── errors.md             # Codebase audit category guidelines
+│   ├── roadmap_chunks.md     # Feature roadmap & upgrade specifications
+│   ├── step_by_step_fixes.md # Tab-by-tab enhancement tracking
+│   └── tooltip_system_blueprint.md # Architecture of tooltip engine
+├── data/                     # Compiled JSON datasets consumed by dashboard
+├── Cleaned_Database/         # Archived CSV contracts (HH & TTF)
+└── .github/workflows/        # Automated GitHub Actions pipelines
+```
+
+---
+
 ## 📊 Dashboard Modules
 
 ### 1. Prices Tab (Market Analytics)
@@ -62,6 +90,8 @@ The dashboard features a curated **Blue Flux** aesthetic designed for institutio
 - **Automated Pipeline**: Daily GitHub Actions workflow (`archive-contracts.yml`) auto-detects missing data and re-archives expired contracts.
 - **Caching**: Multi-layered `localStorage` cache for per-ticker performance and live curve stability.
 - **Tech Stack**: Zero-dependency frontend (Vanilla JS), Lightweight Charts (Canvas), Yahoo Finance v8 API integration.
+
+---
 
 ## 🚀 Running Locally
 

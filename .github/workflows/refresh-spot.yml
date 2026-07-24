@@ -28,7 +28,7 @@ jobs:
         run: |
           python3 - <<'EOF'
           import sys, os
-          sys.path.insert(0, '.')
+          sys.path.insert(0, 'scripts')
           from build_data import build_spot_from_eia
           build_spot_from_eia('data')
           EOF

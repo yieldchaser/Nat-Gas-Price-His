@@ -1,0 +1,36 @@
+# Python & Bytecode Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Operating System Metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & AI Tool State Directories
+.code-review-graph/
+.claude/
+.gemini/
+.cursor/
+.kiro/
+.qoder/
+.vscode/
+
+# AI Rules & MCP Local Config Files
+.cursorrules
+.windsurfrules
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+QODER.md
+.mcp.json
+.opencode.json
+
+# Temporary & Build Artifacts
+*.log
+*.tmp
+*.bak

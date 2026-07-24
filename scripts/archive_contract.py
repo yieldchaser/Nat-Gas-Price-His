@@ -70,9 +70,10 @@ FULL_LIFECYCLE_DAYS = 519
 # Beyond this window Yahoo will have dropped the data anyway.
 STALE_WINDOW_DAYS = 3 * 365  # ~3 years
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HH_DIR   = os.path.join(BASE_DIR, 'Cleaned_Database', 'Henry Hub', 'Monthwise')
-TTF_DIR  = os.path.join(BASE_DIR, 'Cleaned_Database', 'Dutch TTF', 'Monthwise')
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR    = os.path.abspath(os.path.join(SCRIPTS_DIR, '..'))
+HH_DIR      = os.path.join(BASE_DIR, 'Cleaned_Database', 'Henry Hub', 'Monthwise')
+TTF_DIR     = os.path.join(BASE_DIR, 'Cleaned_Database', 'Dutch TTF', 'Monthwise')
 
 # ---------------------------------------------------------------------------
 # Date / expiry helpers
@@ -546,7 +547,7 @@ def main() -> None:
         print()
         print('Rebuilding JSON (running build_data.py)...')
         result = subprocess.run(
-            [sys.executable, os.path.join(BASE_DIR, 'build_data.py')],
+            [sys.executable, os.path.join(SCRIPTS_DIR, 'build_data.py')],
             cwd=BASE_DIR,
         )
         if result.returncode != 0:

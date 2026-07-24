@@ -84,4 +84,4 @@ RULES
  ∙ If a feature is partially implemented (button exists but click handler does nothing), mark it FAIL and fix it
  ∙ The audit report must be the first thing you output before any fixes
 
-That’s it. Short, unambiguous, forces the agent to show its work before touching anything.​​​​​​​​​​​​​​​​
+That’s it. Short, unambiguous, forces the agent to show its work before touching anything.

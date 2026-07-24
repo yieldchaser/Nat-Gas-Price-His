@@ -104,6 +104,11 @@ MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov'
 
 def build_spot_from_eia(out_dir):
     """Download EIA Henry Hub daily spot XLS and regenerate spot JSON files."""
+    if not os.path.isabs(out_dir):
+        scripts_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.abspath(os.path.join(scripts_dir, '..'))
+        out_dir = os.path.join(repo_root, out_dir)
+
     try:
         import xlrd
     except ImportError:
@@ -279,8 +284,10 @@ def build_ng_continuous(base_dir, out_dir):
     print(f"  {out_path}: {len(continuous)} data points, range {continuous[0]['date']} to {continuous[-1]['date']}")
 
 if __name__ == '__main__':
-    base = 'Cleaned_Database'
-    out = 'data'
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.abspath(os.path.join(scripts_dir, '..'))
+    base = os.path.join(repo_root, 'Cleaned_Database')
+    out = os.path.join(repo_root, 'data')
     print("Building HH JSON...")
     build_hh_json(base, out)
     print("Building TTF JSON...")
