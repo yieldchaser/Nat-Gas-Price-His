@@ -998,7 +998,7 @@ function getCachedData(key) {
     if (!raw) return null;
     const json = JSON.parse(raw);
     const ageH = (Date.now() - json.savedAt) / 3600000;
-    if (ageH > 12) {
+    if (ageH > 3) {
       localStorage.removeItem(key);
       return null;
     }
