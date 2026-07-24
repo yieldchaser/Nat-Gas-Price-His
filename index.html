@@ -998,7 +998,11 @@ function getCachedData(key) {
     if (!raw) return null;
     const json = JSON.parse(raw);
     const ageH = (Date.now() - json.savedAt) / 3600000;
-    return { data: json.data, ageH: ageH.toFixed(1), isStale: ageH > 24 };
+    if (ageH > 12) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return { data: json.data, ageH: ageH.toFixed(1), isStale: false };
   } catch (e) { return null; }
 }
 function setCachedData(key, data) {
@@ -1365,6 +1369,21 @@ function getActiveTTFTickers() {
 
 async function loadLiveData() {
   setLoadProgress(50, 'FETCHING LIVE PRICES...');
+
+  // 1. Instantly load server-compiled live quotes feed (< 50ms HTTP fetch)
+  try {
+    const liveFeed = await fetchJSON('data/live_quotes.json');
+    if (liveFeed && liveFeed.quotes) {
+      Object.entries(liveFeed.quotes).forEach(([t, d]) => {
+        if (d && d.length > 0) {
+          STATE.liveData[t] = d;
+          setCachedData(`live_px_v1_${t}`, d);
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('live_quotes.json fetch fallback:', e);
+  }
   
   const hhTickers = getActiveHHTickers();
   const ttfTickers = getActiveTTFTickers();

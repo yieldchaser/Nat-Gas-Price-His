@@ -1,0 +1,38 @@
+name: Refresh Live Quotes Feed
+
+on:
+  schedule:
+    # Run every hour Mon-Fri during global energy trading hours
+    - cron: '0 * * * 1-5'
+  workflow_dispatch: # Allow manual run from GitHub Actions UI
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-quotes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch live market quotes and build live_quotes.json
+        run: python scripts/fetch_live_quotes.py
+
+      - name: Commit and push if live quotes changed
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/live_quotes.json
+          if git diff --staged --quiet; then
+            echo "No live quote changes — skipping commit"
+          else
+            git commit -m "chore: refresh live market quotes feed $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push origin main
+            echo "Pushed updated live_quotes.json"
+          fi
