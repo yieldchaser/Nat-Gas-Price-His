@@ -1064,6 +1064,7 @@ function getFrontMonthContract(market = 'hh') {
   const ticker = `${prefix}${mCode}${padYr}`;
   
   const expiry = estimateContractExpiry(ticker);
+  if (expiry) expiry.setUTCHours(23, 59, 59, 999);
   if (expiry && now > expiry) {
     targetMonthIdx = (targetMonthIdx + 1) % 12;
     if (targetMonthIdx === 0) targetYear++;
