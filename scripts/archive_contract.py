@@ -72,8 +72,8 @@ STALE_WINDOW_DAYS = 3 * 365  # ~3 years
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR    = os.path.abspath(os.path.join(SCRIPTS_DIR, '..'))
-HH_DIR      = os.path.join(BASE_DIR, 'Cleaned_Database', 'Henry Hub', 'Monthwise')
-TTF_DIR     = os.path.join(BASE_DIR, 'Cleaned_Database', 'Dutch TTF', 'Monthwise')
+HH_DIR      = os.path.join(BASE_DIR, 'data', 'database', 'Henry Hub', 'Monthwise')
+TTF_DIR     = os.path.join(BASE_DIR, 'data', 'database', 'Dutch TTF', 'Monthwise')
 
 # ---------------------------------------------------------------------------
 # Date / expiry helpers

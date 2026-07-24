@@ -286,7 +286,7 @@ def build_ng_continuous(base_dir, out_dir):
 if __name__ == '__main__':
     scripts_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.abspath(os.path.join(scripts_dir, '..'))
-    base = os.path.join(repo_root, 'Cleaned_Database')
+    base = os.path.join(repo_root, 'data', 'database')
     out = os.path.join(repo_root, 'data')
     print("Building HH JSON...")
     build_hh_json(base, out)

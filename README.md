@@ -36,8 +36,14 @@ Nat-Gas-Price-His/
 │   ├── roadmap_chunks.md     # Feature roadmap & upgrade specifications
 │   ├── step_by_step_fixes.md # Tab-by-tab enhancement tracking
 │   └── tooltip_system_blueprint.md # Architecture of tooltip engine
-├── data/                     # Compiled JSON datasets consumed by dashboard
-├── Cleaned_Database/         # Archived CSV contracts (HH & TTF)
+├── data/                     # Unified data repository
+│   ├── raw/                  # Offline raw archives & zip backups
+│   ├── database/             # Structured CSV contracts (HH & TTF)
+│   ├── hh/                   # Compiled Henry Hub JSON feeds
+│   ├── ttf/                  # Compiled Dutch TTF JSON feeds
+│   ├── spot/                 # Compiled EIA spot JSON feeds
+│   ├── expiry_prices.json    # Settlement matrix JSON feed
+│   └── ng_continuous.json    # Continuous price series JSON feed
 └── .github/workflows/        # Automated GitHub Actions pipelines
 ```
 
