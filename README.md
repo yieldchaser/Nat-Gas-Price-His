@@ -25,7 +25,8 @@ Nat-Gas-Price-His/
 │       └── prices-unified.js # Core financial chart & state logic
 ├── scripts/                  # Data pipeline scripts
 │   ├── archive_contract.py   # Yahoo Finance contract ingestion & auto-archive
-│   └── build_data.py         # JSON transformer pipeline
+│   ├── build_data.py         # JSON transformer pipeline
+│   └── fetch_live_quotes.py  # Parallel live quote aggregator
 ├── tests/                    # Test suite
 │   └── test_ng_curve_depth.py# Curve depth validation script
 ├── docs/                     # Project documentation & engineering blueprints
@@ -43,8 +44,13 @@ Nat-Gas-Price-His/
 │   ├── ttf/                  # Compiled Dutch TTF JSON feeds
 │   ├── spot/                 # Compiled EIA spot JSON feeds
 │   ├── expiry_prices.json    # Settlement matrix JSON feed
+│   ├── live_quotes.json      # Server-compiled live market quotes feed (< 50ms boot)
 │   └── ng_continuous.json    # Continuous price series JSON feed
 └── .github/workflows/        # Automated GitHub Actions pipelines
+    ├── archive-contracts.yml # Daily contract archiving workflow
+    ├── live-quotes.yml        # Hourly live quote refresh workflow
+    ├── pages.yml             # GitHub Pages deployment workflow
+    └── refresh-spot.yml      # Weekly EIA spot refresh workflow
 ```
 
 ---
@@ -94,8 +100,9 @@ Nat-Gas-Price-His/
 ## 🛰️ Data & Performance
 
 - **Automated Pipeline**: Daily GitHub Actions workflow (`archive-contracts.yml`) auto-detects missing data and re-archives expired contracts.
-- **Caching**: Multi-layered `localStorage` cache for per-ticker performance and live curve stability.
-- **Tech Stack**: Zero-dependency frontend (Vanilla JS), Lightweight Charts (Canvas), Yahoo Finance v8 API integration.
+- **Live Market Quotes Feed**: Hourly GitHub Actions workflow (`live-quotes.yml`) pre-compiles 110 active quotes into `data/live_quotes.json`, delivering instant < 50ms dashboard boot times without CORS proxy rate limits.
+- **Smart Cache Policy**: Hard 3-hour `localStorage` eviction threshold ensures stale prices older than 3 hours are automatically discarded.
+- **Tech Stack**: Zero-dependency frontend (Vanilla JS), Lightweight Charts (Canvas), Yahoo Finance API parallel ingestion engine.
 
 ---
 
