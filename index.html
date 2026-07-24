@@ -664,153 +664,180 @@ tr:hover td { background: var(--bg-card-hover); }
 @media (max-width: 900px) {
   .tab-btn { font-size: 11px; padding: 5px 8px; }
   #nav .brand span { display: none; }
-  .contract-header { flex-direction: column; }
+  .contract-header { flex-direction: column; align-items: flex-start; }
   .contract-header .price { margin-left: 0; }
 }
 
 /* ═══════════════════════════════════════════════════════════
-   MOBILE  ≤ 640px
-   Desktop styles are completely untouched. !important is used
-   only to override inline styles that cannot be addressed
-   otherwise (e.g. width:300px or min-width:180px in JS-built HTML).
+   MOBILE & TOUCH-OPTIMIZED RESPONSIVE (≤ 768px)
+   Desktop layout (> 768px) remains 100% untouched!
    ═══════════════════════════════════════════════════════════ */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  :root {
+    --card-padding: 12px;
+    --gap: 10px;
+  }
 
-  /* ── Nav: two-row layout ──────────────────────────────────
-     Row 1: brand (flex:1)  •  live price  •  freshness
-     Row 2: all 5 tab buttons sharing equal width
-  ────────────────────────────────────────────────────────── */
+  /* ── Smooth Touch & Anti-Clipping ──────────────────────── */
+  html, body {
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── 1. Top Navigation Bar (Two-Row Wrap) ──────────────── */
   #nav {
     height: auto;
+    min-height: 64px;
     flex-wrap: wrap;
-    padding: 5px 10px 0;
-    column-gap: 0;
-    row-gap: 0;
+    padding: 6px 10px 4px;
+    column-gap: 8px;
+    row-gap: 4px;
     align-items: center;
+    background: rgba(17, 17, 24, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
-  /* Brand — row 1, flex:1 so it expands and pushes live-price right */
+
   #nav .brand {
     order: 1;
     flex: 1;
-    font-size: 12px;
+    font-size: 13px;
     margin-right: 0;
-    padding-bottom: 3px;
   }
+
   #nav .brand span { display: none; }
-  /* Remove spacer — brand already acts as the flex expander */
   .nav-spacer { display: none; }
-  /* Live price — row 1, right side */
+
   #nav .live-price {
     order: 2;
     font-size: 11px;
     margin-right: 0;
-    padding-bottom: 3px;
   }
-  /* Freshness indicator — row 1, after live price */
+
   #nav .freshness {
     order: 3;
     font-size: 10px;
-    margin-left: 6px;
-    padding-bottom: 3px;
+    margin-left: 4px;
   }
-  /* Tabs — row 2: each shares equal width via flex:1 */
+
   .tab-btn {
     order: 10;
-    flex: 1 1 0;
-    font-size: 10px;
-    padding: 7px 3px;
+    flex: 1 1 auto;
+    font-size: 11px;
+    padding: 6px 6px;
     text-align: center;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    border-radius: 4px 4px 0 0;
     white-space: nowrap;
+    border-radius: 4px;
+    touch-action: manipulation;
   }
-  /* Narrow the active underline to match smaller padding */
+
   .tab-btn.active::after { left: 4px; right: 4px; }
 
-  /* ── Main content: account for taller two-row nav ─────── */
-  #main-content { margin-top: 70px; padding: 10px; }
+  /* ── 2. Main Content & Spacing ─────────────────────────── */
+  #main-content {
+    margin-top: 76px;
+    padding: 10px;
+  }
 
-  /* ── Contract header ──────────────────────────────────── */
-  .contract-header { gap: 6px; padding-bottom: 8px; }
-  .contract-header .ticker { font-size: 16px; }
-  .contract-header .desc   { font-size: 13px; }
-  .contract-header .price  { font-size: 18px; }
-  .contract-header .change { font-size: 12px; }
-  #prices-header .price, #spread-header .price { font-size: 20px; }
+  /* ── 3. Stack Layout (Chart Top, Sidebar Panels Below) ─── */
+  div[style*="flex-direction:row"],
+  .flex[style*="flex-direction:row"] {
+    flex-direction: column !important;
+  }
 
-  /* ── Chart: shorter min-height on mobile ──────────────── */
-  .chart-wrap { min-height: 240px !important; height: 45vh !important; }
-  #daily-main-chart { height: 260px !important; }
+  div[style*="width:300px"],
+  div[style*="width: 300px"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: 10px;
+  }
 
-  /* ── Sidebar panels (inline style width:300px) ─────────
-     Override the fixed-width right panels on Prices/TTF/Spot
-     tabs so they stack below the chart as full-width cards.
-  ────────────────────────────────────────────────────────── */
-  div[style*="width:300px"] { width: 100% !important; }
+  div[style*="min-width:180px"],
+  div[style*="min-width: 180px"] {
+    min-width: 100% !important;
+  }
 
-  /* ── T-Day range slider min-width override ────────────── */
-  div[style*="min-width:180px"] { min-width: 100% !important; }
+  /* ── 4. Charts & Touch Scrolling ───────────────────────── */
+  .chart-wrap,
+  #hh-chart, #ttf-chart, #spot-chart, #prices-chart,
+  #spread-chart, #curve-chart, #daily-main-chart {
+    height: 320px !important;
+    min-height: 260px !important;
+    touch-action: pan-y;
+  }
 
-  /* ── Controls toolbar (Spread / Prices selects) ────────── */
+  /* ── 5. Controls, Buttons & Selects Touch Targets ────── */
+  select, input[type="number"], .toggle-btn, .pill-btn, .zoom-btn {
+    font-size: 12px;
+    padding: 6px 10px;
+    min-height: 34px;
+    touch-action: manipulation;
+  }
+
   .ctrl-toolbar {
     flex-wrap: wrap;
     min-height: auto;
-    gap: 8px 12px;
+    gap: 8px 10px;
   }
+
   .ctrl-sep { display: none; }
   .ctrl-group { padding: 0 !important; }
 
-  /* ── Segment switch ───────────────────────────────────── */
-  .segment-btn { font-size: 11px; padding: 5px 8px; }
-  /* Compare pills: 10 buttons need extra-compact sizing on mobile */
+  .segment-switch {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .segment-btn {
+    flex: 1 1 auto;
+    font-size: 11px;
+    padding: 6px 8px;
+    text-align: center;
+    touch-action: manipulation;
+  }
+
   #curve-compare-pills .segment-btn { font-size: 9px; padding: 4px 5px; }
-  #curve-custom-days { width: 50px !important; font-size: 10px !important; }
+  #curve-custom-days { width: 55px !important; font-size: 11px !important; }
 
-  /* ── Card padding (tighter on small screens) ──────────── */
-  .card { padding: 10px; }
-  .card-title { font-size: 12px; margin-bottom: 8px; }
+  /* ── 6. Header Styling ─────────────────────────────────── */
+  .contract-header { gap: 6px; padding-bottom: 8px; }
+  .contract-header .ticker { font-size: 16px; }
+  .contract-header .desc   { font-size: 12px; }
+  .contract-header .price  { font-size: 18px; margin-left: 0; }
+  .contract-header .change { font-size: 12px; }
+  #prices-header .price, #spread-header .price { font-size: 20px; }
 
-  /* ── Labels ───────────────────────────────────────────── */
-  label { font-size: 12px; }
+  /* ── 7. Cards & Tables ─────────────────────────────────── */
+  .card { padding: 10px; border-radius: 8px; }
+  .card-title { font-size: 11px; margin-bottom: 8px; }
 
-  /* ── Stat values: slightly smaller ───────────────────── */
-  .stat-value { font-size: 15px; }
+  label { font-size: 11px; }
+
+  .stat-value { font-size: 14px; }
   .stat-label { font-size: 10px; }
 
-  /* ── Daily Tracker bottom cards: full width on mobile ── */
-  #daily-calendar {
+  #daily-calendar, #daily-dist {
     min-width: 0 !important;
     max-width: 100% !important;
     flex: 1 1 100% !important;
   }
-  #daily-dist {
-    min-width: 0 !important;
-    flex: 1 1 100% !important;
-  }
 
-  /* ── Tables: horizontal scroll wrapper ────────────────── */
   table {
     display: block;
+    width: 100%;
     overflow-x: auto;
+    white-space: nowrap;
     -webkit-overflow-scrolling: touch;
   }
 
-  /* ── Spread KPI bar: wrap chips onto multiple lines ───── */
   #spread-kpis {
     flex-wrap: wrap !important;
     gap: 6px !important;
     padding: 8px 10px !important;
   }
 
-  /* ── Range toolbar: stack info and scale on narrow ─────── */
   .range-toolbar { flex-wrap: wrap; gap: 6px; }
-
-  /* ── Pill / zoom buttons: slightly larger tap targets ─── */
-  .pill-btn  { padding: 5px 10px; font-size: 11px; }
-  .zoom-btn  { padding: 4px 10px; font-size: 11px; }
-  .toggle-btn { padding: 6px 10px; font-size: 11px; }
 }
 
 /* ═══════════════════════════════════════════════════════════
