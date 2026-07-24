@@ -1449,6 +1449,7 @@ async function loadLiveData() {
           setCachedData(`live_px_v1_${t}`, d);
         }
       });
+      STATE.contractCache = {};
     }
   } catch (e) {
     console.warn('live_quotes.json fetch fallback:', e);
