@@ -2,8 +2,8 @@ name: Refresh Live Quotes Feed
 
 on:
   schedule:
-    # Run every hour Mon-Fri during global energy trading hours
-    - cron: '0 * * * 1-5'
+    # Run every hour 24/7 (7 days a week) for seamless weekend coverage
+    - cron: '0 * * * *'
   workflow_dispatch: # Allow manual run from GitHub Actions UI
 
 permissions:
