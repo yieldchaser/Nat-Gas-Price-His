@@ -1098,7 +1098,7 @@ function renderPricesSummaryBar(context) {
       <span class="card-title" style="margin-bottom:0;">Window Metrics</span>
       <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">${filteredData.length}/${fullData.length} pts</span>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+    <div style="display:grid;grid-template-columns:repeat(${metrics.length},minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;">
       ${metrics.map(m => `
         <div style="background:var(--bg-card);padding:9px 12px;cursor:default;" data-tooltip="${m.tip || ''}">
           <div style="${LABEL_STYLE}">${m.label}</div>

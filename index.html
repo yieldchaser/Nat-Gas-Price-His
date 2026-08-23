@@ -162,6 +162,28 @@ html, body {
 .tab-panel.active { display: block; }
 
 /* ═══════════════════════════════════════════════════════════
+   PERSISTENT SIGNAL STRIP (Blue Margin stat-bar pattern)
+   ═══════════════════════════════════════════════════════════ */
+#signal-strip {
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  overflow-x: auto; scrollbar-width: none;
+  position: sticky; top: var(--nav-height); z-index: 900;
+  min-height: 52px;
+}
+#signal-strip::-webkit-scrollbar { display: none; }
+.sig-cell {
+  flex: 1; min-width: 110px;
+  padding: 8px 16px;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; justify-content: center;
+  cursor: default;
+}
+.sig-cell:hover { background: rgba(255,255,255,0.02); }
+.sig-cell:last-child { border-right: none; }
+
+/* ═══════════════════════════════════════════════════════════
    CARDS
    ═══════════════════════════════════════════════════════════ */
 .card {
@@ -987,6 +1009,9 @@ tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent-hh); }
   </div>
 </nav>
 
+<!-- PERSISTENT SIGNAL STRIP (always visible, all tabs) -->
+<div id="signal-strip" aria-label="Market signal summary"></div>
+
 <!-- MAIN CONTENT -->
 <div id="main-content">
   <div id="tab-prices" class="tab-panel active"></div>
@@ -1497,6 +1522,7 @@ async function loadLiveData() {
       earlyEl.className = c >= 0 ? 'positive' : 'negative';
     }
   } catch (e) { /* cosmetic */ }
+  updateSignalStrip();
 
   const hhTickers = getActiveHHTickers();
   const ttfTickers = getActiveTTFTickers();
@@ -1669,6 +1695,9 @@ async function loadLiveData() {
     }
   }
   invalidateDerivedCaches();
+  // Refresh the signal strip once archive + live data are fully merged
+  // (the early call may have run before the merge completed).
+  updateSignalStrip();
 }
 
 async function buildSeasonalCache() {
@@ -2022,9 +2051,11 @@ async function init() {
     setLoadProgress(100, 'READY');
     STATE.loaded = true;
     hideLoading();
+    updateSignalStrip();
     // Fetch live data in background after UI is up
     loadLiveData().then(() => {
       invalidateDerivedCaches();
+      updateSignalStrip();
 
       if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
         // Live data just landed — release any stale full-span window so the
@@ -6761,7 +6792,18 @@ function updateCurveChart() {
     fixLeftEdge: true,
     fixRightEdge: true,
   });
-  chart.timeScale().fitContent();
+  // Clamp the visible x-range to the QUOTED portion of the strip. Unquoted
+  // far-months render as whitespace points; fitting all slots leaves a large
+  // empty region (e.g. TTF quotes only a few months out). Users can still pan
+  // manually afterwards.
+  const quotedSlots = slots.filter(s => Number.isFinite(s.price));
+  if (quotedSlots.length >= 2) {
+    try {
+      chart.timeScale().setVisibleRange({ from: quotedSlots[0].time, to: quotedSlots[quotedSlots.length - 1].time });
+    } catch (e) { chart.timeScale().fitContent(); }
+  } else {
+    chart.timeScale().fitContent();
+  }
   attachChartTooltip({
     chart,
     container: chartContainer,
@@ -9022,24 +9064,60 @@ function _renderPriceLogPage(el) {
     th('Close', 'Front-month NG=F closing price in USD/MMBtu.') +
     th('Day Δ%', 'Close-to-close % change vs the prior session.') +
     th('Streak', 'Consecutive up (▲) or down (▼) sessions ending on this day. e.g. ▲3 = up 3 days in a row.') +
-    th('Level', 'Price position within the all-time history range — left = all-time low, right = all-time high.') +
+    th('Pctl ALL', 'Percentile of this close within the ENTIRE recorded history (all sessions). 0% = cheapest ever, 100% = most expensive ever.') +
+    th('Pctl 10Y', 'Percentile vs the trailing 10-year window only. Captures the modern shale/LNG-era regime rather than pre-2010 history.') +
+    th('Pctl 5Y', 'Percentile vs the trailing 5-year window — the current market regime baseline.') +
+    th('Pctl 1Y', 'Percentile vs the trailing 12 months — where price sits inside the recent trading range.') +
     '</tr></thead><tbody>';
+
+  // Percentile lookup helper: rank of pt.p among prices in a trailing window
+  const pctIn = (idx, windowSessions) => {
+    if (!windowSessions) {
+      // All-time: compare against every recorded close
+      let below = 0, total = 0;
+      for (let k = 0; k < data.length; k++) { total++; if (data[k].p <= data[idx].p) below++; }
+      return Math.round(below / total * 100);
+    }
+    let below = 0, total = 0;
+    for (let k = idx + 1; k < data.length && total < windowSessions; k++, total++) {
+      if (data[k].p <= data[idx].p) below++;
+    }
+    return total >= 20 ? Math.round(below / total * 100) : null;
+  };
+  // Cache per render pass to avoid O(n²) blowup on repeated pages
+  const pctlCache = new Map();
+  const getPctl = (idx, win) => {
+    const key = idx + ':' + (win || 'ALL');
+    if (!pctlCache.has(key)) pctlCache.set(key, pctIn(idx, win));
+    return pctlCache.get(key);
+  };
+  const pctlCell = (v) => {
+    if (v === null) return '<span style="color:var(--text-muted);">·</span>';
+    const c = v > 70 ? 'var(--positive)' : v < 30 ? 'var(--negative)' : 'var(--text-secondary)';
+    return '<span style="font-family:var(--font-mono);color:' + c + ';">' + v + '</span>';
+  };
 
   pageData.forEach((pt, i) => {
     const globalIdx = start + i;
     const prevPt = globalIdx < data.length - 1 ? data[globalIdx + 1] : null;
     const delta = prevPt && prevPt.p > 0 ? (pt.p - prevPt.p) / prevPt.p * 100 : null;
     const levelPct = pRange > 0 ? ((pt.p - pMin) / pRange * 100) : 0;
-    const barW = Math.max(2, (levelPct / 100 * 60)).toFixed(1);
     const streak = streaks[globalIdx];
     const streakLabel = streak === 0 ? '<span style="color:var(--text-muted);">—</span>'
       : streak > 0
         ? '<span style="color:var(--positive);">▲' + Math.abs(streak) + '</span>'
         : '<span style="color:var(--negative);">▼' + Math.abs(streak) + '</span>';
     const levelColor = levelPct > 70 ? 'var(--positive)' : levelPct < 30 ? 'var(--negative)' : 'var(--accent-hh)';
+    const pAll = getPctl(globalIdx, null);
+    const p10 = getPctl(globalIdx, 2520);
+    const p5 = getPctl(globalIdx, 1260);
+    const p1 = getPctl(globalIdx, 252);
     const rowTip = formatDailyDate(pt.date) + ' · $' + pt.p.toFixed(3) +
       (delta !== null ? ' · ' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%' : '') +
-      ' · ' + levelPct.toFixed(0) + 'th percentile all-time';
+      ' · ' + levelPct.toFixed(0) + '% of all-time range' +
+      (p10 !== null ? ' · P10Y:' + p10 : '') +
+      (p5 !== null ? ' · P5Y:' + p5 : '') +
+      (p1 !== null ? ' · P1Y:' + p1 : '');
     html += '<tr data-tooltip="' + rowTip + '">' +
       '<td style="text-align:left;">' + formatDailyDate(pt.date) + '</td>' +
       '<td style="font-family:var(--font-mono);">$' + pt.p.toFixed(3) + '</td>' +
@@ -9047,14 +9125,10 @@ function _renderPriceLogPage(el) {
         (delta === null ? '\u2014' : (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%') +
       '</td>' +
       '<td style="font-family:var(--font-mono);font-size:11px;">' + streakLabel + '</td>' +
-      '<td style="text-align:right;">' +
-        '<div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;">' +
-          '<span style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);width:26px;text-align:right;">' + levelPct.toFixed(0) + '%</span>' +
-          '<div style="width:60px;background:rgba(255,255,255,0.06);border-radius:2px;height:6px;flex-shrink:0;">' +
-            '<div style="width:' + barW + 'px;height:100%;background:' + levelColor + ';border-radius:2px;opacity:0.7;"></div>' +
-          '</div>' +
-        '</div>' +
-      '</td>' +
+      '<td style="text-align:right;">' + pctlCell(pAll) + '</td>' +
+      '<td style="text-align:right;">' + pctlCell(p10) + '</td>' +
+      '<td style="text-align:right;">' + pctlCell(p5) + '</td>' +
+      '<td style="text-align:right;">' + pctlCell(p1) + '</td>' +
       '</tr>';
   });
 
@@ -9770,6 +9844,147 @@ function navigateTo(tab, params) {
   });
 }
 
+</script>
+
+<script>
+/* ─── PERSISTENT SIGNAL STRIP ─────────────────────────────────────────────── */
+function _signalCell(label, valueHtml, tip, color) {
+  return '<div class="sig-cell" data-tooltip="' + (tip || '') + '">' +
+    '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:1px;white-space:nowrap;">' + label + '</div>' +
+    '<div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:' + (color || 'var(--text-primary)') + ';white-space:nowrap;">' + valueHtml + '</div>' +
+    '</div>';
+}
+
+async function updateSignalStrip() {
+  const el = document.getElementById('signal-strip');
+  if (!el) return;
+  try {
+    // 1. NG=F continuous series — prefer the LIVE-MERGED copy (archive +
+    //    Yahoo recents) over the raw archive, which can lag by months.
+    const ng = (Array.isArray(STATE.liveData['NG=F']) && STATE.liveData['NG=F'].length)
+      ? STATE.liveData['NG=F']
+      : (Array.isArray(STATE._ngContinuous) ? STATE._ngContinuous : []);
+    if (!ng.length) { el.innerHTML = ''; return; }
+    const lastP = ng[ng.length - 1].p;
+    // Heavy stats need the full merged history; the early feed-only series
+    // is too short for percentile/vol/Z to be meaningful.
+    const FULL = ng.length >= 250;
+    const DEEP = ng.length >= 2000; // percentile/Z need many years of context
+    const LOADING_TIP = 'Waiting for full history to finish loading…';
+
+    // 2. Term structure: HH forward curve contango/backwardation
+    let structureVal = '—', structureColor = 'var(--text-secondary)', structureTip = 'Forward curve shape unavailable.';
+    try {
+      const cd = buildForwardCurveData();
+      if (cd && cd.quotedSlots && cd.quotedSlots.length >= 2) {
+        const q = cd.quotedSlots;
+        const slope = q[q.length - 1].price - q[0].price;
+        const pct = Math.abs(q[0].price) > 0 ? slope / q[0].price * 100 : 0;
+        structureVal = (slope >= 0 ? 'CONTANGO +' : 'BACK +') + pct.toFixed(1) + '%';
+        structureColor = slope >= 0 ? 'var(--accent-hh)' : 'var(--accent-ttf)';
+        structureTip = `HH forward strip ${q[0].label} → ${q[q.length-1].label}: last quoted month is ${pct.toFixed(1)}% ${slope >= 0 ? 'above (contango — carry market, ample supply)' : 'below (backwardation — near-term scarcity)'}.`;
+      }
+    } catch (e) {}
+
+    // 3. 30-day realized volatility (annualized)
+    let volVal = FULL ? '—' : '…', volTip = FULL ? 'Realized volatility unavailable.' : LOADING_TIP;
+    try {
+      const recent = ng.slice(-31);
+      if (recent.length >= 10) {
+        const rets = [];
+        for (let i = 1; i < recent.length; i++) {
+          // Skip roll-splice seams: a single-day move >30% is a contract
+          // splice artifact, not tradeable return — it would poison the calc.
+          if (recent[i - 1].p > 0 && recent[i].p > 0) {
+            const jump = Math.abs(recent[i].p / recent[i - 1].p - 1);
+            if (jump < 0.30) rets.push(Math.log(recent[i].p / recent[i - 1].p));
+          }
+        }
+        if (rets.length >= 5) {
+          const mean = rets.reduce((s, r) => s + r, 0) / rets.length;
+          const variance = rets.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / (rets.length - 1);
+          const annVol = Math.sqrt(variance) * Math.sqrt(252) * 100;
+          volVal = annVol.toFixed(1) + '%';
+          volColor = annVol > 60 ? 'var(--negative)' : annVol > 35 ? '#d29922' : 'var(--positive)';
+          volTip = `30-day realized volatility, annualized (√252). Current regime: ${annVol > 60 ? 'HIGH (>60%)' : annVol > 35 ? 'ELEVATED (35–60%)' : 'CALM (<35%)'}. Computed from daily log returns of the continuous NG=F series.`;
+        }
+      }
+    } catch (e) {}
+
+    // 4. Percentile vs all-time history
+    let pctVal = DEEP ? '—' : '…', pctTip = DEEP ? 'All-time percentile unavailable.' : LOADING_TIP, pctColor = 'var(--text-secondary)';
+    try {
+      const prices = ng.map(p => p.p).filter(Number.isFinite);
+      if (prices.length >= 100) {
+        const below = prices.filter(p => p <= lastP).length;
+        const pctile = Math.round(below / prices.length * 100);
+        pctVal = 'P' + pctile;
+        pctColor = pctile <= 20 ? 'var(--positive)' : pctile >= 80 ? 'var(--negative)' : 'var(--text-primary)';
+        pctTip = `Current price sits at the ${pctile}th percentile of all ${prices.length.toLocaleString()} recorded sessions (all-time range $${Math.min(...prices).toFixed(3)}–$${Math.max(...prices).toFixed(3)}).`;
+      }
+    } catch (e) {}
+
+    // 5. Seasonal Z-score (vs same calendar window, trailing 10 years)
+    let zVal = DEEP ? '—' : '…', zTip = DEEP ? 'Seasonal Z-score unavailable.' : LOADING_TIP, zColor = 'var(--text-secondary)';
+    try {
+      const nowD = new Date(ng[ng.length - 1].date);
+        const winVals = [];
+        for (let yrOff = 1; yrOff <= 10; yrOff++) {
+          for (let dayOff = -7; dayOff <= 7; dayOff++) {
+            const d = new Date(nowD);
+            d.setFullYear(d.getFullYear() - yrOff);
+            d.setDate(d.getDate() + dayOff);
+            const ds = d.toISOString().slice(0, 10);
+            const hit = ng.find(p => p.date === ds);
+            if (hit && Number.isFinite(hit.p)) winVals.push(hit.p);
+          }
+        }
+        if (winVals.length >= 20) {
+          const wMean = winVals.reduce((s, v) => s + v, 0) / winVals.length;
+          const wSd = Math.sqrt(winVals.reduce((s, v) => s + Math.pow(v - wMean, 2), 0) / winVals.length);
+          if (wSd > 0) {
+            const z = (lastP - wMean) / wSd;
+            zVal = (z >= 0 ? '+' : '') + z.toFixed(2) + 'σ';
+            zColor = z <= -1 ? 'var(--positive)' : z >= 1 ? 'var(--negative)' : 'var(--text-primary)';
+            zTip = `Seasonal Z-score: current price vs the same ±7-day calendar window over the last 10 years. ${z.toFixed(2)}σ means price is ${Math.abs(z).toFixed(2)} std devs ${z >= 0 ? 'above' : 'below'} its seasonal norm.`;
+          }
+        }
+    } catch (e) {}
+
+    // 6. Days to front expiry
+    let dteVal = '—', dteSub = '', dteTip = 'Front contract expiry unavailable.';
+    try {
+      const now = new Date();
+      let expDate = null;
+      for (let offset = 0; offset < 6; offset++) {
+        const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        if (typeof computeNGExpiry === 'function' && computeNGExpiry(d.getFullYear(), d.getMonth()) > now) {
+          expDate = computeNGExpiry(d.getFullYear(), d.getMonth());
+          break;
+        }
+      }
+      if (expDate) {
+        const days = Math.max(0, Math.ceil((expDate - now) / 86400000));
+        dteVal = days + 'd';
+        dteSub = 'front';
+        dteColor = days < 10 ? 'var(--negative)' : days < 40 ? '#d29922' : 'var(--positive)';
+        dteTip = `Days until front-month HH contract expiry (${expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}). Roll pressure and volatility typically rise inside the final two weeks.`;
+      }
+    } catch (e) {}
+
+    el.innerHTML =
+      _signalCell('HUB FRONT', '$' + lastP.toFixed(3),
+        'Last close of the continuous NG=F front-month series (USD/MMBtu).',
+        lastP >= (ng[ng.length - 2]?.p ?? lastP) ? 'var(--positive)' : 'var(--negative)') +
+      _signalCell('TERM STRUCTURE', structureVal, structureTip, structureColor) +
+      _signalCell('REALIZED VOL', volVal || '—', volTip, typeof volColor !== 'undefined' ? volColor : 'var(--text-secondary)') +
+      _signalCell('ALL-TIME PCTL', pctVal, pctTip, pctColor) +
+      _signalCell('SEASONAL Z', zVal, zTip, zColor) +
+      _signalCell('FRONT EXPIRY', dteVal, dteTip, typeof dteColor !== 'undefined' ? dteColor : 'var(--text-secondary)');
+  } catch (e) {
+    el.innerHTML = '';
+  }
+}
 </script>
 
 <script>
