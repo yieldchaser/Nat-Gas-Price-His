@@ -9331,7 +9331,7 @@ function _renderMonthlySeasonality(data) {
     yAxisVals.forEach(v => {
       const vy = toY(v).toFixed(1);
       svgContent += `<line x1="3.5%" x2="100%" y1="${vy}" y2="${vy}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`;
-      svgContent += `<text x="2.8%" y="${(parseFloat(vy) + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="rgba(180,180,200,0.35)" font-family="monospace">${v > 0 ? '+' : ''}${v}%</text>`;
+      svgContent += `<text x="2.8%" y="${(parseFloat(vy) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="rgba(180,180,200,0.55)" font-family="monospace">${v > 0 ? '+' : ''}${v}%</text>`;
     });
     // Zero line (more prominent)
     svgContent += `<line x1="0" y1="${zeroY.toFixed(1)}" x2="100%" y2="${zeroY.toFixed(1)}" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>`;
@@ -9374,26 +9374,36 @@ function _renderMonthlySeasonality(data) {
       svgContent += `<line x1="${bLeft}" y1="${p50Y}" x2="${bRight}" y2="${p50Y}" stroke="${strokeColor}" stroke-width="2"/>`;
       // Avg diamond overlay (avg line as a ◆ symbol)
       svgContent += `<polygon points="${cx},${(parseFloat(avgY) - 4).toFixed(1)} ${(cx + 4).toFixed(1)},${avgY} ${cx},${(parseFloat(avgY) + 4).toFixed(1)} ${(cx - 4).toFixed(1)},${avgY}" fill="${avgColor}" opacity="0.9"/>`;
-      // Outlier dots
-      s.outliers.forEach(o => {
+      // Outlier dots — deterministic horizontal jitter so dense clusters
+      // read as a distribution band instead of a solid line of overlapping dots
+      s.outliers.forEach((o, k) => {
         const oy = toY(o).toFixed(1);
-        svgContent += `<circle cx="${cxPct}" cy="${oy}" r="2" fill="${strokeColor}" opacity="0.7"/>`;
+        const jx = (cx + (((k * 37) % 11) - 5) * 0.55).toFixed(2);
+        svgContent += `<circle cx="${jx}" cy="${oy}" r="2" fill="${strokeColor}" opacity="0.6"/>`;
       });
       // Month label
       svgContent += `<text x="${cxPct}" y="${(SVG_H - 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="rgba(180,180,200,0.7)" font-family="monospace">${MONTH_NAMES[i]}</text>`;
       // n label
       svgContent += `<text x="${cxPct}" y="${(SVG_TOP - 2).toFixed(1)}" text-anchor="middle" font-size="8" fill="rgba(180,180,200,0.4)">n=${s.n}</text>`;
+      // Full-column hover hit area — surfaces the month's stats via tooltip
+      const rmin = Math.min(...monthReturns[i]), rmax = Math.max(...monthReturns[i]);
+      const f1 = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+      const boxTip = MONTH_NAMES[i] + ' · ' + s.n + ' years | Median ' + f1(s.p50) + ' · Mean ' + f1(avg) +
+        ' | Middle 50%: ' + f1(s.p25) + ' to ' + f1(s.p75) +
+        ' | 90% of years: ' + f1(s.p5) + ' to ' + f1(s.p95) +
+        ' | Extremes: ' + f1(rmax) + ' best, ' + f1(rmin) + ' worst';
+      svgContent += `<rect x="${(cx - COL_W / 2).toFixed(2)}%" y="${SVG_TOP}" width="${COL_W.toFixed(2)}%" height="${(SVG_H - SVG_TOP - SVG_BOT)}" fill="transparent" data-tooltip="${boxTip}" style="cursor:default;"/>`;
     });
 
     bodyHtml = `<div style="padding:4px 14px 8px;">
       <svg width="100%" height="${SVG_H}" style="overflow:visible;display:block;">${svgContent}</svg>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10px;color:var(--text-muted);margin-top:6px;padding-left:2px;">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);margin-top:6px;padding-left:2px;">
         <span data-tooltip="The interquartile range — 50% of all monthly returns fall inside this box.">▬ p25–p75 (IQR box)</span>
         <span data-tooltip="The 5th–95th percentile range — whiskers capture 90% of returns, excluding extreme outliers.">⊣⊢ p5–p95 whiskers</span>
         <span data-tooltip="The median (p50) return — half of months were above, half below this line.">— median (p50)</span>
-        <span data-tooltip="The arithmetic mean return — can differ from median when large spikes skew the distribution."><span style="color:rgba(63,185,80,0.8);">◆</span> mean</span>
-        <span data-tooltip="Individual returns outside the p5–p95 whisker range — rare but significant outlier months.">• outliers (&lt;p5 or &gt;p95)</span>
-        <span style="margin-left:6px;border-left:1px solid rgba(255,255,255,0.1);padding-left:10px;" data-tooltip="n = number of years of data available for that calendar month.">n = years of data</span>
+        <span data-tooltip="The arithmetic mean return — can differ from median when large spikes skew the distribution."><span style="color:rgba(63,185,80,0.9);">◆</span> mean</span>
+        <span data-tooltip="Individual returns outside the p5–p95 whisker range — rare but significant outlier months. Hover a column for that month's full stats.">• outliers</span>
+        <span style="margin-left:6px;border-left:1px solid rgba(255,255,255,0.1);padding-left:10px;" data-tooltip="n = number of years of data available for that calendar month. Hover any month column for its full distribution stats.">hover a column for stats</span>
       </div>
     </div>`;
   }
