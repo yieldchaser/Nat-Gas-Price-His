@@ -1,5 +1,5 @@
 const PRICE_INSTRUMENT_META = {
-  hh: { key: 'hh', label: 'Henry Hub', stamp: 'HH futures', tone: 'hh', color: '#00d4ff', currency: '$', unit: 'USD/MMBtu', prefix: 'NG' },
+  hh: { key: 'hh', label: 'Henry Hub', stamp: 'HH futures', tone: 'hh', color: '#58a6ff', currency: '$', unit: 'USD/MMBtu', prefix: 'NG' },
   ttf: { key: 'ttf', label: 'Dutch TTF', stamp: 'TTF futures', tone: 'ttf', color: '#ff8c00', currency: 'EUR', unit: 'EUR/MWh', prefix: 'TG' },
   spot: { key: 'spot', label: 'Henry Hub Spot', stamp: 'Daily spot', tone: 'spot', color: '#a78bfa', currency: '$', unit: 'USD/MMBtu', prefix: 'SPOT' },
 };
@@ -340,7 +340,7 @@ function applyChartTimeScaleOptions(chart, options = {}) {
     lockVisibleTimeRangeOnResize = true,
   } = options;
   chart.timeScale().applyOptions({
-    borderColor: '#2b2b31',
+    borderColor: '#30363d',
     timeVisible: false,
     secondsVisible: false,
     rightOffset,
@@ -490,7 +490,7 @@ function getSeasonalEntry(view, point) {
 
 function getNeutralChartPalette() {
   return {
-    main: '#f5f7fb',
+    main: '#e6edf3',
     compare: 'rgba(160, 165, 176, 0.9)',
     contrast: 'rgba(228, 232, 237, 0.76)',
     historical: 'rgba(142, 146, 156, 0.22)',
@@ -711,7 +711,7 @@ function attachChartTooltip(options) {
     const metrics = typeof getMetrics === 'function' ? (getMetrics(param) || []) : [];
     tooltip.innerHTML = `
       <div class="chart-tooltip-head">
-        <div class="chart-tooltip-title" style="color:${titleColor || '#f5f7fb'};">${title}</div>
+        <div class="chart-tooltip-title" style="color:${titleColor || '#e6edf3'};">${title}</div>
         ${subtitle ? `<div class="chart-tooltip-subtitle">${subtitle}</div>` : ''}
       </div>
       <div class="chart-tooltip-section">
@@ -1098,8 +1098,8 @@ function renderPricesStats(context) {
         if (monthIdx >= 0) isExpired = computeNGExpiry(view.year, monthIdx) < new Date();
       }
       const isLive = hasLiveData && !isExpired;
-      const statusBg    = isLive ? 'rgba(0,255,136,0.1)'    : isExpired ? 'rgba(136,136,170,0.1)' : 'rgba(255,200,0,0.12)';
-      const statusColor = isLive ? 'var(--positive)'         : isExpired ? 'var(--text-muted)'      : '#ffc800';
+      const statusBg    = isLive ? 'rgba(63,185,80,0.1)'    : isExpired ? 'rgba(139,148,158,0.1)' : 'rgba(210,153,34,0.12)';
+      const statusColor = isLive ? 'var(--positive)'         : isExpired ? 'var(--text-muted)'      : '#d29922';
       const statusText  = isLive ? 'ACTIVE — LIVE DATA'      : isExpired ? 'EXPIRED'                : 'HISTORICAL';
       statusBlock = `<div class="stat"><div class="stat-label">Status</div><div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;background:${statusBg};color:${statusColor};">${statusText}</div></div>`;
     }
@@ -1176,14 +1176,14 @@ function renderPricesHistoryTable(context) {
       return `<span style="display:inline-block;width:${w}px;height:3px;background:var(--accent-hh);border-radius:2px;vertical-align:middle;opacity:0.6;"></span>`;
     };
 
-    const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-hh);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · HH</span>`;
+    const badge = `<span style="font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--accent-hh);background:rgba(56,139,253,0.08);border:1px solid rgba(56,139,253,0.2);border-radius:4px;padding:1px 7px;letter-spacing:0.06em;">${view.month.toUpperCase()} · HH</span>`;
     const subtitle = `<div style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-top:4px;">${total} contracts</div>`;
 
     const rows = rowData.map((r, i) => {
       const isNewest = i === 0;
       const rowBg = isNewest ? 'background:rgba(255,255,255,0.03);' : '';
       const isActive = String(r.year) === String(view.year);
-      const activeBg = isActive ? 'background:rgba(0,212,255,0.12);outline:1px solid rgba(0,212,255,0.3);' : rowBg;
+      const activeBg = isActive ? 'background:rgba(56,139,253,0.12);outline:1px solid rgba(56,139,253,0.3);' : rowBg;
       const dot = isActive ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent-hh);margin-right:5px;vertical-align:middle;"></span>` : '';
       const rowTip = `${r.year} ${view.month} — Last print: ${formatInstrumentValue('hh', r.price)}${r.rank != null ? ' · Rank #' + r.rank + ' of ' + total : ''}. Click to view this contract year.`;
       return `<tr style="${activeBg}cursor:pointer;" data-tooltip="${rowTip}" onclick="(function(){STATE.priceView.month='${view.month}';STATE.priceView.year=${r.year};STATE.priceView.instrument='hh';resetPriceWindow(STATE.priceView);renderPricesControls();schedulePricesChartUpdate();})()">
@@ -1434,8 +1434,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     upperSeries.setData(bandUpper);
 
     const lowerSeries = chart.addAreaSeries({
-      topColor: '#101114',
-      bottomColor: '#101114',
+      topColor: '#0d1117',
+      bottomColor: '#0d1117',
       lineColor: 'rgba(255, 255, 255, 0.18)',
       lineWidth: 1.25,
       priceLineVisible: false,
@@ -1525,7 +1525,7 @@ function updatePricesChart({ skipDetails = false } = {}) {
   attachChartTooltip({
     chart,
     container: chartContainer,
-    titleColor: '#f5f7fb',
+    titleColor: '#e6edf3',
     seriesConfigs: [
       { series: mainSeries, label: meta.label, color: neutralPalette.main, priority: 0, emphasis: true, getPoint: param => mainLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue(view.instrument, value) },
       seasonalAvgSeries ? { series: seasonalAvgSeries, label: '5Y Avg', color: seasonalPalette.avg, priority: 1, getPoint: param => seasonalLookup.get(timeKey(param.time)), formatValue: value => formatInstrumentValue(view.instrument, value) } : null,

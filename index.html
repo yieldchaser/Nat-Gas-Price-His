@@ -11,49 +11,51 @@
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════════════
-   DESIGN SYSTEM
+   DESIGN SYSTEM — "Blue Margin" language ported onto Blue Flux
+   (GitHub-dark surfaces · blue accent · dense institutional UI)
    ═══════════════════════════════════════════════════════════ */
 :root {
-  --bg-primary:    #0a0a0f;
-  --bg-card:       #111118;
-  --bg-card-hover: #161622;
-  --border:        #1e1e2e;
-  --border-bright: #2a2a3e;
-  --text-primary:  #e8e8f0;
-  --text-secondary:#8888aa;
-  --text-muted:    #44445a;
-  --accent-hh:     #00d4ff;
-  --accent-ttf:    #ff8c00;
-  --accent-spot:   #a78bfa;
-  --accent-spread: #9d4edd;
-  --positive:      #00ff88;
-  --negative:      #ff4455;
-  --warning:       #ffcc00;
-  --neutral:       #8888aa;
-  --chart-band:    rgba(0, 212, 255, 0.08);
+  --bg-primary:    #0d1117;
+  --bg-card:       #161b22;
+  --bg-card-hover: #21262d;
+  --surface2:      #21262d;
+  --border:        #30363d;
+  --border-bright: #3d444d;
+  --text-primary:  #e6edf3;
+  --text-secondary:#8b949e;
+  --text-muted:    #6e7681;
+  --accent-hh:     #388bfd;
+  --accent-ttf:    #fb8f44;
+  --accent-spot:   #a371f7;
+  --accent-spread: #bc8cff;
+  --positive:      #3fb950;
+  --negative:      #f85149;
+  --warning:       #d29922;
+  --neutral:       #8b949e;
+  --chart-band:    rgba(56, 139, 253, 0.08);
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --font-ui:   'Inter', system-ui, sans-serif;
   --card-padding: 16px;
   --gap: 12px;
-  --nav-height: 44px;
+  --nav-height: 96px; /* 52 header + 44 tab strip (desktop) */
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GAS FLAME COMPONENT
+   GAS FLAME COMPONENT (brand mark)
    ═══════════════════════════════════════════════════════════ */
 .gas-flame {
   width: 20px; height: 24px;
-  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.4));
+  filter: drop-shadow(0 0 6px rgba(56, 139, 253, 0.35));
   flex-shrink: 0;
   pointer-events: none;
 }
-.gas-flame.large { 
-  width: 80px; height: 96px; 
-  margin-bottom: 20px; 
-  filter: drop-shadow(0 0 25px rgba(0, 212, 255, 0.6)); 
+.gas-flame.large {
+  width: 80px; height: 96px;
+  margin-bottom: 20px;
+  filter: drop-shadow(0 0 25px rgba(56, 139, 253, 0.5));
 }
-.flame-outer { fill: #004de6; opacity: 0.6; }
-.flame-mid   { fill: #00d4ff; opacity: 0.8; }
+.flame-outer { fill: #1f6feb; opacity: 0.65; }
+.flame-mid   { fill: #388bfd; opacity: 0.85; }
 .flame-core  { fill: #ffffff; opacity: 0.95; }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -86,46 +88,56 @@ html, body {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
 }
-#loading-overlay .logo { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: var(--accent-hh); }
+#loading-overlay .logo { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: #79c0ff; letter-spacing: 0.02em; }
 #loading-overlay .status { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
 #loading-overlay .bar { width: 200px; height: 2px; background: var(--border); border-radius: 1px; overflow: hidden; }
 #loading-overlay .bar-fill { height: 100%; width: 0%; background: var(--accent-hh); transition: width 0.3s ease; }
 
 /* ═══════════════════════════════════════════════════════════
-   NAV BAR
+   HEADER + TAB STRIP (two stacked sticky bars)
    ═══════════════════════════════════════════════════════════ */
 #nav {
-  position: fixed; top: 0; left: 0; right: 0;
-  height: var(--nav-height);
+  position: sticky; top: 0; left: 0; right: 0;
+  z-index: 1000;
+  display: flex; flex-direction: column;
+}
+#nav .nav-top {
+  height: 52px;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center;
-  padding: 0 16px;
-  z-index: 1000;
+  padding: 0 20px;
   gap: 4px;
 }
+.tab-strip {
+  height: 44px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: stretch;
+  padding: 0 12px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.tab-strip::-webkit-scrollbar { display: none; }
+
 #nav .brand {
   display: flex; align-items: center; gap: 8px;
   font-family: var(--font-mono); font-weight: 700; font-size: 14px;
-  color: var(--accent-hh); margin-right: 20px; white-space: nowrap;
+  color: #79c0ff; margin-right: 20px; white-space: nowrap;
   letter-spacing: -0.5px;
 }
 #nav .brand span { color: var(--text-muted); font-weight: 400; }
 .tab-btn {
-  font-family: var(--font-ui); font-size: 12px; font-weight: 500;
+  font-family: var(--font-ui); font-size: 13px; font-weight: 500;
   color: var(--text-secondary); background: none; border: none;
-  padding: 6px 12px; cursor: pointer; border-radius: 6px;
-  transition: all 0.15s ease; white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  padding: 0 18px; cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
   position: relative;
+  display: inline-flex; align-items: center;
 }
-.tab-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
-.tab-btn.active {
-  color: var(--accent-hh); background: rgba(0, 212, 255, 0.08);
-}
-.tab-btn.active::after {
-  content: ''; position: absolute; bottom: -1px; left: 12px; right: 12px;
-  height: 2px; background: var(--accent-hh); border-radius: 1px;
-}
+.tab-strip .tab-btn:hover { color: var(--text-primary); background: transparent; }
+.tab-strip .tab-btn.active { color: var(--text-primary); background: transparent; border-bottom-color: var(--accent-hh); }
 .nav-spacer { flex: 1; }
 #nav .live-price {
   font-family: var(--font-mono); font-size: 13px; font-weight: 600;
@@ -142,8 +154,7 @@ html, body {
    MAIN CONTENT
    ═══════════════════════════════════════════════════════════ */
 #main-content {
-  margin-top: var(--nav-height);
-  padding: var(--gap);
+  padding: 16px 20px 20px;
   min-height: calc(100vh - var(--nav-height));
 }
 .tab-panel { display: none; }
@@ -157,12 +168,13 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: var(--card-padding);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.15);
   transition: border-color 0.15s ease;
 }
-.card:hover { border-color: var(--border-bright); }
+.card:hover { border-color: rgba(56,139,253,0.4); }
 .card-title {
   font-family: var(--font-ui); font-size: 11px; font-weight: 600;
-  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
   margin-bottom: 12px;
 }
 
@@ -171,15 +183,15 @@ html, body {
    ═══════════════════════════════════════════════════════════ */
 select, input[type="number"] {
   font-family: var(--font-mono); font-size: 13px;
-  background: var(--bg-primary); color: var(--text-primary);
-  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface2); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 4px;
   padding: 6px 10px; outline: none;
   transition: border-color 0.15s ease;
   -webkit-appearance: none; appearance: none;
 }
 select:hover, input[type="number"]:hover { border-color: var(--border-bright); }
 select:focus, input[type="number"]:focus { border-color: var(--accent-hh); }
-select { padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238888aa' d='M3 5l3 3 3-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
+select { padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M3 5l3 3 3-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
 
 label {
   font-size: 11px; font-weight: 500; color: var(--text-muted);
@@ -189,34 +201,34 @@ label {
 /* Toggle button */
 .toggle-btn {
   font-family: var(--font-mono); font-size: 11px;
-  background: var(--bg-primary); color: var(--text-secondary);
+  background: var(--surface2); color: var(--text-secondary);
   border: 1px solid var(--border); border-radius: 4px;
   padding: 4px 10px; cursor: pointer; transition: all 0.15s ease;
 }
 .toggle-btn:hover { border-color: var(--border-bright); color: var(--text-primary); }
-.toggle-btn.active { background: rgba(0,212,255,0.1); color: var(--accent-hh); border-color: var(--accent-hh); }
-.toggle-btn.active[data-tone="ttf"] { background: rgba(255,140,0,0.1); color: var(--accent-ttf); border-color: var(--accent-ttf); }
-.toggle-btn.active[data-tone="spot"] { background: rgba(167,139,250,0.12); color: var(--accent-spot); border-color: var(--accent-spot); }
+.toggle-btn.active { background: rgba(56,139,253,0.15); color: #58a6ff; border-color: rgba(56,139,253,0.5); }
+.toggle-btn.active[data-tone="ttf"] { background: rgba(251,143,68,0.12); color: var(--accent-ttf); border-color: rgba(251,143,68,0.45); }
+.toggle-btn.active[data-tone="spot"] { background: rgba(163,113,247,0.12); color: var(--accent-spot); border-color: rgba(163,113,247,0.45); }
 
 .segment-switch {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px;
-  background: rgba(255,255,255,0.02);
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 6px;
 }
 .segment-btn {
-  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 500;
   color: var(--text-secondary); background: transparent; border: 1px solid transparent;
-  border-radius: 8px; padding: 7px 12px; cursor: pointer; transition: all 0.15s ease;
+  border-radius: 4px; padding: 6px 12px; cursor: pointer; transition: all 0.15s ease;
 }
-.segment-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
-.segment-btn.active { color: var(--accent-hh); border-color: rgba(0,212,255,0.25); background: rgba(0,212,255,0.08); }
-.segment-btn.active[data-tone="hh"] { color: var(--accent-hh); border-color: rgba(0,212,255,0.25); background: rgba(0,212,255,0.08); }
-.segment-btn.active[data-tone="ttf"] { color: var(--accent-ttf); border-color: rgba(255,140,0,0.25); background: rgba(255,140,0,0.08); }
-.segment-btn.active[data-tone="spot"] { color: var(--accent-spot); border-color: rgba(167,139,250,0.25); background: rgba(167,139,250,0.12); }
+.segment-btn:hover { color: var(--text-primary); background: var(--surface2); }
+.segment-btn.active { color: var(--text-primary); border-color: rgba(56,139,253,0.5); background: rgba(56,139,253,0.15); }
+.segment-btn.active[data-tone="hh"] { color: #58a6ff; border-color: rgba(56,139,253,0.5); background: rgba(56,139,253,0.15); }
+.segment-btn.active[data-tone="ttf"] { color: var(--accent-ttf); border-color: rgba(251,143,68,0.45); background: rgba(251,143,68,0.10); }
+.segment-btn.active[data-tone="spot"] { color: var(--accent-spot); border-color: rgba(163,113,247,0.45); background: rgba(163,113,247,0.12); }
 
 /* ═══════════════════════════════════════════════════════════
    RANGE SLIDER
@@ -224,19 +236,19 @@ label {
 input[type="range"] {
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 10px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.28));
+  background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.22));
   border-radius: 999px; outline: none;
 }
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 22px; height: 22px;
-  background: #f7f7f9; border-radius: 7px; cursor: pointer;
-  border: 2px solid rgba(255,255,255,0.8);
-  box-shadow: 0 0 0 5px rgba(255,255,255,0.08), 0 0 24px rgba(255,255,255,0.18);
+  -webkit-appearance: none; width: 18px; height: 18px;
+  background: #58a6ff; border-radius: 4px; cursor: pointer;
+  border: 2px solid #0d1117;
+  box-shadow: 0 0 0 1px rgba(88,166,255,0.55), 0 0 12px rgba(88,166,255,0.30);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 22px; height: 22px; background: #f7f7f9;
-  border-radius: 7px; cursor: pointer; border: 2px solid rgba(255,255,255,0.8);
-  box-shadow: 0 0 0 5px rgba(255,255,255,0.08), 0 0 24px rgba(255,255,255,0.18);
+  width: 18px; height: 18px; background: #58a6ff;
+  border-radius: 4px; cursor: pointer; border: 2px solid #0d1117;
+  box-shadow: 0 0 0 1px rgba(88,166,255,0.55), 0 0 12px rgba(88,166,255,0.30);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -244,27 +256,31 @@ input[type="range"]::-moz-range-thumb {
    ═══════════════════════════════════════════════════════════ */
 table { width: 100%; border-collapse: collapse; }
 th {
-  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
-  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
-  text-align: right; padding: 8px 10px;
+  font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em;
+  text-align: right; padding: 9px 12px;
+  background: var(--surface2);
   border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; background: var(--bg-card); z-index: 1;
+  position: sticky; top: 0; z-index: 1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3), inset 0 -1px 0 var(--border);
 }
 th:first-child { text-align: left; }
 td {
-  font-family: var(--font-mono); font-size: 13px;
-  padding: 6px 10px; border-bottom: 1px solid rgba(30,30,46,0.5);
+  font-family: var(--font-mono); font-size: 12px;
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
   text-align: right;
 }
 td:first-child { text-align: left; }
-tr:hover td { background: var(--bg-card-hover); }
+tr:nth-child(even) td { background: rgba(33,38,45,0.5); }
+tr:hover td { background: rgba(56,139,253,0.05); }
+tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent-hh); }
 
 /* ═══════════════════════════════════════════════════════════
    STAT VALUE
    ═══════════════════════════════════════════════════════════ */
 .stat { margin-bottom: 10px; }
-.stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-.stat-value { font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
+.stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.stat-value { font-family: var(--font-mono); font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
 
 /* ═══════════════════════════════════════════════════════════
    LAYOUT HELPERS
@@ -326,7 +342,7 @@ tr:hover td { background: var(--bg-card-hover); }
   top: 5px;
   width: 1px;
   transform: translateX(-50%);
-  background: linear-gradient(180deg, rgba(255,255,255,0.20), rgba(255,255,255,0.04));
+  background: linear-gradient(180deg, rgba(230,237,243,0.22), rgba(230,237,243,0.04));
 }
 .curve-drop-dot {
   position: absolute;
@@ -336,8 +352,8 @@ tr:hover td { background: var(--bg-card-hover); }
   height: 6px;
   border-radius: 999px;
   transform: translate(-50%, -50%);
-  background: rgba(245,247,251,0.96);
-  box-shadow: 0 0 0 2px rgba(10,10,15,0.88), 0 0 14px rgba(245,247,251,0.10);
+  background: rgba(230,237,243,0.96);
+  box-shadow: 0 0 0 2px rgba(13,17,23,0.88), 0 0 14px rgba(230,237,243,0.10);
 }
 .curve-point-label {
   position: absolute;
@@ -347,7 +363,7 @@ tr:hover td { background: var(--bg-card-hover); }
   font-size: 10px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: #f5f7fb;
+  color: #e6edf3;
   white-space: nowrap;
   text-shadow: 0 1px 4px rgba(0,0,0,0.92), 0 0 10px rgba(0,0,0,0.65);
 }
@@ -362,9 +378,9 @@ tr:hover td { background: var(--bg-card-hover); }
   font-size: 11px;
   font-weight: 700;
   text-align: center;
-  color: #f5f7fb;
-  background: rgba(15,16,21,0.96);
-  border: 1px solid rgba(255,255,255,0.16);
+  color: #e6edf3;
+  background: rgba(22,27,34,0.96);
+  border: 1px solid rgba(240,246,252,0.16);
   box-shadow: 0 8px 24px rgba(0,0,0,0.32);
   pointer-events: none;
   z-index: 4;
@@ -372,9 +388,10 @@ tr:hover td { background: var(--bg-card-hover); }
 .chart-footer {
   margin-top: var(--gap);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 12px 14px 14px;
-  background: linear-gradient(180deg, rgba(17,17,24,0.92), rgba(12,12,18,0.98));
+  background: var(--bg-card);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .range-toolbar {
   display: grid;
@@ -417,8 +434,8 @@ tr:hover td { background: var(--bg-card-hover); }
   margin-top: 6px;
   padding: 10px 0;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.05);
-  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(240,246,252,0.06);
+  background: rgba(240,246,252,0.03);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
   min-height: 44px;
   overflow: visible;
@@ -432,7 +449,7 @@ tr:hover td { background: var(--bg-card-hover); }
   height: 8px;
   transform: translateY(-50%);
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.18));
+  background: linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0.16));
 }
 .range-selection {
   position: absolute;
@@ -440,8 +457,8 @@ tr:hover td { background: var(--bg-card-hover); }
   height: 8px;
   transform: translateY(-50%);
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.95), rgba(202,205,212,0.72));
-  box-shadow: 0 0 18px rgba(255,255,255,0.16);
+  background: linear-gradient(90deg, rgba(88,166,255,0.95), rgba(88,166,255,0.55));
+  box-shadow: 0 0 18px rgba(88,166,255,0.25);
   pointer-events: none;
 }
 .range-input-shell input[type="range"] {
@@ -481,9 +498,9 @@ tr:hover td { background: var(--bg-card-hover); }
   width: fit-content;
   max-width: 100%;
   padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -497,9 +514,9 @@ tr:hover td { background: var(--bg-card-hover); }
   max-width: 280px;
   pointer-events: none;
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(8,9,13,0.97);
+  border-radius: 8px;
+  border: 1px solid rgba(56,139,253,0.35);
+  background: rgba(22,27,34,0.97);
   box-shadow: 0 18px 40px rgba(0,0,0,0.5);
   backdrop-filter: blur(10px);
   font-family: var(--font-mono);
@@ -510,7 +527,7 @@ tr:hover td { background: var(--bg-card-hover); }
 .chart-tooltip-head {
   padding-bottom: 8px;
   margin-bottom: 8px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(240,246,252,0.08);
 }
 .chart-tooltip-title {
   font-size: 12px;
@@ -561,7 +578,7 @@ tr:hover td { background: var(--bg-card-hover); }
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid rgba(240,246,252,0.08);
 }
 .chart-tooltip-metric {
   display: flex;
@@ -583,7 +600,7 @@ tr:hover td { background: var(--bg-card-hover); }
   color: var(--text-muted);
   font-size: 11px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid rgba(240,246,252,0.08);
 }
 .ctrl-toolbar {
   display: flex;
@@ -624,7 +641,7 @@ tr:hover td { background: var(--bg-card-hover); }
   color: var(--text-muted);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  background: rgba(255,255,255,0.025);
+  background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 8px;
@@ -656,13 +673,13 @@ tr:hover td { background: var(--bg-card-hover); }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
 /* ═══════════════════════════════════════════════════════════
-   RESPONSIVE
+   RESPONSIVE (tablet)
    ═══════════════════════════════════════════════════════════ */
 @media (max-width: 900px) {
-  .tab-btn { font-size: 11px; padding: 5px 8px; }
+  .tab-btn { font-size: 12px; padding: 0 12px; }
   #nav .brand span { display: none; }
   .contract-header { flex-direction: column; align-items: flex-start; }
   .contract-header .price { margin-left: 0; }
@@ -685,15 +702,15 @@ tr:hover td { background: var(--bg-card-hover); }
   }
 
   /* ── 1. Top Navigation Bar (Two-Row Wrap) ──────────────── */
-  #nav {
+  #nav .nav-top {
     height: auto;
-    min-height: 64px;
+    min-height: 52px;
     flex-wrap: wrap;
     padding: 6px 10px 4px;
     column-gap: 8px;
     row-gap: 4px;
     align-items: center;
-    background: rgba(17, 17, 24, 0.96);
+    background: rgba(22, 27, 34, 0.96);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
@@ -720,23 +737,28 @@ tr:hover td { background: var(--bg-card-hover); }
     margin-left: 4px;
   }
 
+  .tab-strip {
+    height: auto;
+    min-height: 40px;
+    padding: 0 6px;
+    gap: 2px;
+  }
+
   .tab-btn {
-    order: 10;
     flex: 1 1 auto;
+    justify-content: center;
     font-size: 11px;
-    padding: 6px 6px;
+    padding: 10px 6px;
     text-align: center;
     min-width: 0;
     white-space: nowrap;
-    border-radius: 4px;
     touch-action: manipulation;
   }
 
-  .tab-btn.active::after { left: 4px; right: 4px; }
+  .tab-strip .tab-btn.active { border-bottom-width: 2px; }
 
   /* ── 2. Main Content & Spacing ─────────────────────────── */
   #main-content {
-    margin-top: 76px;
     padding: 10px;
   }
 
@@ -792,12 +814,12 @@ tr:hover td { background: var(--bg-card-hover); }
   .segment-btn {
     flex: 1 1 auto;
     font-size: 11px;
-    padding: 6px 8px;
+    padding: 8px;
     text-align: center;
     touch-action: manipulation;
   }
 
-  #curve-compare-pills .segment-btn { font-size: 9px; padding: 4px 5px; }
+  #curve-compare-pills .segment-btn { font-size: 9px; padding: 5px 5px; }
   #curve-custom-days { width: 55px !important; font-size: 11px !important; }
 
   /* ── 6. Header Styling ─────────────────────────────────── */
@@ -845,13 +867,14 @@ tr:hover td { background: var(--bg-card-hover); }
    ═══════════════════════════════════════════════════════════ */
 #cmd-palette {
   display: none; position: fixed; inset: 0; z-index: 5000;
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  background: rgba(1,4,9,0.6); backdrop-filter: blur(4px);
   align-items: flex-start; justify-content: center; padding-top: 20vh;
 }
 #cmd-palette.open { display: flex; }
 #cmd-palette .dialog {
   background: var(--bg-card); border: 1px solid var(--border-bright);
-  border-radius: 12px; width: 480px; max-width: 90vw; overflow: hidden;
+  border-radius: 8px; width: 480px; max-width: 90vw; overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
 }
 #cmd-palette input {
   width: 100%; font-family: var(--font-mono); font-size: 16px;
@@ -869,56 +892,56 @@ tr:hover td { background: var(--bg-card-hover); }
 }
 #cmd-palette .result-item .shortcut {
   margin-left: auto; font-size: 11px; color: var(--text-muted);
-  background: var(--bg-primary); padding: 2px 6px; border-radius: 3px;
+  background: var(--surface2); padding: 2px 6px; border-radius: 3px;
 }
 
-.expiry-month-active { color: var(--accent-hh) !important; background: rgba(0,212,255,0.08); }
+.expiry-month-active { color: #58a6ff !important; background: rgba(56,139,253,0.12); }
 
 /* ═══════════════════════════════════════════════════════════
    CHART RANGE CONTROLS (zoom buttons + slider)
    ═══════════════════════════════════════════════════════════ */
 .chart-range-controls { display:flex; align-items:center; gap:8px; padding:6px 14px 8px; flex-wrap:wrap; }
-.zoom-btn { background:#1e1e2e; border:1px solid #2e2e3e; color:#888; padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:var(--font-mono); transition:all 0.15s ease; }
-.zoom-btn:hover { border-color:#3e3e5e; color:#bbb; }
-.zoom-btn.active { background:rgba(0,212,255,0.13); border-color:#00d4ff; color:#00d4ff; }
-.chart-range-slider { flex:1; min-width:80px; accent-color:#00d4ff; height:4px; cursor:pointer; }
+.zoom-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text-secondary); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:var(--font-mono); transition:all 0.15s ease; }
+.zoom-btn:hover { border-color:var(--border-bright); color:var(--text-primary); }
+.zoom-btn.active { background:rgba(56,139,253,0.15); border-color:rgba(88,166,255,0.6); color:#58a6ff; }
+.chart-range-slider { flex:1; min-width:80px; accent-color:#58a6ff; height:4px; cursor:pointer; }
 
 /* ═══════════════════════════════════════════════════════════
    SERIES TOGGLE BAR
    ═══════════════════════════════════════════════════════════ */
 .series-toggle-bar { display:flex; flex-wrap:wrap; gap:6px; padding:6px 14px 8px; }
-.series-pill { display:inline-flex; align-items:center; gap:5px; background:#1e1e2e; border:1px solid #2e2e3e; color:#888; padding:3px 10px; border-radius:12px; cursor:pointer; font-size:11px; font-family:var(--font-mono); transition:all 0.15s ease; }
-.series-pill:hover { border-color:#3e3e5e; color:#bbb; }
-.series-pill.active { border-color:rgba(0,212,255,0.34); color:#ccc; background:#1e1e2e; }
+.series-pill { display:inline-flex; align-items:center; gap:5px; background:var(--surface2); border:1px solid var(--border); color:var(--text-secondary); padding:3px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-family:var(--font-mono); transition:all 0.15s ease; }
+.series-pill:hover { border-color:var(--border-bright); color:var(--text-primary); }
+.series-pill.active { border-color:rgba(88,166,255,0.55); color:var(--text-primary); background:rgba(56,139,253,0.12); }
 .series-pill .swatch { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-.series-pill.all-btn, .series-pill.none-btn { background:#111; color:#888; }
-.series-pill.all-btn:hover, .series-pill.none-btn:hover { color:#ccc; }
+.series-pill.all-btn, .series-pill.none-btn { background:var(--bg-primary); color:var(--text-secondary); }
+.series-pill.all-btn:hover, .series-pill.none-btn:hover { color:var(--text-primary); }
 /* ═══════════════════════════════════════════════════════════
    PILL BUTTONS (range presets, profile presets)
    ═══════════════════════════════════════════════════════════ */
-.pill-btn { font-family:var(--font-mono); font-size:11px; background:var(--bg-primary); color:var(--text-secondary); border:1px solid var(--border); border-radius:12px; padding:3px 10px; cursor:pointer; transition:all 0.15s ease; }
+.pill-btn { font-family:var(--font-mono); font-size:11px; background:var(--surface2); color:var(--text-secondary); border:1px solid var(--border); border-radius:4px; padding:3px 10px; cursor:pointer; transition:all 0.15s ease; }
 .pill-btn:hover { border-color:var(--border-bright); color:var(--text-primary); }
-.pill-btn.active { background:rgba(0,212,255,0.1); color:var(--accent-hh); border-color:rgba(0,212,255,0.3); }
+.pill-btn.active { background:rgba(56,139,253,0.15); color:#58a6ff; border-color:rgba(88,166,255,0.55); }
 
 /* ─── Global Tooltip ─── */
 #global-tooltip {
   position: fixed;
   z-index: 10000;
-  background: rgba(16, 17, 20, 0.97);
+  background: rgba(22, 27, 34, 0.97);
   backdrop-filter: blur(8px);
   color: #adbac7;
   padding: 9px 13px;
-  border-radius: 7px;
+  border-radius: 6px;
   font-size: 12px;
   line-height: 1.55;
   max-width: 260px;
-  border: 1px solid rgba(0, 212, 255, 0.22);
+  border: 1px solid rgba(56, 139, 253, 0.35);
   box-shadow: 0 8px 28px rgba(0,0,0,0.6);
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.13s ease, transform 0.13s ease;
   transform: translateY(8px);
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
   white-space: normal;
 }
 #global-tooltip.visible { opacity: 1; transform: translateY(0); }
@@ -941,6 +964,7 @@ tr:hover td { background: var(--bg-card-hover); }
 
 <!-- NAV BAR -->
 <nav id="nav">
+  <div class="nav-top">
   <div class="brand">
     <svg class="gas-flame" viewBox="0 0 100 120" xmlns="http://www.w3.org/2000/svg">
       <path class="flame-outer" d="M50 115 Q 15 105 15 65 Q 15 15 50 0 Q 85 15 85 65 Q 85 105 50 115 Z" />
@@ -949,14 +973,17 @@ tr:hover td { background: var(--bg-card-hover); }
     </svg>
     BLUE FLUX <span>v1.0</span>
   </div>
-  <button class="tab-btn active" data-tab="prices" data-tooltip="Contract lifecycle charts — HH & TTF futures price history on a T-Day or calendar axis, with seasonal bands and stats panel.">Prices</button>
-  <button class="tab-btn" data-tab="spread" data-tooltip="Calendar spread builder — compute any front/back leg spread with historical overlays, convergence cone, and butterfly fly builder.">Spreads</button>
-  <button class="tab-btn" data-tab="curve" data-tooltip="Live forward strip — next 72 HH and 36 TTF months plotted on a pseudo-date axis directly from raw quote data.">Forward Curve</button>
-  <button class="tab-btn" data-tab="expiry" data-tooltip="Final settlement price heatmap — every contract month ranked all-time, with 5Y/3Y averages and era drift columns.">Expiry Prices</button>
-  <button class="tab-btn" data-tab="daily" data-tooltip="NG=F continuous front-month series — daily/weekly returns, streak probability table, box plots, and calendar seasonality.">Daily Tracker</button>
   <div class="nav-spacer"></div>
   <div class="live-price" data-tooltip="Live NYMEX front-month Henry Hub quote — auto-refreshed from Yahoo Finance."><span class="label">HUB FRONT</span> <span id="live-price-val">—</span></div>
   <div class="freshness" data-tooltip="Time since last successful data refresh. Green dot = data is current; amber = stale (>1h)."><span class="freshness-dot" id="freshness-dot"></span><span id="freshness-time">—</span></div>
+  </div>
+  <div class="tab-strip">
+    <button class="tab-btn active" data-tab="prices" data-tooltip="Contract lifecycle charts — HH & TTF futures price history on a T-Day or calendar axis, with seasonal bands and stats panel.">Prices</button>
+    <button class="tab-btn" data-tab="spread" data-tooltip="Calendar spread builder — compute any front/back leg spread with historical overlays, convergence cone, and butterfly fly builder.">Spreads</button>
+    <button class="tab-btn" data-tab="curve" data-tooltip="Live forward strip — next 72 HH and 36 TTF months plotted on a pseudo-date axis directly from raw quote data.">Forward Curve</button>
+    <button class="tab-btn" data-tab="expiry" data-tooltip="Final settlement price heatmap — every contract month ranked all-time, with 5Y/3Y averages and era drift columns.">Expiry Prices</button>
+    <button class="tab-btn" data-tab="daily" data-tooltip="NG=F continuous front-month series — daily/weekly returns, streak probability table, box plots, and calendar seasonality.">Daily Tracker</button>
+  </div>
 </nav>
 
 <!-- MAIN CONTENT -->
@@ -2290,7 +2317,7 @@ function renderHHPreWindowView(ticker, month, year, rawLive) {
     <div class="stat">
       <div class="stat-label">Status</div>
       <div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;
-        background:rgba(255,200,0,0.12);color:#ffc800;">
+        background:rgba(210,153,34,0.12);color:#d29922;">
         PRE-ANALYSIS WINDOW
       </div>
     </div>
@@ -2356,9 +2383,9 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
     if (bandData.length > 0) {
       // Use area between series for band
       const upperSeries = chart.addAreaSeries({
-        topColor: 'rgba(0, 212, 255, 0.06)',
-        bottomColor: 'rgba(0, 212, 255, 0.01)',
-        lineColor: 'rgba(0, 212, 255, 0.15)',
+        topColor: 'rgba(56, 139, 253, 0.06)',
+        bottomColor: 'rgba(56, 139, 253, 0.01)',
+        lineColor: 'rgba(56, 139, 253, 0.15)',
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
@@ -2369,7 +2396,7 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
       const lowerSeries = chart.addAreaSeries({
         topColor: 'transparent',
         bottomColor: 'transparent',
-        lineColor: 'rgba(0, 212, 255, 0.15)',
+        lineColor: 'rgba(56, 139, 253, 0.15)',
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
@@ -2379,7 +2406,7 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
 
       // 5Y avg dashed line
       const avgSeries = chart.addLineSeries({
-        color: 'rgba(0, 212, 255, 0.4)',
+        color: 'rgba(56, 139, 253, 0.4)',
         lineWidth: 1,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         priceLineVisible: false,
@@ -2392,7 +2419,7 @@ function renderHHChartWidget(filtered, fullData, month, year, calendarMode, comp
 
   // Main price line
   const mainSeries = chart.addLineSeries({
-    color: '#00d4ff',
+    color: '#58a6ff',
     lineWidth: 2,
     priceLineVisible: true,
     lastValueVisible: true,
@@ -2484,7 +2511,7 @@ function findDateForDay(filtered, d) {
 function baseChartOptions() {
   return {
     autoSize: true,
-    layout: { background: { type: 'solid', color: '#101114' }, textColor: '#b8bac2', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
+    layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#8b949e', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
     grid: { vertLines: { visible: false }, horzLines: { visible: false } },
     crosshair: {
       mode: LightweightCharts.CrosshairMode.Normal,
@@ -2492,23 +2519,23 @@ function baseChartOptions() {
         color: 'rgba(255,255,255,0.18)',
         width: 1,
         style: LightweightCharts.LineStyle.Dashed,
-        labelBackgroundColor: '#0c0d10',
+        labelBackgroundColor: '#161b22',
       },
       horzLine: {
         color: 'rgba(255,255,255,0.14)',
         width: 1,
         style: LightweightCharts.LineStyle.Dashed,
-        labelBackgroundColor: '#0c0d10',
+        labelBackgroundColor: '#161b22',
       },
     },
     rightPriceScale: {
-      borderColor: '#26272c',
+      borderColor: '#30363d',
       scaleMargins: { top: 0.08, bottom: 0.08 },
       entireTextOnly: true,
       minimumWidth: 72,
     },
     timeScale: {
-      borderColor: '#26272c',
+      borderColor: '#30363d',
       timeVisible: false,
       rightOffset: 0,
       minBarSpacing: 0.45,
@@ -2658,8 +2685,8 @@ function renderHHStats(data, month, year) {
       </div>` : '';
 
   // Status badge colour and text based on actual expiry date
-  const statusBg    = isLive ? 'rgba(0,255,136,0.1)' : isExpired ? 'rgba(136,136,170,0.1)' : 'rgba(255,200,0,0.12)';
-  const statusColor = isLive ? 'var(--positive)' : isExpired ? 'var(--text-muted)' : '#ffc800';
+  const statusBg    = isLive ? 'rgba(63,185,80,0.1)' : isExpired ? 'rgba(139,148,158,0.1)' : 'rgba(210,153,34,0.12)';
+  const statusColor = isLive ? 'var(--positive)' : isExpired ? 'var(--text-muted)' : '#d29922';
   const statusText  = isLive ? 'ACTIVE — LIVE DATA'
     : isExpired ? `EXPIRED${expiryDateStr ? ' · ' + expiryDateStr : ''}`
     : 'HISTORICAL';
@@ -2736,14 +2763,14 @@ function renderHHHistoryTable(month, currentYear) {
     const rank = sortedPricesDesc.indexOf(price) + 1;
 
     const isSelected = yr === currentYear;
-    const rowBg = isSelected ? 'background:rgba(0,212,255,0.12);' : '';
+    const rowBg = isSelected ? 'background:rgba(56,139,253,0.12);' : '';
     const yearCell = isSelected
       ? `<td style="text-align:left;font-weight:700;color:var(--accent-hh);white-space:nowrap;"><span style="margin-right:4px;font-size:10px;">●</span>${yr}</td>`
       : `<td style="text-align:left;color:var(--text-secondary);">${yr}</td>`;
 
     // Mini bar: proportional to price within the all-time range (max 52px)
     const barW = Math.max(2, Math.round((price - priceMin) / priceRange * 52));
-    const barColor = isSelected ? 'var(--accent-hh)' : 'rgba(0,212,255,0.4)';
+    const barColor = isSelected ? 'var(--accent-hh)' : 'rgba(56,139,253,0.4)';
     const barCell = `<td style="padding-right:14px;vertical-align:middle;"><div style="width:${barW}px;height:3px;background:${barColor};border-radius:2px;"></div></td>`;
 
     const rowTip = `${yr} ${month} expiry: $${price.toFixed(3)} · Rank #${rank} of ${contractCount}${delta !== null ? ' · YoY: ' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%' : ''}. Click to load this contract.`;
@@ -2760,7 +2787,7 @@ function renderHHHistoryTable(month, currentYear) {
   tableEl.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px;">
       <span class="card-title" style="padding:0;" data-tooltip="Final settlement price for ${month} HH contracts across all available years. Click any row to load that contract year on the chart. The highlighted row is the currently viewed year.">Same Month HH History</span>
-      <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(0,212,255,0.1);color:var(--accent-hh);border:1px solid rgba(0,212,255,0.25);font-weight:700;font-family:var(--font-mono);letter-spacing:0.05em;">${monthLabel} · HH</span>
+      <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(56,139,253,0.1);color:var(--accent-hh);border:1px solid rgba(56,139,253,0.25);font-weight:700;font-family:var(--font-mono);letter-spacing:0.05em;">${monthLabel} · HH</span>
     </div>
     <div style="font-size:11px;color:var(--text-muted);padding:0 14px 8px;">${contractCount} contracts</div>
     <div style="overflow-y:auto;max-height:260px;">
@@ -3183,7 +3210,7 @@ function renderDrawdownHeatmap(month) {
       <td style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);white-space:nowrap;">${b.label}</td>
       <td style="padding:3px 6px;">
         <div style="display:flex;align-items:center;gap:4px;">
-          <div style="height:9px;width:${avgBar}px;background:rgba(0,212,255,0.55);border-radius:2px;"></div>
+          <div style="height:9px;width:${avgBar}px;background:rgba(56,139,253,0.55);border-radius:2px;"></div>
           <span style="font-family:var(--font-mono);font-size:10px;color:var(--accent-hh);">${b.avg.toFixed(1)}%</span>
         </div>
         <div style="font-size:9px;color:var(--text-muted);font-family:var(--font-mono);">med ${b.median.toFixed(1)}%</div>
@@ -3411,7 +3438,7 @@ function renderTTFPreWindowView(ticker, month, year, rawLive) {
     <div class="stat">
       <div class="stat-label">Status</div>
       <div style="font-family:var(--font-mono);font-size:12px;padding:3px 8px;border-radius:4px;display:inline-block;
-        background:rgba(255,200,0,0.12);color:#ffc800;">PRE-ANALYSIS WINDOW</div>
+        background:rgba(210,153,34,0.12);color:#d29922;">PRE-ANALYSIS WINDOW</div>
     </div>
     <div class="stat">
       <div class="stat-label">Analysis Window Opens</div>
@@ -3533,7 +3560,7 @@ function updateSpotChart() {
     .map(pt => ({
       time: pt.date,
       position: 'aboveBar',
-      color: pt.p > globalAvg * 3 ? '#ff4455' : '#ffcc00',
+      color: pt.p > globalAvg * 3 ? '#f85149' : '#ffcc00',
       shape: 'circle',
       text: pt.p > globalAvg * 3 ? `$${pt.p.toFixed(2)}` : '',
     }));
@@ -4306,7 +4333,7 @@ function updateSpreadChart() {
     attachChartTooltip({
       chart,
       container: chartContainer,
-      titleColor: '#f5f7fb',
+      titleColor: '#e6edf3',
       seriesConfigs: [{
         series: selectedSeries,
         label: legInfo.shortLabel,
@@ -4646,7 +4673,7 @@ function renderSpreadConvergenceCone(front, back, year, instrument) {
   svgLines += `<text x="62%" y="${(parseFloat(toSvgY(medianFinal)) - 2).toFixed(1)}" font-size="8" fill="#fbbf24">med ${medianFinal.toFixed(3)}</text>`;
 
   // Current value dot
-  svgLines += `<circle cx="${toSvgX(currentD)}" cy="${toSvgY(currentV)}" r="4" fill="white" stroke="var(--accent-spread,#00d4ff)" stroke-width="2"/>`;
+  svgLines += `<circle cx="${toSvgX(currentD)}" cy="${toSvgY(currentV)}" r="4" fill="white" stroke="var(--accent-spread,#58a6ff)" stroke-width="2"/>`;
 
   // ── Histogram of final settlements (simple CSS bars) ──────────────────────
   const histBins = 5;
@@ -4801,7 +4828,7 @@ async function buildSpreadHeatmap(force = false) {
       const intensity = avg != null ? Math.min(Math.abs(avg) / 2, 1) : 0;
       const color = avg == null
         ? 'transparent'
-        : (avg > 0 ? `rgba(0,255,136,${intensity * 0.45})` : `rgba(255,68,85,${intensity * 0.45})`);
+        : (avg > 0 ? `rgba(63,185,80,${intensity * 0.45})` : `rgba(248,81,73,${intensity * 0.45})`);
       const value = avg == null ? '—' : avg.toFixed(2);
       const sign = avg != null && avg >= 0 ? '+' : '';
       const tip = avg == null
@@ -4815,10 +4842,10 @@ async function buildSpreadHeatmap(force = false) {
   }
   html += `</tbody></table></div>`;
   html += `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px 12px;">
-    <div style="width:72px;height:3px;background:linear-gradient(to right,rgba(255,68,85,0.75),rgba(255,68,85,0.12));border-radius:2px;"></div>
+    <div style="width:72px;height:3px;background:linear-gradient(to right,rgba(248,81,73,0.75),rgba(248,81,73,0.12));border-radius:2px;"></div>
     <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:0.04em;">Backwardation</span>
     <div style="width:20px;height:3px;background:rgba(255,255,255,0.04);border-radius:2px;"></div>
-    <div style="width:72px;height:3px;background:linear-gradient(to right,rgba(0,255,136,0.12),rgba(0,255,136,0.75));border-radius:2px;"></div>
+    <div style="width:72px;height:3px;background:linear-gradient(to right,rgba(63,185,80,0.12),rgba(63,185,80,0.75));border-radius:2px;"></div>
     <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:0.04em;">Contango</span>
   </div>`;
   STATE.spreadHeatmapHtml = html;
@@ -5027,7 +5054,7 @@ function renderSpreadResolutionChart() {
 
   if (seriesConfigs.length) {
     attachChartTooltip({
-      chart, container, titleColor: '#f5f7fb',
+      chart, container, titleColor: '#e6edf3',
       seriesConfigs: seriesConfigs.reverse(), // Put newest/selected at top
       getTitle: p => {
         const d = (new Date(p.time).getTime() - new Date("2000-01-01T00:00:00Z").getTime()) / 86400000;
@@ -6080,8 +6107,8 @@ function renderCurveMetrics(curveData, windowContext) {
   const structBadge = structWord
     ? ` <span style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:600;` +
       (windowContext.slope >= 0
-        ? `background:rgba(0,255,136,0.12);color:var(--positive);border:1px solid rgba(0,255,136,0.25);`
-        : `background:rgba(255,68,85,0.12);color:var(--negative);border:1px solid rgba(255,68,85,0.25);`) +
+        ? `background:rgba(63,185,80,0.12);color:var(--positive);border:1px solid rgba(63,185,80,0.25);`
+        : `background:rgba(248,81,73,0.12);color:var(--negative);border:1px solid rgba(248,81,73,0.25);`) +
       `">${structWord}</span>` : '';
 
   // W/S Premium %
@@ -6340,8 +6367,8 @@ function renderCurveStrips(curveData) {
     let structBadge = '<span style="color:var(--text-muted);">—</span>';
     if (vsFront != null && Math.abs(vsFront) >= 0.005) {
       structBadge = vsFront > 0
-        ? `<span style="background:rgba(0,255,136,0.12);color:var(--positive);border:1px solid rgba(0,255,136,0.25);border-radius:4px;font-size:10px;padding:2px 7px;font-weight:600;">Contango</span>`
-        : `<span style="background:rgba(255,68,85,0.12);color:var(--negative);border:1px solid rgba(255,68,85,0.25);border-radius:4px;font-size:10px;padding:2px 7px;font-weight:600;">Back</span>`;
+        ? `<span style="background:rgba(63,185,80,0.12);color:var(--positive);border:1px solid rgba(63,185,80,0.25);border-radius:4px;font-size:10px;padding:2px 7px;font-weight:600;">Contango</span>`
+        : `<span style="background:rgba(248,81,73,0.12);color:var(--negative);border:1px solid rgba(248,81,73,0.25);border-radius:4px;font-size:10px;padding:2px 7px;font-weight:600;">Back</span>`;
     }
 
     // Partial coverage mini bar
@@ -6693,7 +6720,7 @@ function updateCurveChart() {
   attachChartTooltip({
     chart,
     container: chartContainer,
-    titleColor: '#f5f7fb',
+    titleColor: '#e6edf3',
     seriesConfigs: [{
       series: lineSeries,
       label: `${meta.label} curve`,
@@ -7017,8 +7044,8 @@ MONTHS.forEach(m => {
       let bg = 'transparent';
       if (ref && !isLiveCurrent) { // don't heatmap live cells — they'd skew color vs settled history
         const delta = (v - ref) / ref;
-        if (delta > 0.02)       bg = 'rgba(0,255,136,'  + Math.min(delta * 1.8, 0.55) + ')';
-        else if (delta < -0.02) bg = 'rgba(255,68,85,'  + Math.min(Math.abs(delta) * 1.8, 0.55) + ')';
+        if (delta > 0.02)       bg = 'rgba(63,185,80,'  + Math.min(delta * 1.8, 0.55) + ')';
+        else if (delta < -0.02) bg = 'rgba(248,81,73,'  + Math.min(Math.abs(delta) * 1.8, 0.55) + ')';
       }
       const rank   = sortedM.indexOf(v) + 1;
       const rankN  = sortedM.length;
@@ -7044,7 +7071,7 @@ MONTHS.forEach(m => {
           ? `<sup style="font-size:8px;color:var(--negative);vertical-align:super;">#${rank}</sup>`
           : '';
       // Cell border: teal = recently settled, amber = live/unsettled
-      const borderStyle = isSettledCurrent ? 'border-bottom:2px solid rgba(0,212,255,0.45);'
+      const borderStyle = isSettledCurrent ? 'border-bottom:2px solid rgba(56,139,253,0.45);'
                         : isLiveCurrent    ? 'border-bottom:2px solid rgba(255,165,0,0.6);'
                         : '';
       // Live cells: show value in italic with ~ prefix, no heatmap bg
@@ -7146,12 +7173,12 @@ MONTHS.forEach(m => {
     const tip = yoyRow != null
       ? `${yr} full-year avg ($${thisAvg.toFixed(3)}) vs ${prevYr} ($${priorAvg.toFixed(3)}) = ${yoyRow >= 0 ? '+' : ''}${yoyRow.toFixed(1)}% YoY`
       : `${yr}: no prior year available for YoY comparison`;
-    html += `<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;color:${yoyRow == null ? 'var(--text-muted)' : yoyRow >= 0 ? '#00ff88' : '#ff4455'};" data-tooltip="${tip}">` +
+    html += `<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;color:${yoyRow == null ? 'var(--text-muted)' : yoyRow >= 0 ? '#3fb950' : '#f85149'};" data-tooltip="${tip}">` +
       (yoyRow == null ? '\u2014' : (yoyRow >= 0 ? '+' : '') + yoyRow.toFixed(1) + '%') + '</td>';
   });
   // YoY% column in the summary columns (YoY of last vs prev yearAvg — same as yoyAvg already computed)
   html += '<td style="font-family:var(--font-mono);font-size:11px;font-style:italic;font-weight:700;color:' +
-    (yoyAvg == null ? 'var(--text-muted)' : yoyAvg >= 0 ? '#00ff88' : '#ff4455') + ';">' +
+    (yoyAvg == null ? 'var(--text-muted)' : yoyAvg >= 0 ? '#3fb950' : '#f85149') + ';">' +
     (yoyAvg == null ? '\u2014' : (yoyAvg >= 0 ? '+' : '') + yoyAvg.toFixed(1) + '%') + '</td>';
   // Avg columns + Era Drift columns (blank for YoY row)
   html += '<td>\u2014</td><td>\u2014</td><td>\u2014</td>';
@@ -7244,7 +7271,7 @@ function showExpiryMonthProfile(month) {
   kpiEl.innerHTML = [
     kpi('All-Time High', '$' + highPoint.value.toFixed(3), '#ff8c00',
       `Highest ${month} final settlement on record, set in ${highPoint.year}.`, `${highPoint.year}`),
-    kpi('All-Time Low',  '$' + lowPoint.value.toFixed(3),  '#00d4ff',
+    kpi('All-Time Low',  '$' + lowPoint.value.toFixed(3),  '#58a6ff',
       `Lowest ${month} final settlement on record, set in ${lowPoint.year}.`,  `${lowPoint.year}`),
     kpi('All Avg', '$' + avgAll.toFixed(3), 'var(--text-secondary)',
       `Simple average of all ${seriesData.length} ${month} final settlements.`),
@@ -7269,7 +7296,7 @@ function showExpiryMonthProfile(month) {
 
   // Use year as fake time: YYYY-01-01
   const lineSeries = chart.addLineSeries({
-    color: '#00d4ff', lineWidth: 2,
+    color: '#58a6ff', lineWidth: 2,
     lastValueVisible: true, crosshairMarkerRadius: 5,
     priceFormat: { type: 'custom', formatter: v => '$' + v.toFixed(3), minMove: 0.001 },
   });
@@ -7301,7 +7328,7 @@ function showExpiryMonthProfile(month) {
   const pillRowEl = document.createElement('div');
   pillRowEl.style.cssText = 'display:flex;gap:8px;padding:8px 14px 0;';
   pillRowEl.innerHTML = `
-    <button class="series-pill active" data-key="allAvg" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.30);background:rgba(255,255,255,0.08);color:#f5f7fb;cursor:pointer;" data-tooltip="Toggle the all-years average reference line ($${avgAll.toFixed(3)}).">All Avg</button>
+    <button class="series-pill active" data-key="allAvg" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.30);background:rgba(255,255,255,0.08);color:#e6edf3;cursor:pointer;" data-tooltip="Toggle the all-years average reference line ($${avgAll.toFixed(3)}).">All Avg</button>
     <button class="series-pill active" data-key="avg5y" style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,140,0,0.40);background:rgba(255,140,0,0.10);color:#ff8c00;cursor:pointer;" data-tooltip="Toggle the 5-completed-year average reference line ($${avg5y.toFixed(3)}). Uses ${currentYear - 5}–${currentYear - 1} only — excludes current year which hasn't settled.">5Y Avg</button>
   `;
   profileEl.insertBefore(pillRowEl, chartEl);
@@ -7326,8 +7353,8 @@ function showExpiryMonthProfile(month) {
   chart.timeScale().fitContent();
 
   attachChartTooltip({
-    chart, container: chartEl, titleColor: '#f5f7fb',
-    seriesConfigs: [{ series: lineSeries, label: month + ' Settlement', color: '#00d4ff', emphasis: true,
+    chart, container: chartEl, titleColor: '#e6edf3',
+    seriesConfigs: [{ series: lineSeries, label: month + ' Settlement', color: '#58a6ff', emphasis: true,
       getPoint: p => lookup.get(typeof p.time === 'string' ? p.time : ''),
       formatValue: v => '$' + v.toFixed(3) }],
     getTitle: p => { const d = lookup.get(typeof p.time === 'string' ? p.time : ''); return d ? d.year.toString() : ''; },
@@ -7558,7 +7585,7 @@ function buildExpirySeasonalBar(range) {
     const isActive = m === _expirySelectedMonth;
     const aboveAvg = avgs[i] >= meanAvg;
     const barColor = isActive
-      ? (aboveAvg ? 'rgba(0,255,136,0.85)' : 'rgba(255,68,85,0.80)')
+      ? (aboveAvg ? 'rgba(63,185,80,0.85)' : 'rgba(248,81,73,0.80)')
       : SEASON_COLORS[m];
     const borderStyle = isActive ? 'outline:2px solid rgba(255,255,255,0.55);outline-offset:-2px;' : '';
     const tip = `${m}: avg $${avgs[i].toFixed(3)} · rank #${monthRanks[i]} of 12 · ${counts[i]} contracts · ${avgs[i] >= meanAvg ? '+' : ''}${((avgs[i] - meanAvg) / meanAvg * 100).toFixed(1)}% vs cross-month avg. Click to view full ${m} price history.`;
@@ -7785,7 +7812,7 @@ function renderDailyTab() {
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <div class="series-toggle-bar" id="daily-ref-toggles" style="padding:0;">
               <button class="series-pill active" data-ref="52wh" style="border-color:rgba(255,140,0,0.45);" data-tooltip="52-week high — rolling highest close over the trailing 52 weeks. Key resistance level watched by technical traders."><span class="swatch" style="background:#ff8c00;"></span>52W H</button>
-              <button class="series-pill active" data-ref="52wl" style="border-color:rgba(0,212,255,0.45);" data-tooltip="52-week low — rolling lowest close over the trailing 52 weeks. Key support level watched by technical traders."><span class="swatch" style="background:#00d4ff;"></span>52W L</button>
+              <button class="series-pill active" data-ref="52wl" style="border-color:rgba(56,139,253,0.45);" data-tooltip="52-week low — rolling lowest close over the trailing 52 weeks. Key support level watched by technical traders."><span class="swatch" style="background:#58a6ff;"></span>52W L</button>
               <button class="series-pill active" data-ref="avg360" style="border-color:rgba(167,139,250,0.45);" data-tooltip="360-day rolling average close — a medium-term trend reference. Price above = bullish bias; below = bearish bias."><span class="swatch" style="background:#a78bfa;"></span>360D Avg</button>
             </div>
             <div class="segment-switch" id="daily-range-switch">
@@ -8026,7 +8053,7 @@ function _renderDailyStatChips(stats, currentPrice) {
     if (cache) {
       chipData = cache.data;
       badge = cache.isStale 
-        ? `<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(255,68,85,0.12);color:var(--negative);border:1px solid rgba(255,68,85,0.25);margin-left:auto;font-family:var(--font-mono);font-weight:700;letter-spacing:0.02em;">⚠️ STALE CACHE (${cache.ageH}h ago)</span>`
+        ? `<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(248,81,73,0.12);color:var(--negative);border:1px solid rgba(248,81,73,0.25);margin-left:auto;font-family:var(--font-mono);font-weight:700;letter-spacing:0.02em;">⚠️ STALE CACHE (${cache.ageH}h ago)</span>`
         : `<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(255,204,0,0.12);color:var(--warning);border:1px solid rgba(255,204,0,0.25);margin-left:auto;font-family:var(--font-mono);font-weight:700;letter-spacing:0.02em;">🟡 CACHED (${cache.ageH}h ago)</span>`;
     }
   } else if (stats && currentPrice) {
@@ -8096,7 +8123,7 @@ function _renderDailyStatChips(stats, currentPrice) {
   el.innerHTML = [
     chip('52W High', s.high52w ? '$' + s.high52w.toFixed(3) : '\u2014', '#ff8c00',
       `Rolling 52-week high — the highest closing price over the last 252 trading sessions. Acts as a key resistance level.`),
-    chip('52W Low', s.low52w ? '$' + s.low52w.toFixed(3) : '\u2014', '#00d4ff',
+    chip('52W Low', s.low52w ? '$' + s.low52w.toFixed(3) : '\u2014', '#58a6ff',
       `Rolling 52-week low — the lowest closing price over the last 252 trading sessions. Acts as a key support level.`),
     rangeChip,
     chip('vs 52W H', vsHVal, hColor,
@@ -8134,9 +8161,9 @@ function updateDailyMainChart(range) {
   chart.applyOptions({ rightPriceScale: { scaleMargins: { top: 0.12, bottom: 0.12 } } });
 
   const areaSeries = chart.addAreaSeries({
-    lineColor: '#00d4ff',
-    topColor: 'rgba(0,212,255,0.18)',
-    bottomColor: 'rgba(0,212,255,0.0)',
+    lineColor: '#58a6ff',
+    topColor: 'rgba(56,139,253,0.18)',
+    bottomColor: 'rgba(56,139,253,0.0)',
     lineWidth: 2,
     priceLineVisible: false,
     lastValueVisible: true,
@@ -8175,7 +8202,7 @@ function updateDailyMainChart(range) {
     STATE._dailyRefSeries['52wh'] = s;
   }
   if (stats && stats.low52w && fullDateRange.length) {
-    const s = makeRefSeries('#00d4ff', true);
+    const s = makeRefSeries('#58a6ff', true);
     s.setData(fullDateRange.map(d => ({ time: d.time, value: stats.low52w })));
     s.applyOptions({ visible: refVis['52wl'], title: '52W L' });
     STATE._dailyRefSeries['52wl'] = s;
@@ -8242,8 +8269,8 @@ function updateDailyMainChart(range) {
 
   const dataLookup = new Map(data.map(p => [p.date, p]));
   attachChartTooltip({
-    chart, container: chartContainer, titleColor: '#f5f7fb',
-    seriesConfigs: [{ series: areaSeries, label: 'NG=F Close', color: '#00d4ff', emphasis: true,
+    chart, container: chartContainer, titleColor: '#e6edf3',
+    seriesConfigs: [{ series: areaSeries, label: 'NG=F Close', color: '#58a6ff', emphasis: true,
       getPoint: param => dataLookup.get(typeof param.time === 'string' ? param.time : ''),
       formatValue: v => '$' + v.toFixed(3) }],
     getTitle: param => formatDailyDate(typeof param.time === 'string' ? param.time : ''),
@@ -8399,7 +8426,7 @@ function _renderSpreadPanel(ngData) {
       `vs avg: <span style="color:${vsAvgColor}">${fmt(vsAvg)}</span>`),
     chip('52W High', fmt(high52w), '#ff8c00',
       `Highest spread value over the last 252 trading sessions (~1 year). Shown as the orange dashed reference line on the chart.`),
-    chip('52W Low', fmt(low52w), '#00d4ff',
+    chip('52W Low', fmt(low52w), '#58a6ff',
       `Lowest spread value over the last 252 trading sessions (~1 year). Shown as the teal dashed reference line on the chart.`),
     chip('52W Range %', rangeBar, rangePctColor,
       `Where the current spread sits within its 52-week high/low range. 100% = at the 52W high, 0% = at the 52W low. Helps gauge whether the spread is historically wide or compressed.`),
@@ -8435,7 +8462,7 @@ function _renderSpreadPanel(ngData) {
   sHighSeries.setData(spreadSeries.map(s => ({ time: s.time, value: sHighVal })));
 
   const sLowSeries = spreadChart.addLineSeries({
-    color: '#00d4ff', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
+    color: '#58a6ff', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false,
     axisLabelVisible: true, title: '52W Low'
   });
   sLowSeries.setData(spreadSeries.map(s => ({ time: s.time, value: sLowVal })));
@@ -8450,7 +8477,7 @@ function _renderSpreadPanel(ngData) {
   attachChartTooltip({
     chart: spreadChart,
     container: chartEl,
-    titleColor: '#f5f7fb',
+    titleColor: '#e6edf3',
     seriesConfigs: [{
       series: sSeries,
       label: 'Spread',
@@ -8491,8 +8518,8 @@ function _renderSpreadPanel(ngData) {
       <button class="series-pill ${onH ? 'active' : ''}" onclick="toggleDailySpreadSeries('high')" style="border-color:rgba(255,140,0,0.45);opacity:${onH ? '1' : '0.4'};">
         <span class="swatch" style="background:#ff8c00;"></span>52W H
       </button>
-      <button class="series-pill ${onL ? 'active' : ''}" onclick="toggleDailySpreadSeries('low')" style="border-color:rgba(0,212,255,0.45);opacity:${onL ? '1' : '0.4'};">
-        <span class="swatch" style="background:#00d4ff;"></span>52W L
+      <button class="series-pill ${onL ? 'active' : ''}" onclick="toggleDailySpreadSeries('low')" style="border-color:rgba(56,139,253,0.45);opacity:${onL ? '1' : '0.4'};">
+        <span class="swatch" style="background:#58a6ff;"></span>52W L
       </button>
     `;
     sSeries.applyOptions({ visible: on });
@@ -8667,7 +8694,7 @@ function _renderWeeklyChart(data) {
     priceFormat: { type: 'custom', formatter: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%', minMove: 0.01 },
     priceLineVisible: false, lastValueVisible: false,
   });
-  hSeries.setData(weekly.map(w => ({ time: w.date, value: w.pct, color: w.pct >= 0 ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)' })));
+  hSeries.setData(weekly.map(w => ({ time: w.date, value: w.pct, color: w.pct >= 0 ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)' })));
   applyChartTimeScaleOptions(wChart, { formatter: undefined, barSpacing: Math.max(3, Math.floor(800 / weekly.length)), fixLeftEdge: true, fixRightEdge: true });
   wChart.timeScale().fitContent();
 
@@ -8682,8 +8709,8 @@ function _renderWeeklyChart(data) {
   });
 
   const wLookup = new Map(weekly.map(w => [w.date, w]));
-  attachChartTooltip({ chart: wChart, container: chartEl, titleColor: '#f5f7fb',
-    seriesConfigs: [{ series: hSeries, label: 'Weekly \u0394%', color: '#00ff88', emphasis: true,
+  attachChartTooltip({ chart: wChart, container: chartEl, titleColor: '#e6edf3',
+    seriesConfigs: [{ series: hSeries, label: 'Weekly \u0394%', color: '#3fb950', emphasis: true,
       getPoint: p => wLookup.get(typeof p.time === 'string' ? p.time : ''),
       formatValue: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%' }],
     getTitle: p => { const w = wLookup.get(typeof p.time === 'string' ? p.time : ''); return w ? formatDailyDate(w.date) : ''; },
@@ -8729,9 +8756,9 @@ function _renderWeeklyChart(data) {
     const tip  = BLABELS[i] + ': ' + c + ' weeks (' + pct + '% of total)';
     distHtml +=
       '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;cursor:default;" data-tooltip="' + tip + '">' +
-        '<span style="width:82px;text-align:right;color:' + (isPos ? 'rgba(0,255,136,0.8)' : 'rgba(255,68,85,0.8)') + ';flex-shrink:0;font-size:10px;">' + BLABELS[i] + '</span>' +
+        '<span style="width:82px;text-align:right;color:' + (isPos ? 'rgba(63,185,80,0.8)' : 'rgba(248,81,73,0.8)') + ';flex-shrink:0;font-size:10px;">' + BLABELS[i] + '</span>' +
         '<div style="flex:1;background:var(--bg-primary);border-radius:2px;height:10px;">' +
-          '<div style="width:' + barW + '%;height:100%;background:' + (isPos ? 'rgba(0,255,136,0.65)' : 'rgba(255,68,85,0.65)') + ';border-radius:2px;"></div>' +
+          '<div style="width:' + barW + '%;height:100%;background:' + (isPos ? 'rgba(63,185,80,0.65)' : 'rgba(248,81,73,0.65)') + ';border-radius:2px;"></div>' +
         '</div>' +
         '<span style="width:26px;text-align:right;color:var(--text-primary);font-weight:600;">' + c + '</span>' +
         '<span style="width:34px;text-align:right;color:var(--text-muted);font-size:10px;">' + pct + '%</span>' +
@@ -9056,7 +9083,7 @@ function _renderMonthlySeasonality(data) {
       const pctPos = total ? Math.round(pos / total * 100) : 0;
       const label = (isPos ? '+' : '') + avg.toFixed(2) + '%';
       const tip = MONTH_NAMES[i] + ': avg ' + label + ' · ' + pos + '/' + total + ' years positive (' + pctPos + '%) · ' + (total - pos) + '/' + total + ' years negative';
-      const barColor = isPos ? 'rgba(0,255,136,0.75)' : 'rgba(255,68,85,0.75)';
+      const barColor = isPos ? 'rgba(63,185,80,0.75)' : 'rgba(248,81,73,0.75)';
       const labelColor = isPos ? 'var(--positive)' : 'var(--negative)';
       const pctColor = pctPos >= 60 ? 'var(--positive)' : pctPos <= 40 ? 'var(--negative)' : 'var(--text-muted)';
       bodyHtml +=
@@ -9174,9 +9201,9 @@ function _renderMonthlySeasonality(data) {
       const p75Y = toY(s.p75).toFixed(1);
       const p95Y = toY(s.p95).toFixed(1);
       const avgY = toY(avg).toFixed(1);
-      const boxColor = isPos ? 'rgba(0,255,136,0.25)' : 'rgba(255,68,85,0.25)';
-      const strokeColor = isPos ? 'rgba(0,255,136,0.7)' : 'rgba(255,68,85,0.7)';
-      const avgColor = isPos ? '#00ff88' : '#ff4455';
+      const boxColor = isPos ? 'rgba(63,185,80,0.25)' : 'rgba(248,81,73,0.25)';
+      const strokeColor = isPos ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)';
+      const avgColor = isPos ? '#3fb950' : '#f85149';
 
       // Whisker lines (p5 to p95)
       svgContent += `<line x1="${cxPct}" y1="${p5Y}" x2="${cxPct}" y2="${p95Y}" stroke="${strokeColor}" stroke-width="1.5" stroke-dasharray="2,2"/>`;
@@ -9208,7 +9235,7 @@ function _renderMonthlySeasonality(data) {
         <span data-tooltip="The interquartile range — 50% of all monthly returns fall inside this box.">▬ p25–p75 (IQR box)</span>
         <span data-tooltip="The 5th–95th percentile range — whiskers capture 90% of returns, excluding extreme outliers.">⊣⊢ p5–p95 whiskers</span>
         <span data-tooltip="The median (p50) return — half of months were above, half below this line.">— median (p50)</span>
-        <span data-tooltip="The arithmetic mean return — can differ from median when large spikes skew the distribution."><span style="color:rgba(0,255,136,0.8);">◆</span> mean</span>
+        <span data-tooltip="The arithmetic mean return — can differ from median when large spikes skew the distribution."><span style="color:rgba(63,185,80,0.8);">◆</span> mean</span>
         <span data-tooltip="Individual returns outside the p5–p95 whisker range — rare but significant outlier months.">• outliers (&lt;p5 or &gt;p95)</span>
         <span style="margin-left:6px;border-left:1px solid rgba(255,255,255,0.1);padding-left:10px;" data-tooltip="n = number of years of data available for that calendar month.">n = years of data</span>
       </div>
@@ -9294,7 +9321,7 @@ function _renderAnnualPerformance(data) {
     const isCurrent = r.year === currentYearStr;
     const vsAvg = r.pct - avgAnn;
     const barW = Math.max(2, (Math.abs(r.pct) / maxAbsPct * 80)).toFixed(1);
-    const barColor = r.pct >= 0 ? 'rgba(0,255,136,0.65)' : 'rgba(255,68,85,0.65)';
+    const barColor = r.pct >= 0 ? 'rgba(63,185,80,0.65)' : 'rgba(248,81,73,0.65)';
     const vsColor = vsAvg >= 0 ? 'var(--positive)' : 'var(--negative)';
     const rowTip = r.year + ': $' + r.jan.toFixed(3) + ' → $' + r.dec.toFixed(3) +
       ' · ' + (r.pct >= 0 ? '+' : '') + r.pct.toFixed(1) + '% · Rank #' + r.rank + '/' + rows.length +
