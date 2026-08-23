@@ -2553,8 +2553,11 @@ function findDateForDay(filtered, d) {
 function baseChartOptions() {
   return {
     autoSize: true,
-    layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#8b949e', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
-    grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 },
+    grid: {
+      vertLines: { color: 'rgba(48,54,61,0.55)', visible: true },
+      horzLines: { color: 'rgba(48,54,61,0.55)', visible: true },
+    },
     crosshair: {
       mode: LightweightCharts.CrosshairMode.Normal,
       vertLine: {
@@ -6120,10 +6123,10 @@ function renderCurveMetrics(curveData, windowContext) {
 
   // Card-style chip (matches KPI chips used elsewhere)
   const chip = (label, valueHtml, color, tip, sub) =>
-    `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;flex:1;" data-tooltip="${tip}">` +
+    `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;min-width:100px;flex:1;" data-tooltip="${tip}">` +
     `<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>` +
     `<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color};">${valueHtml}</div>` +
-    (sub ? `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);">${sub}</div>` : '') +
+    `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);min-height:13px;">${sub || ''}</div>` +
     `</div>`;
 
   // Coverage chip with mini bar
@@ -8112,12 +8115,12 @@ function _renderDailyStatChips(stats, currentPrice) {
 
   const s = chipData;
 
-  // chip(label, valueHtml, color, tooltip, subHtml)
+  // chip(label, valueHtml, color, tooltip, subHtml) — constant height via sub-slot
   const chip = (label, value, color, tip, sub) =>
-    `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;" data-tooltip="${tip || ''}">` +
+    `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;min-width:100px;" data-tooltip="${tip || ''}">` +
     `<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>` +
     `<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color || 'var(--text-primary)'};">${value}</div>` +
-    (sub ? `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);">${sub}</div>` : '') +
+    `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);min-height:13px;">${sub || ''}</div>` +
     `</div>`;
 
   const curP = currentPrice || (s.lastPrice || 0);
@@ -8472,10 +8475,10 @@ function _renderSpreadPanel(ngData) {
   </div>`;
 
   const chip = (label, value, color, tip, sub) =>
-    `<div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:6px 12px;min-width:100px;flex:1;" data-tooltip="${tip}">` +
+    `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 12px;min-width:100px;flex:1;" data-tooltip="${tip}">` +
     `<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">${label}</div>` +
     `<div style="font-family:var(--font-mono);font-size:14px;font-weight:700;color:${color || 'var(--text-primary)'};">${value}</div>` +
-    (sub ? `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);">${sub}</div>` : '') +
+    `<div style="font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono);min-height:13px;">${sub || ''}</div>` +
     `</div>`;
 
   chipsEl.innerHTML = [

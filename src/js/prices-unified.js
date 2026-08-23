@@ -1464,8 +1464,8 @@ function updatePricesChart({ skipDetails = false } = {}) {
     upperSeries.setData(bandUpper);
 
     const lowerSeries = chart.addAreaSeries({
-      topColor: '#0d1117',
-      bottomColor: '#0d1117',
+      topColor: '#161b22',
+      bottomColor: '#161b22',
       lineColor: 'rgba(255, 255, 255, 0.18)',
       lineWidth: 1.25,
       priceLineVisible: false,
