@@ -753,6 +753,30 @@ function cyclePriceYear(direction) {
   schedulePricesChartUpdate();
 }
 
+function resolveDefaultContract() {
+  // Nearest still-active HH contract = the next expiring one.
+  // Skipped entirely when URL params (?month=&year= or #hash) target a contract.
+  const view = STATE.priceView;
+  if (!view._defaultResolved && view.instrument === 'hh'
+      && !new URLSearchParams(window.location.search).has('month')
+      && !window.location.hash.includes('month')) {
+    const now = new Date();
+    for (let offset = 0; offset < 24; offset++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      const mIdx = d.getMonth();
+      const year = d.getFullYear();
+      // Skip contracts that have already expired (e.g. Aug 2026 late-Aug).
+      if (typeof computeNGExpiry === 'function' && computeNGExpiry(year, mIdx) < now) continue;
+      if (getAvailableContractYears(view.instrument, MONTHS[mIdx]).includes(year)) {
+        view.month = MONTHS[mIdx];
+        view.year = year;
+        break;
+      }
+    }
+    view._defaultResolved = true;
+  }
+}
+
 function renderPricesTab() {
   const container = document.getElementById('tab-prices');
   if (!container.dataset.built) {
@@ -808,6 +832,7 @@ function renderPricesTab() {
       startSlider.addEventListener('input', event => {
         const length = parseInt(event.target.dataset.length || '0', 10);
         if (!length) return;
+        STATE.priceView._userAdjustedRange = true;
         const nextStart = clamp(parseInt(event.target.value, 10) || 0, 0, Math.max(0, (STATE.priceView.rangeEnd ?? (length - 1)) - 1));
         STATE.priceView.rangeStart = nextStart;
         schedulePricesChartUpdate({ skipDetails: true });
@@ -815,6 +840,7 @@ function renderPricesTab() {
       endSlider.addEventListener('input', event => {
         const length = parseInt(event.target.dataset.length || '0', 10);
         if (!length) return;
+        STATE.priceView._userAdjustedRange = true;
         const nextEnd = clamp(parseInt(event.target.value, 10) || 0, Math.min(length - 1, (STATE.priceView.rangeStart || 0) + 1), length - 1);
         STATE.priceView.rangeEnd = nextEnd;
         schedulePricesChartUpdate({ skipDetails: true });
@@ -823,6 +849,7 @@ function renderPricesTab() {
   }
 
   syncPriceViewState();
+  resolveDefaultContract();
   renderPricesControls();
   updatePricesChart();
 }
@@ -1061,16 +1088,19 @@ function renderPricesSummaryBar(context) {
       : null,
   ].filter(Boolean);
 
-  const DIVIDER = `<div style="width:1px;background:var(--border);align-self:stretch;margin:0 14px;flex-shrink:0;"></div>`;
   const LABEL_STYLE = `font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:var(--text-muted);margin-bottom:4px;`;
   const VALUE_STYLE = `font-family:var(--font-mono);font-size:13px;`;
 
+  // Segmented KPI strip (Blue Margin stat-bar pattern): bordered grid cells,
+  // left-aligned label/value pairs, fills the chart-column width evenly.
   summaryBar.innerHTML = `
-    <div style="font-family:var(--font-ui);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);margin-bottom:10px;text-align:center;" data-tooltip="Statistics computed over the selected chart window. Drag the range sliders above to narrow the window — all values update instantly.">Window Metrics</div>
-    <div style="display:flex;align-items:center;justify-content:center;overflow-x:auto;padding-bottom:2px;">
-      ${metrics.map((m, i) => `
-        ${i > 0 ? DIVIDER : ''}
-        <div style="display:flex;flex-direction:column;flex-shrink:0;align-items:center;text-align:center;" data-tooltip="${m.tip || ''}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;" data-tooltip="Statistics computed over the selected chart window. Drag the range sliders above to narrow the window — all values update instantly.">
+      <span class="card-title" style="margin-bottom:0;">Window Metrics</span>
+      <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">${filteredData.length}/${fullData.length} pts</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+      ${metrics.map(m => `
+        <div style="background:var(--bg-card);padding:9px 12px;cursor:default;" data-tooltip="${m.tip || ''}">
           <div style="${LABEL_STYLE}">${m.label}</div>
           <div style="${VALUE_STYLE}">${m.html}</div>
         </div>

@@ -149,6 +149,7 @@ html, body {
   white-space: nowrap;
 }
 .freshness-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; background: var(--positive); }
+#nav .live-price .neutral { color: var(--text-secondary); }
 
 /* ═══════════════════════════════════════════════════════════
    MAIN CONTENT
@@ -1027,8 +1028,10 @@ const STATE = {
   spotStats: { avg: 0, stddev: 0, count: 0 },
   priceView: {
     instrument: 'hh',
+    // Default = NEXT EXPIRING ACTIVE contract; resolved at first render
+    // by resolveDefaultContract() unless URL params override.
     month: 'Aug',
-    year: 2026,
+    year: new Date().getFullYear(),
     compare: false,
     compareYear: 2025,
     tradingDays: false,
@@ -1481,7 +1484,20 @@ async function loadLiveData() {
   } catch (e) {
     console.warn('live_quotes.json fetch fallback:', e);
   }
-  
+
+  // Render HUB FRONT immediately from whatever the precompiled feed (or
+  // localStorage) already provided — don't wait for the full ticker sweep.
+  try {
+    const earlyEl = document.getElementById('live-price-val');
+    const ngfEarly = STATE.liveData['NG=F'];
+    if (earlyEl && Array.isArray(ngfEarly) && ngfEarly.length >= 2 && !(earlyEl.textContent || '').includes('$')) {
+      const l = ngfEarly[ngfEarly.length - 1], pv = ngfEarly[ngfEarly.length - 2];
+      const c = pv.p ? (l.p - pv.p) / pv.p * 100 : 0;
+      earlyEl.textContent = `$${l.p.toFixed(3)} ${c >= 0 ? '\u25B2' : '\u25BC'}${c >= 0 ? '+' : ''}${c.toFixed(2)}%`;
+      earlyEl.className = c >= 0 ? 'positive' : 'negative';
+    }
+  } catch (e) { /* cosmetic */ }
+
   const hhTickers = getActiveHHTickers();
   const ttfTickers = getActiveTTFTickers();
   const allTickers = [...hhTickers, ...ttfTickers];
@@ -1563,6 +1579,24 @@ async function loadLiveData() {
     if (i + batchSize < allTickers.length) await new Promise(res => setTimeout(res, 300));
   }
   updateStatus();
+
+  // ── HUB FRONT fallback ──────────────────────────────────────────────
+  // If no live NG=F quote arrived (weekends/holidays/offline feed), show the
+  // last known close from the continuous series instead of a bare dash.
+  try {
+    const lpEl = document.getElementById('live-price-val');
+    const hasLiveNGF = Array.isArray(STATE.liveData['NG=F']) && STATE.liveData['NG=F'].length > 0;
+    if (lpEl && !hasLiveNGF && Array.isArray(STATE._ngContinuous) && STATE._ngContinuous.length >= 2) {
+      const cont = STATE._ngContinuous;
+      const lastC = cont[cont.length - 1];
+      const prevC = cont[cont.length - 2];
+      const chg = prevC.p ? (lastC.p - prevC.p) / prevC.p * 100 : 0;
+      lpEl.textContent = `$${lastC.p.toFixed(3)} \u25B2${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`;
+      lpEl.className = 'neutral';
+      lpEl.style.opacity = '0.75';
+      lpEl.dataset.tooltip = 'Last known close (market closed or live feed unavailable) \u2014 ' + lastC.date;
+    }
+  } catch (e) { /* cosmetic fallback only */ }
 
   // Save successful loads to cache (Slimmed: store only latest point for each contract to save space)
   if (STATE.hhLiveCount >= 60) {
@@ -1993,6 +2027,14 @@ async function init() {
       invalidateDerivedCaches();
 
       if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
+        // Live data just landed — release any stale full-span window so the
+        // chart extends to the newest live point (e.g. archive ends Mar,
+        // live data runs to Aug). Only when user hasn't customized a range.
+        const pv = STATE.priceView;
+        if (!pv._userAdjustedRange) {
+          pv.rangeStart = 0;
+          pv.rangeEnd = null;
+        }
         syncPriceViewState();
         renderPricesControls();
         updatePricesChart();
@@ -7592,7 +7634,7 @@ function buildExpirySeasonalBar(range) {
     html += `<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;cursor:pointer;" ` +
       `onclick="showExpiryMonthProfile('${m}')" data-tooltip="${tip}">` +
       `<span style="font-family:var(--font-mono);font-size:9px;color:${isActive ? 'var(--text-primary)' : 'var(--text-secondary)'};">$${avgs[i].toFixed(2)}</span>` +
-      `<div style="width:100%;height:${h}px;background:${barColor};border-radius:2px 2px 0 0;${borderStyle}" class="expiry-bar-col" data-month="${m}"></div>` +
+      `<div style="width:28px;height:${h}px;background:${barColor};border-radius:2px 2px 0 0;${borderStyle}" class="expiry-bar-col" data-month="${m}"></div>` +
       `<span style="font-family:var(--font-mono);font-size:10px;color:${isActive ? 'var(--text-primary)' : 'var(--text-muted)'};padding-bottom:4px;font-weight:${isActive ? '700' : '400'};">${m}</span>` +
       `</div>`;
   });
@@ -7910,6 +7952,8 @@ function renderDailyTab() {
 
       <div class="card" style="padding:0;" id="daily-table"></div>
 
+      <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-monthly-heatmap"></div>
+
       <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-seasonality"></div>
 
       <div class="card" style="padding:0;margin-top:var(--gap);" id="daily-annual"></div>
@@ -8035,6 +8079,7 @@ function updateDailyTracker() {
   _renderSpreadPanel(data);
   _renderExpiryCalendar(now);
   _renderWeeklyChart(data);
+  _renderMonthlyHeatmap(data);
   _renderDailyPriceLog(data);
   _renderMonthlySeasonality(data);
   _renderAnnualPerformance(data);
@@ -8274,11 +8319,24 @@ function updateDailyMainChart(range) {
       getPoint: param => dataLookup.get(typeof param.time === 'string' ? param.time : ''),
       formatValue: v => '$' + v.toFixed(3) }],
     getTitle: param => formatDailyDate(typeof param.time === 'string' ? param.time : ''),
-    getMetrics: () => {
+    getMetrics: param => {
       if (!stats) return [];
+      // Contextual: rolling 52W window ending at the hovered session.
+      const t = typeof (param && param.time) === 'string' ? param.time : '';
+      const hovered = t ? dataLookup.get(t) : null;
+      if (!hovered) {
+        return [
+          { label: '52W High', value: stats.high52w ? '$' + stats.high52w.toFixed(3) : '\u2014' },
+          { label: '52W Low', value: stats.low52w ? '$' + stats.low52w.toFixed(3) : '\u2014' },
+        ];
+      }
+      const upto = data.filter(p => p.date <= t);
+      const w52 = upto.slice(-252);
+      const hi = Math.max(...w52.map(p => p.p));
+      const lo = Math.min(...w52.map(p => p.p));
       return [
-        { label: '52W High', value: stats.high52w ? '$' + stats.high52w.toFixed(3) : '\u2014' },
-        { label: '52W Low', value: stats.low52w ? '$' + stats.low52w.toFixed(3) : '\u2014' },
+        { label: '52W High @' + t.slice(5), value: Number.isFinite(hi) ? '$' + hi.toFixed(3) : '\u2014' },
+        { label: '52W Low @' + t.slice(5), value: Number.isFinite(lo) ? '$' + lo.toFixed(3) : '\u2014' },
       ];
     },
   });
@@ -8490,11 +8548,28 @@ function _renderSpreadPanel(ngData) {
       const s = sLookup.get(typeof p.time === 'string' ? p.time : '');
       return s ? formatDailyDate(s.time) : 'NG vs TTF Spread';
     },
-    getMetrics: () => [
-      { label: '52W High', value: (high52w >= 0 ? '+' : '') + high52w.toFixed(3) },
-      { label: '52W Low', value: (low52w >= 0 ? '+' : '') + low52w.toFixed(3) },
-      { label: 'Avg Spread', value: (avgSpread >= 0 ? '+' : '') + avgSpread.toFixed(3) }
-    ],
+    getMetrics: param => {
+      // Contextual: 52W H/L reflect the trailing-252-session window ENDING at
+      // the hovered date; avg = mean of all data up to that date.
+      const hovered = sLookup.get(typeof (param && param.time) === 'string' ? param.time : '');
+      if (!hovered) {
+        return [
+          { label: '52W High', value: (high52w >= 0 ? '+' : '') + high52w.toFixed(3) },
+          { label: '52W Low', value: (low52w >= 0 ? '+' : '') + low52w.toFixed(3) },
+          { label: 'Avg Spread', value: (avgSpread >= 0 ? '+' : '') + avgSpread.toFixed(3) }
+        ];
+      }
+      const upto = spreadSeries.filter(s => s.time <= hovered.time);
+      const w52 = upto.slice(-252);
+      const h = Math.max(...w52.map(s => s.value));
+      const l = Math.min(...w52.map(s => s.value));
+      const a = upto.reduce((sum, s) => sum + s.value, 0) / upto.length;
+      return [
+        { label: '52W High @' + hovered.time.slice(5), value: (h >= 0 ? '+' : '') + h.toFixed(3) },
+        { label: '52W Low @' + hovered.time.slice(5), value: (l >= 0 ? '+' : '') + l.toFixed(3) },
+        { label: 'Avg to Date', value: (a >= 0 ? '+' : '') + a.toFixed(3) }
+      ];
+    },
     getNote: () => 'HUB front month minus TTF front month (converted to USD/MMBtu)'
   });
 
@@ -9358,6 +9433,75 @@ function _renderAnnualPerformance(data) {
 }
 
 /* ─── Feature 1: Conditional Probability / Streak Table (Daily Tracker) ─── */
+function _renderMonthlyHeatmap(data) {
+  // Monthly Returns Heatmap: % return per calendar month per year, NG=F continuous.
+  // Rows = years (newest first), columns = Jan..Dec. Color = signed return.
+  const el = document.getElementById('daily-monthly-heatmap');
+  if (!el || !Array.isArray(data) || data.length < 400) return;
+
+  const byMonthYear = new Map();
+  for (const p of data) {
+    const key = p.date.slice(0, 7); // YYYY-MM
+    const cur = byMonthYear.get(key);
+    if (!cur) byMonthYear.set(key, { first: p.p, last: p.p });
+    else cur.last = p.p;
+  }
+  const cells = new Map(); // year -> [12 returns]
+  for (const [key, v] of byMonthYear) {
+    if (!Number.isFinite(v.first) || !Number.isFinite(v.last)) continue;
+    const y = parseInt(key.slice(0, 4), 10);
+    const m = parseInt(key.slice(5, 7), 10) - 1;
+    const ret = (v.last - v.first) / v.first * 100;
+    let row = cells.get(y);
+    if (!row) { row = new Array(12).fill(null); cells.set(y, row); }
+    row[m] = ret;
+  }
+
+  const fmtPct = v => (v >= 0 ? '+' : '') + v.toFixed(1);
+  const cellColor = v => {
+    if (v === null) return 'transparent';
+    const t = Math.min(1, Math.abs(v) / 20);
+    return v >= 0 ? `rgba(63,185,80,${(0.12 + t * 0.55).toFixed(2)})` : `rgba(248,81,73,${(0.12 + t * 0.55).toFixed(2)})`;
+  };
+  const monthAvg = Array.from({ length: 12 }, (_, m) => {
+    const vals = [...cells.values()].map(r => r[m]).filter(v => v !== null);
+    return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+  });
+
+  const years = [...cells.keys()].sort((a, b) => b - a);
+  const shownYears = years.filter(y => cells.get(y).some(v => v !== null));
+  const rowsHtml = shownYears.map(y => {
+    const row = cells.get(y);
+    const tds = row.map((v, m) => {
+      const tip = v === null ? `${MONTHS[m]} ${y}: partial month — no full-session return`
+        : `${MONTHS[m]} ${y}: ${fmtPct(v)} close-to-close (${byMonthYear.get(y + '-' + String(m + 1).padStart(2, '0')).first.toFixed(3)} \u2192 ${byMonthYear.get(y + '-' + String(m + 1).padStart(2, '0')).last.toFixed(3)})`;
+      return `<td style="text-align:center;background:${cellColor(v)};cursor:default;" data-tooltip="${tip}">${v === null ? '<span style="color:var(--text-muted);">·</span>' : fmtPct(v)}</td>`;
+    }).join('');
+    return `<tr><td style="text-align:left;font-weight:700;">${y}</td>${tds}</tr>`;
+  }).join('');
+
+  const avgTds = monthAvg.map((a, m) =>
+    `<td style="text-align:center;font-family:var(--font-ui);" data-tooltip="${MONTHS[m]} average across ${shownYears.length} years">${a === null ? '\u2014' : '<span style="color:' + (a >= 0 ? 'var(--positive)' : 'var(--negative)') + ';">' + fmtPct(a) + '</span>'}</td>`
+  ).join('');
+
+  el.innerHTML =
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px;flex-wrap:wrap;gap:6px;">
+      <span class="card-title" style="padding:0;margin-bottom:0;" data-tooltip="Close-to-close % return for each calendar month of NG=F continuous front-month data. Green = up month, red = down month; intensity scales with magnitude. Bottom row shows each month's historical average. Click a year in the Daily Table above to inspect it further.">Monthly Returns Heatmap</span>
+      <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">${data[0].date.slice(0, 7)} \u2192 ${data[data.length - 1].date.slice(0, 7)} · close-to-close · intensity = |return| / 20%</span>
+    </div>
+    <div style="overflow-x:auto;padding:4px 14px 12px;">
+      <table style="font-size:11px;">
+        <thead><tr><th style="text-align:left;">Year</th>${MONTHS.map(m => `<th style="text-align:center;">${m}</th>`).join('')}</tr></thead>
+        <tbody>${rowsHtml}
+          <tr style="border-top:2px solid var(--border);">
+            <td style="text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;">Avg</td>
+            ${avgTds}
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function _renderStreakTable(data) {
   const el = document.getElementById('daily-streak');
   if (!el || !data || data.length < 100) {
