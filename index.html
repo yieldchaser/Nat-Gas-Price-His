@@ -2092,6 +2092,10 @@ async function init() {
           STATE.renderedTabs.daily = false;
         }
       }
+    }).catch(() => {
+      // Live fetch failed entirely (proxies down etc.) — the strip must still
+      // settle on archive-backed values instead of lingering placeholders.
+      updateSignalStrip();
     });
   } catch (e) {
     console.error('Init failed:', e);
@@ -9867,9 +9871,12 @@ async function updateSignalStrip() {
     if (!ng.length) { el.innerHTML = ''; return; }
     const lastP = ng[ng.length - 1].p;
     // Heavy stats need the full merged history; the early feed-only series
-    // is too short for percentile/vol/Z to be meaningful.
+    // is too short for percentile/vol/Z to be meaningful. When the merge
+    // underdelivers (proxy failures etc.), fall back to the SHIPPED archive
+    // for historical context — those stats must never depend on the network.
     const FULL = ng.length >= 250;
-    const DEEP = ng.length >= 2000; // percentile/Z need many years of context
+    const hist = FULL ? ng : (Array.isArray(STATE._ngContinuous) && STATE._ngContinuous.length >= 1000 ? STATE._ngContinuous : null);
+    const DEEP = !!hist && hist.length >= 2000; // percentile/Z need many years of context
     const LOADING_TIP = 'Waiting for full history to finish loading…';
 
     // 2. Term structure: HH forward curve contango/backwardation
@@ -9914,7 +9921,7 @@ async function updateSignalStrip() {
     // 4. Percentile vs all-time history
     let pctVal = DEEP ? '—' : '…', pctTip = DEEP ? 'All-time percentile unavailable.' : LOADING_TIP, pctColor = 'var(--text-secondary)';
     try {
-      const prices = ng.map(p => p.p).filter(Number.isFinite);
+      const prices = hist.map(p => p.p).filter(Number.isFinite);
       if (prices.length >= 100) {
         const below = prices.filter(p => p <= lastP).length;
         const pctile = Math.round(below / prices.length * 100);
@@ -9935,7 +9942,7 @@ async function updateSignalStrip() {
             d.setFullYear(d.getFullYear() - yrOff);
             d.setDate(d.getDate() + dayOff);
             const ds = d.toISOString().slice(0, 10);
-            const hit = ng.find(p => p.date === ds);
+            const hit = hist.find(p => p.date === ds);
             if (hit && Number.isFinite(hit.p)) winVals.push(hit.p);
           }
         }
@@ -9985,6 +9992,13 @@ async function updateSignalStrip() {
     el.innerHTML = '';
   }
 }
+
+// Safety net: re-run a few times during the boot window so the strip settles
+// on the best available data even if some refresh path never fires.
+(function _signalStripRetry(n) {
+  if (n <= 0) return;
+  setTimeout(() => { updateSignalStrip(); _signalStripRetry(n - 1); }, 20000);
+})(5);
 </script>
 
 <script>
