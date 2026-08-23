@@ -9247,11 +9247,11 @@ function _renderMonthlySeasonality(data) {
           // avg % label — above zero for positive, below bar top for negative
           '<div style="height:' + CHART_H + 'px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;width:100%;">' +
             (isPos ? '<span style="font-family:var(--font-mono);font-size:9px;color:' + labelColor + ';margin-bottom:2px;">' + label + '</span>' : '') +
-            (isPos ? '<div style="width:100%;height:' + barH + 'px;background:' + barColor + ';border-radius:2px 2px 0 0;"></div>' : '<div style="flex:1;"></div>') +
+            (isPos ? '<div style="width:28px;height:' + barH + 'px;background:' + barColor + ';border-radius:2px 2px 0 0;"></div>' : '<div style="flex:1;"></div>') +
           '</div>' +
           // below-zero half
           '<div style="height:' + CHART_H + 'px;display:flex;flex-direction:column;justify-content:flex-start;align-items:center;width:100%;">' +
-            (!isPos ? '<div style="width:100%;height:' + barH + 'px;background:' + barColor + ';border-radius:0 0 2px 2px;"></div>' : '<div></div>') +
+            (!isPos ? '<div style="width:28px;height:' + barH + 'px;background:' + barColor + ';border-radius:0 0 2px 2px;"></div>' : '<div></div>') +
             (!isPos ? '<span style="font-family:var(--font-mono);font-size:9px;color:' + labelColor + ';margin-top:2px;">' + label + '</span>' : '') +
           '</div>' +
         '</div>';
