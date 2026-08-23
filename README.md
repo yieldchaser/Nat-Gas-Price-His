@@ -4,14 +4,30 @@ A high-performance, information-dense analytics environment for global energy ma
 
 ---
 
-## 💎 Visual Identity: "The Blue Flame"
+## 💎 Design System
 
-The dashboard features a curated **Blue Flux** aesthetic designed for institutional-grade reliability and discretion:
+A curated **GitHub-dark institutional aesthetic** (the "Blue Margin" design language) tuned for information density and long sessions:
 
-- **Animated SVG Flames**: A large, floating blue flame on the loading screen and a subtle indicator in the navigation bar symbolize the energy markets without being overtly obvious to novices.
-- **Dynamic Glows**: Custom-layered SVG paths with CSS filter glows (`drop-shadow`) simulate the intense heat and stability of a natural gas burner.
-- **Glassmorphism**: A dark, premium UI with blurred overlays, muted borders (`#111118`), and high-contrast typography (Inter & JetBrains Mono).
-- **Custom Favicon**: A high-fidelity blue burning gas flame icon for professional tab management.
+- **Layered Surfaces**: Page base `#0d1117`, cards/charts `#161b22`, raised controls `#21262d`, separated by `#30363d` borders — charts render as distinct lighter panels with faint gridlines, not black voids.
+- **Blue Accent**: `#388bfd` family for interactive states, HH series, and active tabs; semantic green/red (`#3fb950` / `#f85149`) reserved for direction.
+- **Typography**: Inter for UI labels, JetBrains Mono for every number.
+- **Persistent Signal Strip**: A stat bar fixed beneath the navigation on every tab (see below).
+- **Animated SVG Flame**: Retained brand mark on the loading screen and nav, recolored to the blue accent family.
+
+### Signal Strip (always visible)
+
+Six always-on market signals computed client-side, each with a full explanatory tooltip:
+
+| Signal | Meaning |
+|---|---|
+| HUB FRONT | Last close of the continuous NG=F series |
+| TERM STRUCTURE | Contango/backwardation % across the quoted HH forward strip |
+| REALIZED VOL | 30-day annualized volatility (roll-splice guarded), regime-colored |
+| ALL-TIME PCTL | Current price's percentile across all recorded sessions |
+| SEASONAL Z | σ vs the same ±7-day calendar window over the last 10 years |
+| FRONT EXPIRY | Days to front-month expiry (roll-pressure clock) |
+
+Heavy stats render progressively (`…`) until full history merges, and fall back to the shipped archive when live feeds are unreachable — they never display misleading values.
 
 ---
 
@@ -59,9 +75,11 @@ Nat-Gas-Price-His/
 
 ### 1. Prices Tab (Market Analytics)
 - **Lifecycle Traces**: Price history plotted on either a Calendar Date or T-Day axis (Day 1–519 of the contract lifecycle).
+- **Next-Expiry Default**: On load, the dashboard resolves to the next expiring *active* contract (URL `?month=&year=` params still win).
 - **Seasonal Band + Window Toggle**: Min/max/avg band from the last 5 completed years. Toggle to **15Y** or **All-history** bands.
 - **Pre-Analysis Window**: For contracts more than 519 trading days from expiry, basic stats and candlestick charts are labeled "PRE-ANALYSIS WINDOW".
 - **Asset Statistics**: Stage (with progress bar), Days to Expiry, vs Seasonal Avg, Range Position (percentile), Z-Score, High/Low/Avg, From Open %, and Status.
+- **Window Metrics**: Segmented KPI grid (points, high/low/avg, spread, window Δ, vs 5Y avg, band percentile) that tracks the chart's selected window live.
 - **Same Month History**: Sidebar table of all same-month contracts with final prices ranked all-time.
 - **Market Switcher**: Seamlessly toggle between **Henry Hub (HUB)** and **Dutch TTF (TTF)** nodes.
 
@@ -72,6 +90,7 @@ Nat-Gas-Price-His/
 
 ### 3. Forward Curve Tab (Live Strip)
 - **Live Strip**: Next 72 HUB months and 36 TTF months, spaced equally on a pseudo-date axis.
+- **Quoted-Span Clamping**: The visible range snaps to quoted months only — sparse strips (e.g. TTF early in its listing cycle) never render mostly-empty charts.
 - **Stucture Analysis**: Cal year, Summer, Winter strip averages with contango/backwardation structure metrics.
 - **Compare Curve**: Overlay against 1W / 1M / 3M / 1Y ago reference curves.
 
@@ -82,8 +101,10 @@ Nat-Gas-Price-His/
 
 ### 5. Daily Tracker Tab (Continuous Series)
 - **Continuous HUB Series**: 9,000+ session foundation spliced with live market data.
-- **HUB vs TTF Spread**: Nominal spread with live EURUSD=X conversion.
-- **Box Plot Distributions**: Full return distribution (p5/p25/median/p75/p95) per calendar month.
+- **HUB vs TTF Spread**: Nominal spread with live EURUSD=X conversion; hover tooltips show rolling 52W high/low and average-to-date at the hovered date.
+- **Monthly Returns Heatmap**: Year × month close-to-close returns with intensity coding and per-month averages.
+- **Box Plot Distributions**: Full return distribution (p5/p25/median/p75/p95) per calendar month with jittered outliers; hover any month for median, mean, IQR, and extremes.
+- **Price Log Percentiles**: Each session ranked vs ALL / 10Y / 5Y / 1Y trailing windows.
 - **Conditional Streak Table**: After N consecutive up/down days, shows historical probability of the next period's direction.
 
 ---
