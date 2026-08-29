@@ -215,6 +215,16 @@ html, body {
   position: absolute; top: -1px; bottom: -1px; width: 0;
   border-left: 1px dashed rgba(248,81,73,0.7);
 }
+.sig-cell-win { flex: 0 0 auto; min-width: 124px; }
+.sig-win { display: flex; gap: 4px; }
+.sig-win-btn {
+  font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+  color: var(--text-muted); background: transparent;
+  border: 1px solid var(--border); border-radius: 5px;
+  padding: 3px 8px; cursor: pointer; line-height: 1; transition: all .12s ease;
+}
+.sig-win-btn:hover { color: var(--text-primary); border-color: rgba(56,139,253,0.5); }
+.sig-win-btn.active { color: #fff; background: var(--accent-hh); border-color: var(--accent-hh); }
 
 /* ═══════════════════════════════════════════════════════════
    CARDS
@@ -9970,15 +9980,41 @@ function _signalCell(o) {
   return '<div class="sig-cell" data-tooltip="' + (o.tip || '') + '">' + label + value + viz + '</div>';
 }
 
+// Reference window for the PCTL / SEASONAL Z cards: ALL | 10Y | 5Y
+let _sigWin = 'ALL';
+
 async function updateSignalStrip() {
   const el = document.getElementById('signal-strip');
   if (!el) return;
+  if (!el._winBound) {
+    el._winBound = true;
+    el.addEventListener('click', function (ev) {
+      const b = ev.target && ev.target.closest ? ev.target.closest('[data-win]') : null;
+      if (!b) return;
+      const w = b.getAttribute('data-win');
+      if (w && w !== _sigWin) { _sigWin = w; updateSignalStrip(); }
+    });
+  }
   let volColor = 'var(--text-secondary)', dteColor = 'var(--text-secondary)';
   try {
     const ng = (Array.isArray(STATE.liveData['NG=F']) && STATE.liveData['NG=F'].length)
       ? STATE.liveData['NG=F']
       : (Array.isArray(STATE._ngContinuous) ? STATE._ngContinuous : []);
     if (!ng.length) { el.innerHTML = ''; return; }
+
+    // Reference window for PCTL / SEASONAL Z cards (ALL | 10Y | 5Y)
+    const winYears = _sigWin === '5Y' ? 5 : _sigWin === '10Y' ? 10 : 0;
+    let winCutoff = null;
+    if (winYears) {
+      const d = new Date(ng[ng.length - 1].date);
+      if (!isNaN(d.getTime())) { d.setFullYear(d.getFullYear() - winYears); winCutoff = d; }
+    }
+    const _inWin = function (pt) {
+      if (!winCutoff) return true;
+      if (!pt || !pt.date) return false;
+      const d = new Date(pt.date);
+      return !isNaN(d.getTime()) && d >= winCutoff;
+    };
 
     const lastP = ng[ng.length - 1].p;
     const prevP = ng.length >= 2 ? ng[ng.length - 2].p : null;
@@ -10052,10 +10088,10 @@ async function updateSignalStrip() {
     } catch (e) {}
     const vol = _signalCell({ label: 'REALIZED VOL', value: volVal, badge: volBadge, badgeColor: volBadgeColor, color: volColor, viz: volViz, tip: volTip });
 
-    // 4. ALL-TIME PCTL
-    let pctVal = '—', pctTip = DEEP ? 'All-time percentile unavailable.' : LOADING_TIP, pctColor = 'var(--text-secondary)', pctBadge = '', pctBadgeColor = 'var(--text-secondary)', pctViz = '';
+    // 4. PCTL (windowed by _sigWin)
+    let pctVal = '—', pctTip = 'Percentile unavailable for the selected window.', pctColor = 'var(--text-secondary)', pctBadge = '', pctBadgeColor = 'var(--text-secondary)', pctViz = '';
     try {
-      const prices = (Array.isArray(hist) ? hist : []).map(function (p) { return p.p; }).filter(Number.isFinite);
+      const prices = (Array.isArray(hist) ? hist : []).filter(_inWin).map(function (p) { return p.p; }).filter(Number.isFinite);
       if (prices.length >= 100) {
         const below = prices.filter(function (p) { return p <= lastP; }).length;
         const pctile = Math.round(below / prices.length * 100);
@@ -10064,19 +10100,23 @@ async function updateSignalStrip() {
         if (pctile <= 20) { pctBadge = 'CHEAP'; pctBadgeColor = 'var(--positive)'; }
         else if (pctile >= 80) { pctBadge = 'RICH'; pctBadgeColor = 'var(--negative)'; }
         pctViz = _sigTrack(pctile, pctColor);
-        pctTip = 'Current price sits at the ' + pctile + 'th percentile of all ' + prices.length.toLocaleString() +
-          ' recorded sessions (all-time range $' + Math.min.apply(null, prices).toFixed(3) + '–$' + Math.max.apply(null, prices).toFixed(3) + ').';
+        const scope = _sigWin === 'ALL'
+          ? ('all ' + prices.length.toLocaleString() + ' recorded sessions')
+          : ('the last ' + winYears + ' years (' + prices.length.toLocaleString() + ' sessions)');
+        pctTip = 'Current price sits at the ' + pctile + 'th percentile of ' + scope +
+          ' (range $' + Math.min.apply(null, prices).toFixed(3) + '–$' + Math.max.apply(null, prices).toFixed(3) + ').';
       }
     } catch (e) {}
-    const pctileCell = _signalCell({ label: 'ALL-TIME PCTL', value: pctVal, badge: pctBadge, badgeColor: pctBadgeColor, color: pctColor, viz: pctViz, tip: pctTip });
+    const pctileCell = _signalCell({ label: 'PCTL · ' + _sigWin, value: pctVal, badge: pctBadge, badgeColor: pctBadgeColor, color: pctColor, viz: pctViz, tip: pctTip });
 
-    // 5. SEASONAL Z
-    let zVal = '—', zTip = DEEP ? 'Seasonal Z-score unavailable.' : LOADING_TIP, zColor = 'var(--text-secondary)', zBadge = '', zBadgeColor = 'var(--text-secondary)', zViz = '';
+    // 5. SEASONAL Z (windowed by _sigWin)
+    let zVal = '—', zTip = 'Seasonal Z-score unavailable for the selected window.', zColor = 'var(--text-secondary)', zBadge = '', zBadgeColor = 'var(--text-secondary)', zViz = '';
     try {
       const nowD = new Date(ng[ng.length - 1].date);
       if (!isNaN(nowD.getTime())) {
+        const zYears = winYears || 40;
         const winVals = [];
-        for (let yrOff = 1; yrOff <= 10; yrOff++) {
+        for (let yrOff = 1; yrOff <= zYears; yrOff++) {
           for (let dayOff = -7; dayOff <= 7; dayOff++) {
             const d = new Date(nowD);
             d.setFullYear(d.getFullYear() - yrOff);
@@ -10096,13 +10136,14 @@ async function updateSignalStrip() {
             zBadge = z <= -1 ? 'COLD' : z >= 1 ? 'HOT' : 'NORMAL';
             zBadgeColor = zColor;
             zViz = _sigSigned(z, zColor, 3);
-            zTip = 'Seasonal Z-score: current price vs the same ±7-day calendar window over the last 10 years. ' +
+            const scope = _sigWin === 'ALL' ? 'across all available years' : ('over the last ' + winYears + ' years');
+            zTip = 'Seasonal Z-score: current price vs the same ±7-day calendar window ' + scope + '. ' +
               z.toFixed(2) + 'σ means price is ' + Math.abs(z).toFixed(2) + ' std devs ' + (z >= 0 ? 'above' : 'below') + ' its seasonal norm.';
           }
         }
       }
     } catch (e) {}
-    const zCell = _signalCell({ label: 'SEASONAL Z', value: zVal, badge: zBadge, badgeColor: zBadgeColor, color: zColor, viz: zViz, tip: zTip });
+    const zCell = _signalCell({ label: 'SEASONAL Z · ' + _sigWin, value: zVal, badge: zBadge, badgeColor: zBadgeColor, color: zColor, viz: zViz, tip: zTip });
 
     // 6. FRONT EXPIRY
     let dteVal = '—', dteTip = 'Front contract expiry unavailable.', dteSub = '', dteBadge = '', dteBadgeColor = 'var(--text-secondary)', dteViz = '';
@@ -10129,7 +10170,11 @@ async function updateSignalStrip() {
     } catch (e) {}
     const dte = _signalCell({ label: 'FRONT EXPIRY', value: dteVal, sub: dteSub, badge: dteBadge, badgeColor: dteBadgeColor, color: dteColor, viz: dteViz, tip: dteTip });
 
-    el.innerHTML = hubFront + term + vol + pctileCell + zCell + dte;
+    const winCtrl = '<div class="sig-cell sig-cell-win"><div class="sig-label">RANGE</div><div class="sig-win">' +
+      ['ALL', '10Y', '5Y'].map(function (w) {
+        return '<button type="button" class="sig-win-btn' + (_sigWin === w ? ' active' : '') + '" data-win="' + w + '">' + w + '</button>';
+      }).join('') + '</div></div>';
+    el.innerHTML = hubFront + term + vol + pctileCell + zCell + dte + winCtrl;
   } catch (e) {
     el.innerHTML = '';
   }
