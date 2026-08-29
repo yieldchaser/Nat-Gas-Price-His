@@ -170,18 +170,51 @@ html, body {
   display: flex;
   overflow-x: auto; scrollbar-width: none;
   position: sticky; top: var(--nav-height); z-index: 900;
-  min-height: 52px;
+  min-height: 84px;
 }
 #signal-strip::-webkit-scrollbar { display: none; }
 .sig-cell {
-  flex: 1; min-width: 110px;
-  padding: 8px 16px;
+  flex: 1; min-width: 132px;
+  padding: 9px 16px;
   border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; justify-content: center;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
   cursor: default;
 }
-.sig-cell:hover { background: rgba(255,255,255,0.02); }
+.sig-cell:hover { background: rgba(255,255,255,0.03); }
 .sig-cell:last-child { border-right: none; }
+.sig-label {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-muted); white-space: nowrap;
+}
+.sig-value {
+  font-family: var(--font-mono); font-size: 15px; font-weight: 700;
+  color: var(--text-primary); white-space: nowrap;
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+}
+.sig-badge {
+  font-family: var(--font-ui); font-size: 8.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em;
+  padding: 1px 5px; border: 1px solid currentColor; border-radius: 999px; line-height: 1.4;
+}
+.sig-delta, .sig-sub {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--text-secondary); white-space: nowrap;
+}
+.sig-sub { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; }
+.sig-viz { width: 100%; display: flex; align-items: center; min-height: 18px; }
+.sig-spark { display: block; width: 100%; height: 18px; }
+.sig-track {
+  position: relative; width: 100%; height: 5px; border-radius: 3px;
+  background: rgba(255,255,255,0.08); overflow: hidden;
+}
+.sig-track-center { background: rgba(255,255,255,0.08); }
+.sig-track-fill {
+  position: absolute; left: 0; top: 0; height: 100%; border-radius: 3px;
+}
+.sig-track-risk {
+  position: absolute; top: -1px; bottom: -1px; width: 0;
+  border-left: 1px dashed rgba(248,81,73,0.7);
+}
 
 /* ═══════════════════════════════════════════════════════════
    CARDS
@@ -9862,89 +9895,186 @@ function navigateTo(tab, params) {
 
 <script>
 /* ─── PERSISTENT SIGNAL STRIP ─────────────────────────────────────────────── */
-function _signalCell(label, valueHtml, tip, color) {
-  return '<div class="sig-cell" data-tooltip="' + (tip || '') + '">' +
-    '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:1px;white-space:nowrap;">' + label + '</div>' +
-    '<div style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:' + (color || 'var(--text-primary)') + ';white-space:nowrap;">' + valueHtml + '</div>' +
-    '</div>';
+/* ─── PERSISTENT SIGNAL STRIP (upgraded) ─────────────────────────────────── */
+
+// Mini visualization helpers — pure, guarded, never throw.
+function _sigSpark(values, w, h, color) {
+  if (!Array.isArray(values) || values.length < 2) return '';
+  const clean = values.filter(Number.isFinite);
+  if (clean.length < 2) return '';
+  const min = Math.min.apply(null, clean);
+  const max = Math.max.apply(null, clean);
+  const span = (max - min) || 1;
+  const stepX = w / (clean.length - 1);
+  const pts = clean.map(function (v, i) {
+    const x = (i * stepX).toFixed(2);
+    const y = (h - ((v - min) / span) * h).toFixed(2);
+    return x + ',' + y;
+  });
+  return '<svg class="sig-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color +
+    '" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg>';
+}
+
+// 0-100 track with a fill from the left edge to `pct`.
+function _sigTrack(pct, color) {
+  const p = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
+  return '<div class="sig-track"><span class="sig-track-fill" style="width:' + p +
+    '%;background:' + color + '"></span></div>';
+}
+
+// Centered signed bar (e.g. z-score). `z` clamped to +/-cap.
+function _sigSigned(z, color, cap) {
+  const c = Math.max(0.0001, cap || 3);
+  const mag = Math.max(-c, Math.min(c, Number.isFinite(z) ? z : 0));
+  const width = (Math.abs(mag) / c) * 50;
+  const left = mag >= 0 ? 50 : (50 - width);
+  return '<div class="sig-track sig-track-center"><span class="sig-track-fill" style="left:' +
+    left.toFixed(2) + '%;width:' + width.toFixed(2) + '%;background:' + color + '"></span></div>';
+}
+
+// Slope bar for term structure. `slopePct` clamped to +/-cap.
+function _sigSlope(slopePct, color, cap) {
+  const c = Math.max(0.0001, cap || 15);
+  const mag = Math.max(-c, Math.min(c, Number.isFinite(slopePct) ? slopePct : 0));
+  const width = (Math.abs(mag) / c) * 50;
+  const left = mag >= 0 ? 50 : (50 - width);
+  return '<div class="sig-track sig-track-center"><span class="sig-track-fill" style="left:' +
+    left.toFixed(2) + '%;width:' + width.toFixed(2) + '%;background:' + color + '"></span></div>';
+}
+
+// Countdown bar. `days` remaining out of `total`; last `riskDays` flagged.
+function _sigCountdown(days, total, color, riskColor, riskDays) {
+  const t = Math.max(1, total || 90);
+  const rd = Math.max(0, riskDays || 14);
+  const filled = Math.max(0, Math.min(100, (days / t) * 100));
+  const inRisk = days <= rd;
+  const barColor = inRisk ? (riskColor || 'var(--negative)') : color;
+  const riskLeft = Math.max(0, Math.min(100, 100 - (rd / t) * 100));
+  return '<div class="sig-track"><span class="sig-track-risk" style="left:' + riskLeft.toFixed(2) +
+    '%"></span><span class="sig-track-fill" style="width:' + filled.toFixed(2) +
+    '%;background:' + barColor + '"></span></div>';
+}
+
+// Cell builder.
+function _signalCell(o) {
+  o = o || {};
+  const label = '<div class="sig-label">' + (o.label || '') + '</div>';
+  let value = '<div class="sig-value">';
+  value += '<span style="color:' + (o.color || 'var(--text-primary)') + '">' + (o.value || '—') + '</span>';
+  if (o.badge) value += ' <span class="sig-badge" style="color:' + (o.badgeColor || o.color || 'var(--text-primary)') + '">' + o.badge + '</span>';
+  if (o.delta) value += ' <span class="sig-delta" style="color:' + (o.deltaColor || 'var(--text-secondary)') + '">' + o.delta + '</span>';
+  if (o.sub) value += ' <span class="sig-sub">' + o.sub + '</span>';
+  value += '</div>';
+  const viz = o.viz ? '<div class="sig-viz">' + o.viz + '</div>' : '';
+  return '<div class="sig-cell" data-tooltip="' + (o.tip || '') + '">' + label + value + viz + '</div>';
 }
 
 async function updateSignalStrip() {
   const el = document.getElementById('signal-strip');
   if (!el) return;
+  let volColor = 'var(--text-secondary)', dteColor = 'var(--text-secondary)';
   try {
-    // 1. NG=F continuous series — prefer the LIVE-MERGED copy (archive +
-    //    Yahoo recents) over the raw archive, which can lag by months.
     const ng = (Array.isArray(STATE.liveData['NG=F']) && STATE.liveData['NG=F'].length)
       ? STATE.liveData['NG=F']
       : (Array.isArray(STATE._ngContinuous) ? STATE._ngContinuous : []);
     if (!ng.length) { el.innerHTML = ''; return; }
+
     const lastP = ng[ng.length - 1].p;
-    // Heavy stats need the full merged history; the early feed-only series
-    // is too short for percentile/vol/Z to be meaningful. When the merge
-    // underdelivers (proxy failures etc.), fall back to the SHIPPED archive
-    // for historical context — those stats must never depend on the network.
+    const prevP = ng.length >= 2 ? ng[ng.length - 2].p : null;
+    const deltaPct = (prevP && prevP > 0) ? (lastP - prevP) / prevP * 100 : null;
+    const deltaColor = deltaPct == null ? 'var(--text-secondary)' : (deltaPct >= 0 ? 'var(--positive)' : 'var(--negative)');
+    const deltaStr = deltaPct == null ? '' : (deltaPct >= 0 ? '▲ ' : '▼ ') + Math.abs(deltaPct).toFixed(2) + '%';
+
     const FULL = ng.length >= 250;
-    const hist = FULL ? ng : (Array.isArray(STATE._ngContinuous) && STATE._ngContinuous.length >= 1000 ? STATE._ngContinuous : null);
-    const DEEP = !!hist && hist.length >= 2000; // percentile/Z need many years of context
+    const hist = FULL ? ng : (Array.isArray(STATE._ngContinuous) && STATE._ngContinuous.length >= 1000 ? STATE._ngContinuous : []);
+    const DEEP = Array.isArray(hist) && hist.length >= 2000;
     const LOADING_TIP = 'Waiting for full history to finish loading…';
 
-    // 2. Term structure: HH forward curve contango/backwardation
-    let structureVal = '—', structureColor = 'var(--text-secondary)', structureTip = 'Forward curve shape unavailable.';
+    const sparkSeries = ng.slice(-30).map(function (p) { return (p && Number.isFinite(p.p)) ? p.p : NaN; }).filter(Number.isFinite);
+    const sparkColor = deltaPct == null ? 'var(--accent-hh)' : (deltaPct >= 0 ? 'var(--positive)' : 'var(--negative)');
+
+    // 1. HUB FRONT
+    const hubFront = _signalCell({
+      label: 'HUB FRONT',
+      value: '$' + (Number.isFinite(lastP) ? lastP.toFixed(3) : '—'),
+      delta: deltaStr, deltaColor: deltaColor,
+      viz: _sigSpark(sparkSeries, 88, 20, sparkColor),
+      tip: 'Last close of the continuous NG=F front-month series (USD/MMBtu). ' + (deltaStr ? 'Session change vs prior close: ' + deltaStr + '.' : '')
+    });
+
+    // 2. TERM STRUCTURE
+    let termVal = '—', termTip = 'Forward curve shape unavailable.', termColor = 'var(--text-secondary)', termBadge = '', termViz = '', termBadgeColor = 'var(--text-secondary)';
     try {
       const cd = buildForwardCurveData();
       if (cd && cd.quotedSlots && cd.quotedSlots.length >= 2) {
         const q = cd.quotedSlots;
         const slope = q[q.length - 1].price - q[0].price;
         const pct = Math.abs(q[0].price) > 0 ? slope / q[0].price * 100 : 0;
-        structureVal = (slope >= 0 ? 'CONTANGO +' : 'BACK +') + pct.toFixed(1) + '%';
-        structureColor = slope >= 0 ? 'var(--accent-hh)' : 'var(--accent-ttf)';
-        structureTip = `HH forward strip ${q[0].label} → ${q[q.length-1].label}: last quoted month is ${pct.toFixed(1)}% ${slope >= 0 ? 'above (contango — carry market, ample supply)' : 'below (backwardation — near-term scarcity)'}.`;
+        const contango = slope >= 0;
+        termBadge = contango ? 'CONTANGO' : 'BACK';
+        termBadgeColor = contango ? 'var(--accent-hh)' : 'var(--accent-ttf)';
+        termColor = termBadgeColor;
+        termVal = (contango ? '+' : '') + pct.toFixed(1) + '%';
+        termViz = _sigSlope(pct, termBadgeColor, 15);
+        termTip = 'HH forward strip ' + q[0].label + ' → ' + q[q.length - 1].label + ': last quoted month is ' + pct.toFixed(1) + '% ' +
+          (contango ? 'above front (contango — carry market, ample supply)' : 'below front (backwardation — near-term scarcity)') + '.';
       }
     } catch (e) {}
+    const term = _signalCell({ label: 'TERM STRUCTURE', value: termVal, badge: termBadge, badgeColor: termBadgeColor, color: termColor, viz: termViz, tip: termTip });
 
-    // 3. 30-day realized volatility (annualized)
-    let volVal = FULL ? '—' : '…', volTip = FULL ? 'Realized volatility unavailable.' : LOADING_TIP;
+    // 3. REALIZED VOL
+    let volVal = '—', volTip = DEEP ? 'Realized volatility unavailable.' : LOADING_TIP, volBadge = '', volBadgeColor = 'var(--text-secondary)', volViz = '';
     try {
       const recent = ng.slice(-31);
       if (recent.length >= 10) {
         const rets = [];
         for (let i = 1; i < recent.length; i++) {
-          // Skip roll-splice seams: a single-day move >30% is a contract
-          // splice artifact, not tradeable return — it would poison the calc.
           if (recent[i - 1].p > 0 && recent[i].p > 0) {
             const jump = Math.abs(recent[i].p / recent[i - 1].p - 1);
             if (jump < 0.30) rets.push(Math.log(recent[i].p / recent[i - 1].p));
           }
         }
         if (rets.length >= 5) {
-          const mean = rets.reduce((s, r) => s + r, 0) / rets.length;
-          const variance = rets.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / (rets.length - 1);
+          const mean = rets.reduce(function (s, r) { return s + r; }, 0) / rets.length;
+          const variance = rets.reduce(function (s, r) { return s + Math.pow(r - mean, 2); }, 0) / (rets.length - 1);
           const annVol = Math.sqrt(variance) * Math.sqrt(252) * 100;
           volVal = annVol.toFixed(1) + '%';
           volColor = annVol > 60 ? 'var(--negative)' : annVol > 35 ? '#d29922' : 'var(--positive)';
-          volTip = `30-day realized volatility, annualized (√252). Current regime: ${annVol > 60 ? 'HIGH (>60%)' : annVol > 35 ? 'ELEVATED (35–60%)' : 'CALM (<35%)'}. Computed from daily log returns of the continuous NG=F series.`;
+          volBadge = annVol > 60 ? 'HIGH' : annVol > 35 ? 'ELEVATED' : 'CALM';
+          volBadgeColor = volColor;
+          volViz = _sigTrack(annVol, volColor);
+          volTip = '30-day realized volatility, annualized (√252). Current regime: ' +
+            (annVol > 60 ? 'HIGH (>60%)' : annVol > 35 ? 'ELEVATED (35–60%)' : 'CALM (<35%)') +
+            '. From daily log returns of continuous NG=F.';
         }
       }
     } catch (e) {}
+    const vol = _signalCell({ label: 'REALIZED VOL', value: volVal, badge: volBadge, badgeColor: volBadgeColor, color: volColor, viz: volViz, tip: volTip });
 
-    // 4. Percentile vs all-time history
-    let pctVal = DEEP ? '—' : '…', pctTip = DEEP ? 'All-time percentile unavailable.' : LOADING_TIP, pctColor = 'var(--text-secondary)';
+    // 4. ALL-TIME PCTL
+    let pctVal = '—', pctTip = DEEP ? 'All-time percentile unavailable.' : LOADING_TIP, pctColor = 'var(--text-secondary)', pctBadge = '', pctBadgeColor = 'var(--text-secondary)', pctViz = '';
     try {
-      const prices = hist.map(p => p.p).filter(Number.isFinite);
+      const prices = (Array.isArray(hist) ? hist : []).map(function (p) { return p.p; }).filter(Number.isFinite);
       if (prices.length >= 100) {
-        const below = prices.filter(p => p <= lastP).length;
+        const below = prices.filter(function (p) { return p <= lastP; }).length;
         const pctile = Math.round(below / prices.length * 100);
-        pctVal = 'P' + pctile;
+        pctVal = pctile + 'th %ile';
         pctColor = pctile <= 20 ? 'var(--positive)' : pctile >= 80 ? 'var(--negative)' : 'var(--text-primary)';
-        pctTip = `Current price sits at the ${pctile}th percentile of all ${prices.length.toLocaleString()} recorded sessions (all-time range $${Math.min(...prices).toFixed(3)}–$${Math.max(...prices).toFixed(3)}).`;
+        if (pctile <= 20) { pctBadge = 'CHEAP'; pctBadgeColor = 'var(--positive)'; }
+        else if (pctile >= 80) { pctBadge = 'RICH'; pctBadgeColor = 'var(--negative)'; }
+        pctViz = _sigTrack(pctile, pctColor);
+        pctTip = 'Current price sits at the ' + pctile + 'th percentile of all ' + prices.length.toLocaleString() +
+          ' recorded sessions (all-time range $' + Math.min.apply(null, prices).toFixed(3) + '–$' + Math.max.apply(null, prices).toFixed(3) + ').';
       }
     } catch (e) {}
+    const pctileCell = _signalCell({ label: 'ALL-TIME PCTL', value: pctVal, badge: pctBadge, badgeColor: pctBadgeColor, color: pctColor, viz: pctViz, tip: pctTip });
 
-    // 5. Seasonal Z-score (vs same calendar window, trailing 10 years)
-    let zVal = DEEP ? '—' : '…', zTip = DEEP ? 'Seasonal Z-score unavailable.' : LOADING_TIP, zColor = 'var(--text-secondary)';
+    // 5. SEASONAL Z
+    let zVal = '—', zTip = DEEP ? 'Seasonal Z-score unavailable.' : LOADING_TIP, zColor = 'var(--text-secondary)', zBadge = '', zBadgeColor = 'var(--text-secondary)', zViz = '';
     try {
       const nowD = new Date(ng[ng.length - 1].date);
+      if (!isNaN(nowD.getTime())) {
         const winVals = [];
         for (let yrOff = 1; yrOff <= 10; yrOff++) {
           for (let dayOff = -7; dayOff <= 7; dayOff++) {
@@ -9952,24 +10082,30 @@ async function updateSignalStrip() {
             d.setFullYear(d.getFullYear() - yrOff);
             d.setDate(d.getDate() + dayOff);
             const ds = d.toISOString().slice(0, 10);
-            const hit = hist.find(p => p.date === ds);
+            const hit = (Array.isArray(hist) ? hist : []).find(function (p) { return p.date === ds; });
             if (hit && Number.isFinite(hit.p)) winVals.push(hit.p);
           }
         }
         if (winVals.length >= 20) {
-          const wMean = winVals.reduce((s, v) => s + v, 0) / winVals.length;
-          const wSd = Math.sqrt(winVals.reduce((s, v) => s + Math.pow(v - wMean, 2), 0) / winVals.length);
+          const wMean = winVals.reduce(function (s, v) { return s + v; }, 0) / winVals.length;
+          const wSd = Math.sqrt(winVals.reduce(function (s, v) { return s + Math.pow(v - wMean, 2); }, 0) / winVals.length);
           if (wSd > 0) {
             const z = (lastP - wMean) / wSd;
             zVal = (z >= 0 ? '+' : '') + z.toFixed(2) + 'σ';
             zColor = z <= -1 ? 'var(--positive)' : z >= 1 ? 'var(--negative)' : 'var(--text-primary)';
-            zTip = `Seasonal Z-score: current price vs the same ±7-day calendar window over the last 10 years. ${z.toFixed(2)}σ means price is ${Math.abs(z).toFixed(2)} std devs ${z >= 0 ? 'above' : 'below'} its seasonal norm.`;
+            zBadge = z <= -1 ? 'COLD' : z >= 1 ? 'HOT' : 'NORMAL';
+            zBadgeColor = zColor;
+            zViz = _sigSigned(z, zColor, 3);
+            zTip = 'Seasonal Z-score: current price vs the same ±7-day calendar window over the last 10 years. ' +
+              z.toFixed(2) + 'σ means price is ' + Math.abs(z).toFixed(2) + ' std devs ' + (z >= 0 ? 'above' : 'below') + ' its seasonal norm.';
           }
         }
+      }
     } catch (e) {}
+    const zCell = _signalCell({ label: 'SEASONAL Z', value: zVal, badge: zBadge, badgeColor: zBadgeColor, color: zColor, viz: zViz, tip: zTip });
 
-    // 6. Days to front expiry
-    let dteVal = '—', dteSub = '', dteTip = 'Front contract expiry unavailable.';
+    // 6. FRONT EXPIRY
+    let dteVal = '—', dteTip = 'Front contract expiry unavailable.', dteSub = '', dteBadge = '', dteBadgeColor = 'var(--text-secondary)', dteViz = '';
     try {
       const now = new Date();
       let expDate = null;
@@ -9983,28 +10119,22 @@ async function updateSignalStrip() {
       if (expDate) {
         const days = Math.max(0, Math.ceil((expDate - now) / 86400000));
         dteVal = days + 'd';
-        dteSub = 'front';
+        dteSub = expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         dteColor = days < 10 ? 'var(--negative)' : days < 40 ? '#d29922' : 'var(--positive)';
-        dteTip = `Days until front-month HH contract expiry (${expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}). Roll pressure and volatility typically rise inside the final two weeks.`;
+        if (days < 14) { dteBadge = 'ROLL'; dteBadgeColor = 'var(--negative)'; }
+        dteViz = _sigCountdown(days, 90, 'var(--positive)', 'var(--negative)', 14);
+        dteTip = 'Days until front-month HH contract expiry (' + expDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+          '). Roll pressure and volatility typically rise inside the final two weeks.';
       }
     } catch (e) {}
+    const dte = _signalCell({ label: 'FRONT EXPIRY', value: dteVal, sub: dteSub, badge: dteBadge, badgeColor: dteBadgeColor, color: dteColor, viz: dteViz, tip: dteTip });
 
-    el.innerHTML =
-      _signalCell('HUB FRONT', '$' + lastP.toFixed(3),
-        'Last close of the continuous NG=F front-month series (USD/MMBtu).',
-        lastP >= (ng[ng.length - 2]?.p ?? lastP) ? 'var(--positive)' : 'var(--negative)') +
-      _signalCell('TERM STRUCTURE', structureVal, structureTip, structureColor) +
-      _signalCell('REALIZED VOL', volVal || '—', volTip, typeof volColor !== 'undefined' ? volColor : 'var(--text-secondary)') +
-      _signalCell('ALL-TIME PCTL', pctVal, pctTip, pctColor) +
-      _signalCell('SEASONAL Z', zVal, zTip, zColor) +
-      _signalCell('FRONT EXPIRY', dteVal, dteTip, typeof dteColor !== 'undefined' ? dteColor : 'var(--text-secondary)');
+    el.innerHTML = hubFront + term + vol + pctileCell + zCell + dte;
   } catch (e) {
     el.innerHTML = '';
   }
 }
 
-// Safety net: re-run a few times during the boot window so the strip settles
-// on the best available data even if some refresh path never fires.
 (function _signalStripRetry(n) {
   if (n <= 0) return;
   setTimeout(() => { updateSignalStrip(); _signalStripRetry(n - 1); }, 20000);
