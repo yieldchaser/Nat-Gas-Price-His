@@ -1534,10 +1534,54 @@ function getActiveTTFTickers() {
   return tickers;
 }
 
+// Re-render every panel that depends on live contract quotes once fresh data
+// has landed in STATE.liveData. Charts render from the archive during boot
+// (before any live data exists), so without this refresh they sit on a stale
+// archive-only series while the slow direct-Yahoo sweep finishes. Called both
+// when the precompiled feed arrives and again after the sweep completes.
+function refreshPanelsAfterLiveData() {
+  if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
+    // Live data just landed — release any stale full-span window so the
+    // chart extends to the newest live point (e.g. archive ends Mar,
+    // live data runs to Aug). Only when user hasn't customized a range.
+    const pv = STATE.priceView;
+    if (pv && !pv._userAdjustedRange) {
+      pv.rangeStart = 0;
+      pv.rangeEnd = null;
+    }
+    syncPriceViewState();
+    renderPricesControls();
+    updatePricesChart();
+  } else if (STATE.renderedTabs.prices) {
+    // Prices tab is rendered but not active — reset so next visit
+    // re-renders with all live contract years (2027+) in selector
+    STATE.renderedTabs.prices = false;
+  }
+  if (STATE.activeTab === 'spread' && STATE.renderedTabs.spread) {
+    populateSpreadYears();
+    scheduleSpreadChartUpdate(true);
+    scheduleSpreadHeatmap(true);
+  } else if (STATE.activeTab === 'curve' && STATE.renderedTabs.curve) {
+    updateCurveChart();
+  }
+  // Always refresh the daily tab when live data arrives — its charts
+  // (monthly seasonality, weekly, annual) depend on STATE.liveData['NG=F']
+  // which is empty during the initial tab render.
+  if (STATE.renderedTabs.daily) {
+    if (STATE.activeTab === 'daily') {
+      updateDailyTracker();
+    } else {
+      // Reset so the next visit triggers a full re-render with live data
+      STATE.renderedTabs.daily = false;
+    }
+  }
+}
+
 async function loadLiveData() {
   setLoadProgress(50, 'FETCHING LIVE PRICES...');
 
   // 1. Instantly load server-compiled live quotes feed (< 50ms HTTP fetch)
+  let feedLoaded = false;
   try {
     const liveFeed = await fetchJSON('data/live_quotes.json');
     if (liveFeed && liveFeed.quotes) {
@@ -1548,6 +1592,7 @@ async function loadLiveData() {
         }
       });
       STATE.contractCache = {};
+      feedLoaded = true;
     }
   } catch (e) {
     console.warn('live_quotes.json fetch fallback:', e);
@@ -1566,6 +1611,18 @@ async function loadLiveData() {
     }
   } catch (e) { /* cosmetic */ }
   updateSignalStrip();
+
+  // The initial chart render runs before any live data exists, so it could
+  // only show the archive — which for active contracts stops at the last
+  // auto-archive date (e.g. NGX26 frozen at 2026-05-01). Re-render the
+  // active panels from the precompiled feed immediately instead of waiting
+  // for the slow direct-Yahoo sweep below, which can take minutes or fail
+  // outright behind CORS proxies. Sweep results still land later via
+  // init()'s post-loadLiveData refresh.
+  if (feedLoaded && STATE.loaded) {
+    invalidateDerivedCaches();
+    refreshPanelsAfterLiveData();
+  }
 
   const hhTickers = getActiveHHTickers();
   const ttfTickers = getActiveTTFTickers();
@@ -1586,12 +1643,21 @@ async function loadLiveData() {
   // Pre-populate full price history from per-ticker localStorage cache.
   // This lets the Prices chart render immediately on page load without blanking
   // while the live fetch is in progress. Fresh data replaces it when it arrives.
+  let cacheRestored = false;
   allTickers.forEach(t => {
     if (!STATE.liveData[t]) {
       const c = getCachedData(`live_px_v1_${t}`);
-      if (c) STATE.liveData[t] = c.data;
+      if (c) { STATE.liveData[t] = c.data; cacheRestored = true; }
     }
   });
+  // Precompiled feed failed but browser caches restored live tickers —
+  // refresh the panels now so the chart is never stuck on the stale
+  // archive-only series while the sweep runs. invalidateDerivedCaches also
+  // drops the archive-only contractCache entries created during boot.
+  if (!feedLoaded && cacheRestored && STATE.loaded) {
+    invalidateDerivedCaches();
+    refreshPanelsAfterLiveData();
+  }
 
   // NG=F is fetched separately (not in the batch loop).  Pre-merge the cached
   // Yahoo portion with the historical foundation so the Daily Tracker and the
@@ -2099,42 +2165,7 @@ async function init() {
     loadLiveData().then(() => {
       invalidateDerivedCaches();
       updateSignalStrip();
-
-      if (STATE.activeTab === 'prices' && STATE.renderedTabs.prices) {
-        // Live data just landed — release any stale full-span window so the
-        // chart extends to the newest live point (e.g. archive ends Mar,
-        // live data runs to Aug). Only when user hasn't customized a range.
-        const pv = STATE.priceView;
-        if (!pv._userAdjustedRange) {
-          pv.rangeStart = 0;
-          pv.rangeEnd = null;
-        }
-        syncPriceViewState();
-        renderPricesControls();
-        updatePricesChart();
-      } else if (STATE.renderedTabs.prices) {
-        // Prices tab is rendered but not active — reset so next visit
-        // re-renders with all live contract years (2027+) in selector
-        STATE.renderedTabs.prices = false;
-      }
-      if (STATE.activeTab === 'spread' && STATE.renderedTabs.spread) {
-        populateSpreadYears();
-        scheduleSpreadChartUpdate(true);
-        scheduleSpreadHeatmap(true);
-      } else if (STATE.activeTab === 'curve' && STATE.renderedTabs.curve) {
-        updateCurveChart();
-      }
-      // Always refresh the daily tab when live data arrives — its charts
-      // (monthly seasonality, weekly, annual) depend on STATE.liveData['NG=F']
-      // which is empty during the initial tab render.
-      if (STATE.renderedTabs.daily) {
-        if (STATE.activeTab === 'daily') {
-          updateDailyTracker();
-        } else {
-          // Reset so the next visit triggers a full re-render with live data
-          STATE.renderedTabs.daily = false;
-        }
-      }
+      refreshPanelsAfterLiveData();
     }).catch(() => {
       // Live fetch failed entirely (proxies down etc.) — the strip must still
       // settle on archive-backed values instead of lingering placeholders.
