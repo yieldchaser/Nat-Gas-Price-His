@@ -1,25 +1,26 @@
-name: Archive Expiring Contracts
+name: Archive Contracts & Rebuild Data
 
-# Runs automatically to keep the contract price history complete:
-#   1. Archives any new HH and TTF contracts that entered the 2.5-year window
-#   2. Re-fetches recently expired HH and TTF contracts that were archived before expiry
-#      (i.e., have fewer than 519 trading days — their complete lifecycle)
-#   3. Rebuilds all dashboard JSON files
-#   4. Commits and pushes only if data actually changed
+# Daily maintenance of the contract archive (see scripts/archive_contract.py):
+#   1. merge everything in data/live_quotes.json into the CSV archive (no network)
+#   2. fetch contracts missing from the trading window
+#   3. re-fetch expired contracts whose history stops before their last trading day
+#   4. rebuild data/hh.json and data/ttf.json
 
 on:
   schedule:
-    # Run daily at 06:00 UTC (after US market open/settle the prior day)
     - cron: '0 6 * * *'
-  workflow_dispatch:   # allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: data-writes
+  cancel-in-progress: false
+
 jobs:
   archive:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -28,11 +29,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install xlrd
-
-      - name: Archive missing and stale contracts, rebuild JSON
+      - name: Archive, repair and rebuild
         run: python scripts/archive_contract.py --update
+
+      - name: Validate datasets
+        run: python -m unittest discover -s tests
 
       - name: Commit and push if data changed
         run: |
@@ -41,10 +42,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/
           if git diff --staged --quiet; then
-            echo "No contract data changes — skipping commit"
+            echo "No contract data changes"
           else
-            SUMMARY=$(git diff --staged --stat | tail -1)
             git commit -m "chore: auto-archive contract price history $(date -u '+%Y-%m-%d')"
+            git pull --rebase origin main
             git push origin main
-            echo "Pushed: $SUMMARY"
           fi
