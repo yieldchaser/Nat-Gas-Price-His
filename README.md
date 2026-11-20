@@ -39,7 +39,7 @@ Every view state is in the URL hash (e.g. `#/spreads?a=11&b=1&y=2027`), so views
 
 **Spreads.** Calendar spread = front − back; butterfly = wing₁ − 2×body + wing₂. Positive means the front (wings) is priced above the back (body), i.e. backwardation for a calendar spread. Legs are joined only on dates where every leg has a close.
 
-**Unit conversion.** TTF EUR/MWh → USD/MMBtu = price × EURUSD ÷ 3.412141633, using the EURUSD close of the *same date* (`data/fx_eurusd.json`). Dates without an FX rate are omitted rather than converted at today's rate.
+**Unit conversion.** TTF EUR/MWh → USD/MMBtu = price × EURUSD ÷ 3.412141633, using the EURUSD rate of the *same date* (`data/fx_eurusd.json`, daily from 1999). Per date the rate is Yahoo's close where available, else the Federal Reserve H.10 New York noon rate (FRED DEXUSEU), else the ECB reference rate; each date records its source. On common days the three agree to a median 0.12–0.18%. Dates without a rate are omitted rather than converted at today's rate.
 
 **Settlements.** A contract is *settled* only if its history reaches its last trading day; that close is the settlement. Expired contracts whose history stops early are *incomplete* and are shown as `n/a`, never as a stale price. Open contracts appear only as italic forward prices.
 
@@ -58,6 +58,8 @@ Yahoo Finance ──daily───▶ scripts/archive_contract.py  ◀┘  (merg
                                 ▼
                      scripts/build_data.py ──▶ data/hh.json, data/ttf.json
 EIA RNGWHHD ──weekly──▶ build_spot_from_eia ──▶ data/spot.json
+FRED + ECB  ──weekly──▶ scripts/build_fx.py    ──▶ data/fx_eurusd.json (Yahoo > FRED > ECB)
+Barchart CSV ─manual──▶ data/imports/ ─daily──▶ scripts/import_price_history.py (validated merge)
 ```
 
 The browser loads the five JSON files, merges the live feed into the archive (feed wins on overlapping dates) and computes everything client-side (`src/js/lib`).
@@ -68,6 +70,7 @@ The browser loads the five JSON files, merges the live feed into the archive (fe
 - Vendor fill-forward rows after expiry (repeated price) are dropped.
 - Expired contracts whose archive stops before the last trading day are re-fetched daily while Yahoo still serves them.
 - The live feed is never overwritten by a failed sweep (<10 tickers).
+- Manually downloaded price histories (Barchart exports) dropped in `data/imports/` are merged only if ≥95% of overlapping closes agree within 0.5% with the archive; the exports already in the repo match it on 519/519 days.
 - `scripts/repair_archive.py` backfills the archive from the git history of `live_quotes.json`; it recovered the final months of NGV26, NGX26 and eight TTF contracts that the old archiver had missed.
 
 ## Repository layout
@@ -79,8 +82,8 @@ src/js/app.js              data loading, routing, status bar
 src/js/lib/                calendar.js, market.js, analytics.js, stats.js (pure, tested)
 src/js/ui/                 charts.js (Lightweight Charts layer), svg.js, dom.js, format.js
 src/js/views/              overview, contracts, curve, spreads, seasonality, settlements
-scripts/                   contract_calendar.py, archive_io.py, archive_contract.py,
-                           build_data.py, fetch_live_quotes.py, repair_archive.py
+scripts/                   contract_calendar.py, archive_io.py, archive_contract.py, build_data.py,
+                           build_fx.py, fetch_live_quotes.py, import_price_history.py, repair_archive.py
 tests/                     test_pipeline.py, js/*.test.mjs, fixtures/expiries.json
 .github/workflows/         live-quotes (hourly), archive-contracts (daily),
                            refresh-spot (weekly), tests, pages
@@ -89,7 +92,6 @@ tests/                     test_pipeline.py, js/*.test.mjs, fixtures/expiries.js
 ## Known limitations
 
 - Prices come from Yahoo Finance daily closes; the latest point of an active contract can be an intraday value until the session settles.
-- EURUSD history currently starts 2024-07-23; the hourly workflow backfills the full Yahoo history (from 2003) on its next run, after which HH–TTF comparisons extend back to 2016.
-- TGJ26, TGK26, TGM26 and TGN26 lack their final weeks (no source retained them); they are shown as incomplete.
+- TGJ26, TGK26, TGM26 and TGN26 lack their final weeks: Yahoo stopped serving them before they were archived and no other reachable source retained them. They are shown as incomplete; dropping their Barchart exports into `data/imports/` completes them (see `data/imports/README.md`).
 - Yahoo lists only a handful of TTF forward months, so the TTF curve is sparse.
 - EIA spot is published weekly and lags futures by several days.

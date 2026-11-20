@@ -3,11 +3,9 @@
 Fetch daily closes for the active Henry Hub and Dutch TTF contract strips from
 Yahoo Finance and write data/live_quotes.json (served to the dashboard).
 
-Also maintains data/fx_eurusd.json, a merged daily EURUSD history used to
-convert TTF (EUR/MWh) into USD/MMBtu at the exchange rate of each date rather
-than today's rate.  Until the file reaches back to 2005 each run requests the
-full Yahoo history (EURUSD=X starts in 2003); afterwards it merges the recent
-window only.
+Also refreshes the recent Yahoo window of data/fx_eurusd.json (the daily
+EURUSD history built by build_fx.py from Yahoo, FRED and ECB) so TTF can be
+converted into USD/MMBtu at each date's own exchange rate.
 """
 
 import concurrent.futures
@@ -58,24 +56,34 @@ def fetch(ticker, rng='2y'):
 
 
 def update_fx(recent):
-    """Merge EURUSD closes into fx_eurusd.json ({"dates": [...], "rate": [...]})."""
-    hist = {}
+    """Merge Yahoo EURUSD closes into fx_eurusd.json, keeping per-date sources.
+
+    The file is built by build_fx.py (Yahoo > FRED > ECB from 1999); here the
+    recent Yahoo window overwrites matching dates and is tagged 'Y'. Weekend
+    bars are skipped.
+    """
+    hist, src, meta = {}, {}, {}
     if os.path.exists(FX_OUT):
         with open(FX_OUT) as f:
             old = json.load(f)
+        meta = old.get('meta', {})
         hist = dict(zip(old.get('dates', []), old.get('rate', [])))
+        src = dict(zip(old.get('dates', []), old.get('src') or 'Y' * len(hist)))
     if not hist or min(hist) > '2005-01-01':      # not yet backfilled
         _, full = fetch('EURUSD=X', 'max')
         recent = (full or []) + (recent or [])
     for p in recent or []:
-        hist[p['date']] = p['p']
+        if datetime.strptime(p['date'], '%Y-%m-%d').weekday() < 5:
+            hist[p['date']] = p['p']
+            src[p['date']] = 'Y'
     if not hist:
         return
     dates = sorted(hist)
+    meta.update({'pair': 'EURUSD', 'unit': 'USD per EUR', 'updatedAt': datetime.now(timezone.utc).isoformat()})
+    meta['counts'] = {c: sum(src[d] == c for d in dates) for c in 'YFE'}
     with open(FX_OUT, 'w') as f:
-        json.dump({'meta': {'pair': 'EURUSD', 'source': 'Yahoo Finance EURUSD=X daily close',
-                            'updatedAt': datetime.now(timezone.utc).isoformat()},
-                   'dates': dates, 'rate': [hist[d] for d in dates]}, f, separators=(',', ':'))
+        json.dump({'meta': meta, 'dates': dates, 'rate': [hist[d] for d in dates],
+                   'src': ''.join(src[d] for d in dates)}, f, separators=(',', ':'))
 
 
 def main():

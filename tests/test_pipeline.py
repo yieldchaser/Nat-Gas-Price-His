@@ -168,3 +168,58 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(archive_io.is_session('NGF97', '1997-01-20'))    # vendor era MLK session
         self.assertFalse(archive_io.is_session('TGF27', '2026-11-15'))
         self.assertTrue(archive_io.is_session('TGF27', '2026-09-07'))    # TTF trades US holidays
+
+
+class ImportTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._dirs = dict(archive_io.MARKET_DIRS)
+        archive_io.MARKET_DIRS['TG'] = os.path.join(self.tmp, 'Dutch TTF')
+        import import_price_history
+        self.imp = import_price_history
+
+    def tearDown(self):
+        archive_io.MARKET_DIRS.clear()
+        archive_io.MARKET_DIRS.update(self._dirs)
+        shutil.rmtree(self.tmp)
+
+    def _csv(self, name, rows, header='Time,Open,High,Low,Latest,Change,%Change,Volume,"Open Int"'):
+        p = os.path.join(self.tmp, name)
+        with open(p, 'w') as f:
+            f.write(header + '\n')
+            for d, v in rows:
+                f.write(f'{d},{v},{v},{v},{v},0,0%,0,0\n')
+            f.write('"Downloaded from Barchart.com as of 11-20-2026"\n')
+        return p
+
+    def test_barchart_export_extends_archive(self):
+        archive_io.merge_rows('TGK26', {'2026-03-26': 30.0, '2026-03-27': 31.0}, date(2026, 11, 20))
+        p = self._csv('tgk26_price-history-11-20-2026.csv',
+                      [('2026-04-29', 33.0), ('2026-04-28', 32.5), ('2026-03-28', 99.0), ('2026-03-27', 31.0), ('2026-04-30', 40.0)])
+        added = self.imp.import_file(p, today=date(2026, 11, 20))
+        rows = archive_io.read_rows(archive_io.csv_path('TGK26'))
+        self.assertEqual(added, 2)                        # Sat 28 Mar and post-expiry 30 Apr skipped
+        self.assertEqual(max(rows), '2026-04-29')         # reaches last trading day
+
+    def test_mismatched_file_rejected(self):
+        archive_io.merge_rows('TGK26', {f'2026-03-{d:02d}': 30.0 for d in (23, 24, 25, 26, 27)}, date(2026, 11, 20))
+        p = self._csv('TGK26.csv', [(f'2026-03-{d:02d}', 300.0) for d in (23, 24, 25, 26, 27)] + [('2026-04-01', 310.0)])
+        self.assertEqual(self.imp.import_file(p, today=date(2026, 11, 20)), 0)
+        self.assertNotIn('2026-04-01', archive_io.read_rows(archive_io.csv_path('TGK26')))
+
+    def test_repo_barchart_exports_match_archive(self):
+        archive_io.MARKET_DIRS.update(self._dirs)
+        rows = self.imp.parse_file(os.path.join(ROOT, 'data', 'tgz25_price-history-04-06-2026.csv'))
+        ok, why = self.imp.validate('TGZ25', rows, archive_io.read_rows(archive_io.csv_path('TGZ25')))
+        self.assertTrue(ok, why)
+
+
+class FxTests(unittest.TestCase):
+    def test_fx_history_shape(self):
+        fx = load_data('fx_eurusd.json')
+        self.assertEqual(len(fx['dates']), len(fx['rate']))
+        self.assertEqual(len(fx['dates']), len(fx['src']))
+        self.assertLessEqual(fx['dates'][0], '1999-01-04')
+        self.assertTrue(all(0.8 < r < 1.7 for r in fx['rate']))
+        self.assertEqual(fx['dates'], sorted(set(fx['dates'])))
+        self.assertTrue(all(date.fromisoformat(d).weekday() < 5 for d in fx['dates']))

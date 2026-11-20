@@ -83,7 +83,7 @@ export default {
         ${ttf ? panel({ id: 'ov-ttf', cls: 's6', title: 'Henry Hub vs Dutch TTF (USD/MMBtu)',
           sub: 'Front months in a common unit; TTF converted at each date\'s EURUSD close.',
           body: '<div class="legend" id="ov-ttf-legend"></div><div id="ov-ttf-chart" class="chart h220"></div><div id="ov-ttf-spread" class="chart h160" style="margin-top:6px"></div>',
-          note: `<b>Conversion.</b> EUR/MWh × EURUSD ÷ 3.412 MMBtu/MWh. ${fx.available ? `Daily EURUSD history currently covers ${F.date(fx.first)} – ${F.date(fx.last)}; earlier dates are omitted rather than converted at today's rate.` : 'EURUSD history unavailable — conversion disabled.'}` }) : ''}
+          note: `<b>Conversion.</b> EUR/MWh × EURUSD ÷ 3.412 MMBtu/MWh. ${fx.available ? `Daily EURUSD ${F.date(fx.first)} – ${F.date(fx.last)}: Yahoo close where available, else the Fed H.10 New York noon rate, else the ECB reference rate (sources agree to ~0.15% on a typical day). Dates without a rate are omitted, never converted at today's rate.` : 'EURUSD history unavailable — conversion disabled.'}` }) : ''}
         ${spot.dates.length ? panel({ id: 'ov-basis', cls: ttf ? 's6' : 's12', title: 'Cash vs futures',
           sub: 'EIA Henry Hub daily spot against the front-month futures close on the same day, and their difference.',
           body: '<div class="legend" id="ov-basis-legend"></div><div id="ov-basis-chart" class="chart h220"></div><div id="ov-basis-diff" class="chart h160" style="margin-top:6px"></div>',

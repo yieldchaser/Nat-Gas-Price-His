@@ -9,6 +9,8 @@ Usage
   python scripts/archive_contract.py --update --no-network   # feed merge + rebuild only
 
 ``--update`` performs, in order:
+  0. Import any validated price-history CSVs dropped into data/imports/
+     (see scripts/import_price_history.py).
   1. Merge every contract in data/live_quotes.json into the archive.  This needs
      no network access and guarantees that anything the hourly feed has seen is
      preserved even after Yahoo stops serving the contract.
@@ -124,6 +126,11 @@ def main():
 
     if args.update:
         args.rebuild = True
+        from import_price_history import import_drop_folder
+        imported = import_drop_folder(today)
+        if imported:
+            changed = True
+            print(f'Imported {imported} rows from data/imports/')
         pruned = sum(prune_nonsession(t) for pre in ('NG', 'TG') for t in archived_tickers(pre))
         if pruned:
             changed = True

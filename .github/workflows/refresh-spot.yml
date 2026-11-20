@@ -1,4 +1,4 @@
-name: Refresh Spot Prices
+name: Refresh Spot Prices & FX History
 
 on:
   schedule:
@@ -31,16 +31,19 @@ jobs:
         run: |
           python3 -c "import sys; sys.path.insert(0, 'scripts'); from build_data import build_spot_from_eia; build_spot_from_eia()"
 
+      - name: Rebuild EURUSD history (Yahoo > FRED > ECB)
+        run: python3 scripts/build_fx.py
+
       - name: Commit and push if data changed
         run: |
           set -e
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/spot.json
+          git add data/spot.json data/fx_eurusd.json
           if git diff --staged --quiet; then
             echo "No spot data changes"
           else
-            git commit -m "chore: refresh EIA spot prices $(date -u '+%Y-%m-%d')"
+            git commit -m "chore: refresh EIA spot prices and FX history $(date -u '+%Y-%m-%d')"
             git pull --rebase origin main
             git push origin main
           fi
