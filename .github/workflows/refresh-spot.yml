@@ -1,14 +1,17 @@
-name: Refresh Spot Prices
+name: Refresh Spot Prices & FX History
 
 on:
   schedule:
-    # EIA publishes Henry Hub spot data every Wednesday ~1pm ET
-    # Run Wed and Thu at 18:00 UTC (2pm ET) to catch the release
+    # EIA publishes Henry Hub spot data weekly (usually Wednesday)
     - cron: '0 18 * * 3,4'
-  workflow_dispatch: # allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: data-writes
+  cancel-in-progress: false
 
 jobs:
   refresh:
@@ -24,26 +27,23 @@ jobs:
       - name: Install dependencies
         run: pip install xlrd
 
-      - name: Fetch EIA spot data and rebuild JSON
+      - name: Fetch EIA spot data
         run: |
-          python3 - <<'EOF'
-          import sys, os
-          sys.path.insert(0, 'scripts')
-          from build_data import build_spot_from_eia
-          build_spot_from_eia('data')
-          EOF
+          python3 -c "import sys; sys.path.insert(0, 'scripts'); from build_data import build_spot_from_eia; build_spot_from_eia()"
+
+      - name: Rebuild EURUSD history (Yahoo > FRED > ECB)
+        run: python3 scripts/build_fx.py
 
       - name: Commit and push if data changed
         run: |
           set -e
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/spot/
+          git add data/spot.json data/fx_eurusd.json
           if git diff --staged --quiet; then
-            echo "No spot data changes — skipping commit"
+            echo "No spot data changes"
           else
-            LAST=$(git diff --staged --stat | tail -1)
-            git commit -m "chore: refresh EIA spot prices $(date -u '+%Y-%m-%d')"
+            git commit -m "chore: refresh EIA spot prices and FX history $(date -u '+%Y-%m-%d')"
+            git pull --rebase origin main
             git push origin main
-            echo "Pushed updated spot data: $LAST"
           fi
