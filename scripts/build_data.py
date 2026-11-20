@@ -184,18 +184,6 @@ def build_spot_from_eia(_out_dir=None):
     write_spot(pts, 'EIA RNGWHHD (daily Henry Hub spot)')
 
 
-def spot_from_legacy():
-    """Convert the legacy data/spot/spot_<mon>.json files if present."""
-    folder = os.path.join(DATA, 'spot')
-    pts = []
-    if os.path.isdir(folder):
-        for fn in os.listdir(folder):
-            with open(os.path.join(folder, fn)) as f:
-                for series in json.load(f).get('years', {}).values():
-                    pts += [(p['date'], p['p']) for p in series]
-    return pts
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--skip-eia', action='store_true', help='do not download EIA spot data')
@@ -208,10 +196,6 @@ def main():
     if not args.skip_eia:
         print('Refreshing EIA spot ...')
         build_spot_from_eia()
-    elif not os.path.exists(os.path.join(DATA, 'spot.json')):
-        legacy = spot_from_legacy()
-        if legacy:
-            write_spot(legacy, 'EIA RNGWHHD (daily Henry Hub spot)')
 
 
 if __name__ == '__main__':
