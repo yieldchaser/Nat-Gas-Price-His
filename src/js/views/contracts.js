@@ -73,10 +73,12 @@ export default {
     bindControls(root, {
       market: v => ctx.navigate('contracts', { m: v, axis, band: bandSel }),
       month: v => {
+        // Switch to the next contract of that month that is still trading (or the latest one).
         const mo = Number(v);
-        const ys = market.yearsFor(mo);
-        const target = ys.includes(c.year) ? c.year : ys.filter(y => market.get(makeTicker(market.prefix, y, mo))).pop();
-        go({ c: makeTicker(market.prefix, target, mo), cmp: '' });
+        const list = market.sameMonth(mo).map(x => x.contract);
+        const live = list.filter(x => x.expiry >= market.lastDate).sort((p, q) => (p.expiry < q.expiry ? -1 : 1));
+        const target = live[0] || list[list.length - 1];
+        go({ c: target.ticker, cmp: '' });
       },
       year: v => go({ c: makeTicker(market.prefix, Number(v), c.month), cmp: '' }),
       axis: v => go({ axis: v, cmp: overlayYears.join(',') }),
