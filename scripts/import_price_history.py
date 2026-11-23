@@ -29,7 +29,10 @@ Safety checks (the file is rejected unless --force):
   * on dates already in the archive, at least 95% must agree within 0.5%
     (catches a file for the wrong contract or in different units);
   * a file that shares no dates with an existing archive is accepted only when
-    it extends it contiguously (first new date within 10 days of the archive).
+    it extends it contiguously (first new date within 10 days of the archive),
+    or when every new row is corroborated by a neighbouring delivery month
+    (up to 3 months away) trading within 2% of it on the same day — this admits
+    an isolated final settlement after a gap without trusting it blindly.
 Rows after the contract's last trading day and on weekends/holidays are never
 written (archive_io.merge_rows).
 """
@@ -88,6 +91,28 @@ def parse_file(path):
     return out
 
 
+def neighbour_check(ticker, rows, tolerance=0.02):
+    """(ok, reason): each row within `tolerance` of an adjacent month's close that day."""
+    prefix, code, yy = ticker[:2], ticker[2], int(ticker[3:5])
+    idx = CODES.index(code)
+    neighbours = []
+    for k in (1, -1, 2, -2, 3, -3):
+        j, y = idx + k, yy
+        if j > 11:
+            j, y = j - 12, y + 1
+        elif j < 0:
+            j, y = j + 12, y - 1
+        neighbours.append(f'{prefix}{CODES[j]}{y % 100:02d}')
+    archives = {n: read_rows(csv_path(n)) for n in neighbours}
+    notes = []
+    for d, px in sorted(rows.items()):
+        best = min(((abs(px / a[d] - 1), n) for n, a in archives.items() if d in a), default=None)
+        if best is None or best[0] > tolerance:
+            return False, f'{d}: no neighbouring month within {tolerance:.0%}'
+        notes.append(f'{d} {px} vs {best[1]} {archives[best[1]][d]} ({best[0]:.2%})')
+    return True, 'corroborated by neighbouring months: ' + '; '.join(notes)
+
+
 def validate(ticker, rows, archive):
     common = sorted(set(rows) & set(archive))
     if common:
@@ -98,8 +123,10 @@ def validate(ticker, rows, archive):
         return True, 'no archived history yet'
     new_first = min(d for d in rows if d not in archive)
     gap = (date.fromisoformat(new_first) - date.fromisoformat(max(archive))).days
-    ok = 0 < gap <= 10
-    return ok, f'no overlap; first new date {new_first} is {gap} days after archive end {max(archive)}'
+    if 0 < gap <= 10:
+        return True, f'no overlap; first new date {new_first} is {gap} days after archive end {max(archive)}'
+    ok, why = neighbour_check(ticker, rows)
+    return ok, f'no overlap, {gap}-day gap after archive end {max(archive)}; {why}'
 
 
 def import_file(path, ticker=None, dry_run=False, force=False, today=None):

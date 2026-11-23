@@ -22,6 +22,8 @@ export const COLORS = {
   years: ['#4c9aff', '#f0a04b', '#3ec7c2', '#e070b8', '#a3d65c', '#b294f5', '#f2d15c', '#ff8a65', '#5fd3f3', '#c0c8d4'],
 };
 
+const TOUCH = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
 const T_BASE = 2000000000;   // synthetic epoch for the T axis (seconds)
 export const tToTime = t => T_BASE - t * 86400;
 export const timeToT = time => Math.round((T_BASE - time) / 86400);
@@ -126,10 +128,14 @@ export class Chart {
         vertLine: { color: COLORS.crosshair, labelBackgroundColor: '#273142', width: 1, style: 3 },
         horzLine: { color: COLORS.crosshair, labelBackgroundColor: '#273142', width: 1, style: 3 },
       },
-      handleScroll: { vertTouchDrag: false },
+      // Touch: one-finger drag scrubs the crosshair (handled below) instead of
+      // panning; vertical swipes scroll the page; pinch still zooms.
+      handleScroll: TOUCH ? { horzTouchDrag: false, vertTouchDrag: false, pressedMouseMove: false, mouseWheel: false } : { vertTouchDrag: false },
+      handleScale: TOUCH ? { pinch: true, axisPressedMouseMove: false, mouseWheel: false } : undefined,
     });
     this.series = [];
     this.chart.subscribeCrosshairMove(p => this._onCrosshair(p));
+    if (TOUCH) this._bindTouch();
   }
 
   fmtPrice(v) {
@@ -220,8 +226,56 @@ export class Chart {
     return fmtDate(timeToIso(time));
   }
 
-  _onCrosshair(p) {
+  /**
+   * Touch scrubbing: the crosshair and tooltip follow the finger from the
+   * first touch (no long-press needed). touch-action: pan-y leaves vertical
+   * swipes to the browser so the page still scrolls; the tooltip stays after
+   * the finger lifts until the next tap elsewhere.
+   */
+  _bindTouch() {
+    this.host.style.touchAction = 'pan-y pinch-zoom';
+    const scrub = e => {
+      if (e.pointerType !== 'touch' || !e.isPrimary) return;
+      const r = this.host.getBoundingClientRect();
+      this.scrubTo(e.clientX - r.left);
+    };
+    this.host.addEventListener('pointerdown', scrub);
+    this.host.addEventListener('pointermove', scrub);
+    this._outside = e => { if (!this.container.contains(e.target)) this.clearScrub(); };
+    document.addEventListener('pointerdown', this._outside);
+  }
+
+  /** Move the crosshair to the bar nearest x (CSS px within the chart) and show its tooltip. */
+  scrubTo(x) {
+    const ts = this.chart.timeScale();
+    const width = ts.width();
+    x = Math.min(Math.max(x, 0), width - 1);        // finger on the price axis -> latest bar
+    const logical = ts.coordinateToLogical(x);
+    if (logical == null) return;
+    const main = this.series.find(s => s.kind === 'line' && !s.hidden) || this.series.find(s => !s.hidden);
+    if (!main) return;
+    const bar = main.api.dataByIndex(Math.round(logical), L().MismatchDirection.NearestLeft);
+    if (!bar) return;
+    const key = String(typeof bar.time === 'object' ? timeToIso(bar.time) : bar.time);
+    const v = main.values.get(key);
+    const price = Array.isArray(v) ? v[1] : v;
+    const px = ts.timeToCoordinate(bar.time);
+    const py = Number.isFinite(price) ? main.api.priceToCoordinate(price) : 20;
+    if (Number.isFinite(price)) this.chart.setCrosshairPosition(price, bar.time, main.api);
+    this._onCrosshair({ time: bar.time, point: { x: px ?? x, y: py ?? 20 } }, true);
+  }
+
+  clearScrub() {
+    this.chart.clearCrosshairPosition();
+    this.tip.style.display = 'none';
+    if (this.onCrosshair) this.onCrosshair(null);
+  }
+
+  _onCrosshair(p, fromScrub = false) {
     if (this._suppress) return;
+    // On touch the library reports "no crosshair" when the finger lifts; keep
+    // the scrubbed tooltip visible until the user taps elsewhere.
+    if (TOUCH && !fromScrub && (!p || !p.point) && this.tip.style.display === 'block') return;
     if (this.onCrosshair) this.onCrosshair(p);
     if (!p || !p.time || !p.point || p.point.x < 0) { this.tip.style.display = 'none'; return; }
     const key = String(typeof p.time === 'object' ? timeToIso(p.time) : p.time);
@@ -246,7 +300,10 @@ export class Chart {
 
   toggle(entry, visible) { entry.hidden = !visible; entry.api.applyOptions({ visible }); }
   remove(entry) { this.chart.removeSeries(entry.api); this.series = this.series.filter(s => s !== entry); }
-  destroy() { try { this.chart.remove(); } catch (e) { /* already removed */ } }
+  destroy() {
+    if (this._outside) document.removeEventListener('pointerdown', this._outside);
+    try { this.chart.remove(); } catch (e) { /* already removed */ }
+  }
 }
 
 /** Link visible ranges and crosshairs of charts that share identical time points. */

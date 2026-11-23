@@ -21,6 +21,8 @@ npm test                          # node --test + python unittest (no installs n
 | **Seasonality** | Seasonal price path, roll-adjusted monthly and annual returns, return and volatility distributions by calendar month, daily return tails. |
 | **Settlements** | Final settlement of every contract that traded through expiry, the seasonal settlement premium, annual averages. |
 
+On touch screens a one-finger drag over a chart scrubs the crosshair and tooltip (pinch zooms, vertical swipes scroll the page), and tapping a box plot, bar or table cell shows its detail.
+
 Every view state is in the URL hash (e.g. `#/spreads?a=11&b=1&y=2027`), so views are linkable and the back button works.
 
 ## Methodology
@@ -81,7 +83,7 @@ Nothing in the code is tied to a calendar year: contract strips, trading windows
 - Vendor fill-forward rows after expiry (repeated price) are dropped.
 - Expired contracts whose archive stops before the last trading day are re-fetched daily while Yahoo still serves them.
 - The live feed is never overwritten by a failed sweep (<10 tickers).
-- Manually downloaded price histories (Barchart exports) dropped in `data/imports/` are merged only if ≥95% of overlapping closes agree within 0.5% with the archive; the exports already in the repo match it on 519/519 days.
+- Manually downloaded price histories (Barchart exports) dropped in `data/imports/` are merged only if ≥95% of overlapping closes agree within 0.5% with the archive, or — for an isolated row after a gap, such as a final settlement — if a neighbouring delivery month (±3 months) closed within 2% of it that day. The exports already in the repo match the archive on 519/519 days.
 - `scripts/repair_archive.py` backfills the archive from the git history of `live_quotes.json`; it recovered the final months of NGV26, NGX26 and eight TTF contracts that the old archiver had missed.
 
 ## Repository layout
@@ -103,6 +105,6 @@ tests/                     test_pipeline.py, js/*.test.mjs, fixtures/expiries.js
 ## Known limitations
 
 - Prices come from Yahoo Finance daily closes; the latest point of an active contract can be an intraday value until the session settles.
-- TGJ26, TGK26, TGM26 and TGN26 lack their final weeks: Yahoo stopped serving them before they were archived and no other reachable source retained them. They are shown as incomplete; dropping their Barchart exports into `data/imports/` completes them (see `data/imports/README.md`).
+- TGJ26, TGK26, TGM26 and TGN26 have their final settlements (Barchart, each corroborated within 0.01–0.25% by a neighbouring month's close that day — see `data/imports/PROVENANCE.md`), but their daily prices between 27 Mar 2026 and expiry are not available from any source we could reach, so the contract chart shows a break over those weeks. Dropping full Barchart exports into `data/imports/` fills them in.
 - Yahoo lists only a handful of TTF forward months, so the TTF curve is sparse.
 - EIA spot is published weekly and lags futures by several days.

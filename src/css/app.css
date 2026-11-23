@@ -241,3 +241,15 @@ footer.site a { color: var(--text-2); }
 }
 .kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 720px) { .kpis.three { grid-template-columns: 1fr; } .kpis.three .kpi:last-child:nth-child(odd) { grid-column: auto; } }
+
+.tap-tip {
+  position: fixed; z-index: 60; display: none; max-width: min(320px, calc(100vw - 16px));
+  background: rgba(17, 22, 30, 0.97); border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 7px 10px; font: 12px/1.45 var(--ui); color: var(--text); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+/* Touch: larger hit areas for SVG chart elements; charts own horizontal gestures. */
+@media (pointer: coarse) {
+  svg.viz g { cursor: pointer; }
+  .chart-host { touch-action: pan-y pinch-zoom; }
+}

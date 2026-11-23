@@ -66,7 +66,7 @@ export function bars(items, { fmt = v => v.toFixed(1), height = 220, pos = '#3fb
     const lab = i % labelEvery === 0 ? `<text x="${x + bw / 2}" y="${height - 8}" text-anchor="middle">${esc(it.label)}</text>` : '';
     if (!Number.isFinite(it.value)) return lab;
     const y0 = y(0), y1 = y(it.value);
-    return `<g><title>${esc(it.title || `${it.label}: ${fmt(it.value)}`)}</title><rect x="${x + bw * 0.15}" y="${Math.min(y0, y1)}" width="${bw * 0.7}" height="${Math.max(1, Math.abs(y1 - y0))}" fill="${it.value >= 0 ? pos : neg}" fill-opacity="${it.dim ? 0.35 : 0.8}" rx="1"/></g>${lab}`;
+    return `<g><title>${esc(it.title || `${it.label}: ${fmt(it.value)}`)}</title><rect x="${x + bw * 0.15}" y="${Math.min(y0, y1)}" width="${bw * 0.7}" height="${Math.max(1, Math.abs(y1 - y0))}" fill="${it.value >= 0 ? pos : neg}" fill-opacity="${it.dim ? 0.35 : 0.8}" rx="1"/><rect x="${x}" y="${pad.t}" width="${bw}" height="${height - pad.t - pad.b}" fill="transparent"/></g>${lab}`;
   }).join('');
   return `<svg class="viz" viewBox="0 0 ${w} ${height}" style="height:${height}px">${grid}<line class="axis" x1="${pad.l}" x2="${w - pad.r}" y1="${y(0)}" y2="${y(0)}"/>${body}</svg>`;
 }
@@ -83,7 +83,7 @@ export function histogramSvg(bins, { fmt = v => v.toFixed(1), height = 220, colo
   const lo = bins[0].lo, hi = bins[bins.length - 1].hi;
   const x = v => pad.l + (w - pad.l - pad.r) * (v - lo) / (hi - lo);
   const y = v => pad.t + (height - pad.t - pad.b) * (1 - v / top);
-  const rects = bins.map((b, i) => `<g><title>${esc(`${fmt(b.lo)} to ${fmt(b.hi)}: ${b.count} (${(b.count / total * 100).toFixed(1)}%)`)}</title><rect x="${x(b.lo) + 0.5}" y="${y(dens[i])}" width="${Math.max(0.5, x(b.hi) - x(b.lo) - 1)}" height="${y(0) - y(dens[i])}" fill="${color}" fill-opacity="0.55"/></g>`).join('');
+  const rects = bins.map((b, i) => `<g><title>${esc(`${fmt(b.lo)} to ${fmt(b.hi)}: ${b.count} (${(b.count / total * 100).toFixed(1)}%)`)}</title><rect x="${x(b.lo) + 0.5}" y="${y(dens[i])}" width="${Math.max(0.5, x(b.hi) - x(b.lo) - 1)}" height="${y(0) - y(dens[i])}" fill="${color}" fill-opacity="0.55"/><rect x="${x(b.lo)}" y="${pad.t}" width="${Math.max(1, x(b.hi) - x(b.lo))}" height="${y(0) - pad.t}" fill="transparent"/></g>`).join('');
   const path = density ? `<path d="${bins.map((b, i) => `${i ? 'L' : 'M'}${x((b.lo + b.hi) / 2)},${y(curve[i])}`).join('')}" fill="none" stroke="#e6ebf2" stroke-opacity="0.7" stroke-width="1.2" stroke-dasharray="3 3"/>` : '';
   const ticks = niceTicks(lo, hi, 8).map(t => `<text x="${x(t)}" y="${height - 8}" text-anchor="middle">${esc(fmt(t))}</text>`).join('');
   const mk = markers.map(mk => `<line x1="${x(mk.value)}" x2="${x(mk.value)}" y1="${pad.t}" y2="${y(0)}" stroke="${mk.color}" stroke-dasharray="2 3"/><text x="${x(mk.value) + 3}" y="${pad.t + 10}" style="fill:${mk.color}">${esc(mk.label)}</text>`).join('');

@@ -223,3 +223,26 @@ class FxTests(unittest.TestCase):
         self.assertTrue(all(0.8 < r < 1.7 for r in fx['rate']))
         self.assertEqual(fx['dates'], sorted(set(fx['dates'])))
         self.assertTrue(all(date.fromisoformat(d).weekday() < 5 for d in fx['dates']))
+
+
+class NeighbourCheckTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._dirs = dict(archive_io.MARKET_DIRS)
+        archive_io.MARKET_DIRS['TG'] = os.path.join(self.tmp, 'Dutch TTF')
+        import import_price_history
+        self.imp = import_price_history
+        archive_io.merge_rows('TGK26', {'2026-03-27': 54.5}, date(2026, 11, 20))
+        archive_io.merge_rows('TGQ26', {'2026-04-29': 46.859}, date(2026, 11, 20))
+
+    def tearDown(self):
+        archive_io.MARKET_DIRS.clear()
+        archive_io.MARKET_DIRS.update(self._dirs)
+        shutil.rmtree(self.tmp)
+
+    def test_isolated_settlement_needs_a_close_neighbour(self):
+        archive = archive_io.read_rows(archive_io.csv_path('TGK26'))
+        ok, why = self.imp.validate('TGK26', {'2026-04-29': 46.853}, archive)
+        self.assertTrue(ok, why)                                   # TGQ26 within 0.01%
+        ok, _ = self.imp.validate('TGK26', {'2026-04-29': 60.0}, archive)
+        self.assertFalse(ok)                                       # 28% away: rejected

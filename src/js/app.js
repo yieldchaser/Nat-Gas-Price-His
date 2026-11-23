@@ -189,7 +189,41 @@ function route() {
   document.title = `${current.title} · Blue Flux`;
 }
 
+// ── Tap tooltips on touch screens ──────────────────────────────────────
+// SVG charts and table cells carry their detail in title attributes, which
+// iOS/Android never display. On touch devices a tap shows that text in a
+// small floating tip next to the finger; tapping elsewhere or scrolling hides it.
+function initTapTips() {
+  if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) return;
+  const tip = document.createElement('div');
+  tip.className = 'tap-tip';
+  document.body.appendChild(tip);
+  const hide = () => { tip.style.display = 'none'; };
+  document.addEventListener('click', e => {
+    const view = document.getElementById('view');
+    if (!view.contains(e.target)) { hide(); return; }
+    let text = '';
+    const g = e.target.closest('svg.viz g');
+    if (g && g.querySelector(':scope > title')) text = g.querySelector(':scope > title').textContent;
+    if (!text) {
+      const el = e.target.closest('[title]');
+      if (el && view.contains(el) && !el.matches('a, button, select, input, .click')) text = el.getAttribute('title');
+    }
+    if (!text) { hide(); return; }
+    tip.textContent = text;
+    tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    const x = Math.min(window.innerWidth - w - 8, Math.max(8, e.clientX - w / 2));
+    const y = e.clientY - h - 14 > 8 ? e.clientY - h - 14 : e.clientY + 18;
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  });
+  window.addEventListener('scroll', hide, { passive: true });
+  window.addEventListener('hashchange', hide);
+}
+
 (async () => {
+  initTapTips();
   try {
     await load();
     renderStatus();

@@ -114,7 +114,20 @@ export default {
       const pts = market.lifecycle(t).filter(p => p.t <= Math.max(tMax, 0) || axis === 't');
       chart.line(pts.map(p => ({ x: xOf(p.t), y: p.p })), { label: t, color: COLORS.years[(i + 1) % COLORS.years.length], width: 1, fmt, lastValue: false });
     });
-    chart.line(lc.map(p => ({ x: xOf(p.t), y: p.p })), { label: c.ticker, color: market.key === 'TTF' ? COLORS.ttf : COLORS.white, width: 2, fmt });
+    // Break the line where history has a long gap (e.g. a settlement imported
+    // after weeks with no daily data) instead of drawing a misleading straight line.
+    const mainPts = [];
+    lc.forEach((p, i) => {
+      if (i > 0 && lc[i - 1].t - p.t > 10) mainPts.push({ x: xOf(p.t + 1), y: null });
+      mainPts.push({ x: xOf(p.t), y: p.p });
+    });
+    chart.line(mainPts, { label: c.ticker, color: market.key === 'TTF' ? COLORS.ttf : COLORS.white, width: 2, fmt });
+    const gap = lc.find((p, i) => i > 0 && lc[i - 1].t - p.t > 10);
+    if (gap) {
+      const i = lc.indexOf(gap);
+      document.getElementById('ct-main').querySelector('.panel-n').insertAdjacentHTML('beforeend',
+        ` <b>Data gap.</b> No daily prices between ${F.date(lc[i - 1].date)} and ${F.date(gap.date)}; the line is broken there.`);
+    }
     if (axis === 't') {
       const byT = new Map(lc.map(p => [p.t, p]));
       chart.extraTip = key => {
