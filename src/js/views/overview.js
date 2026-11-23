@@ -14,13 +14,13 @@ const RANGES = [
   { value: '1826', label: '5Y' }, { value: '3652', label: '10Y' }, { value: 'all', label: 'All' },
 ];
 
-function kpis(s) {
+function kpis(s, live) {
   const hh = { ccy: '$', dp: 3 };
   const c1 = s.change1d;
   const tiles = [
-    kpi({ label: `Front month · ${s.front.ticker}`, value: F.price(s.price, hh), tone: '',
-      sub: c1 ? `<span class="${F.toneOf(c1.abs)}">${F.signedPrice(c1.abs, hh)} (${F.signedPct(c1.pct, 2)})</span> vs ${F.date(c1.prevDate, true)}` : '',
-      title: 'Last close of the front-month contract and its change versus the same contract\'s previous close.' }),
+    kpi({ label: `Front month · ${s.front.ticker} · ${live ? 'live' : `close ${F.date(s.asOf, true)}`}`, value: F.price(s.price, hh), tone: '',
+      sub: c1 ? `<span class="${F.toneOf(c1.abs)}">${F.signedPrice(c1.abs, hh)} (${F.signedPct(c1.pct, 2)})</span> vs ${F.date(c1.prevDate, true)} close` : '',
+      title: live ? 'Latest intraday price of the front-month contract (Yahoo Finance, NYMEX delayed ~10 min) versus the same contract\'s previous close.' : 'Latest close of the front-month contract versus the same contract\'s previous close.' }),
     kpi({ label: '1 month · roll-adjusted', value: `<span class="${F.toneOf(s.change1m)}">${F.signedPct(s.change1m)}</span>`,
       sub: `1 week <span class="${F.toneOf(s.change1w)}">${F.signedPct(s.change1w)}</span>`,
       title: 'Compounded same-contract daily returns of the front month over the window. Contract rolls are not counted as price moves.' }),
@@ -68,8 +68,8 @@ export default {
     const { hh, ttf, fx, spot, signals: s } = ctx;
     const range = params.range || '365';
     root.innerHTML = `
-      <div class="view-h"><div><h1>Market overview</h1><p>Henry Hub futures as of ${F.date(s.asOf)}. Every change figure is measured within a single contract; rolls between delivery months are never counted as price moves.</p></div></div>
-      ${kpis(s)}
+      <div class="view-h"><div><h1>Market overview</h1><p>Henry Hub futures as of ${F.date(s.asOf)}${ctx.state && ctx.state.live ? ' (intraday, delayed ~10 min; refreshes automatically)' : ' close'}. Every change figure is measured within a single contract; rolls between delivery months are never counted as price moves.</p></div></div>
+      ${kpis(s, ctx.state && ctx.state.live)}
       <div class="grid" style="margin-top:var(--gap)">
         ${panel({ id: 'ov-front', cls: 's8', title: 'Front-month price and realised volatility',
           sub: 'Nearby contract close (rolls at each last trading day) with its 200-session average; lower pane: 20- and 60-session realised volatility.',

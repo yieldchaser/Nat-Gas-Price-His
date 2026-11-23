@@ -8,7 +8,11 @@ name: Archive Contracts & Rebuild Data
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    # After the NYMEX settlement (~19:30 UTC) so settled closes reach the
+    # archive the same evening, and again early morning as a safety net.
+    # Off-peak minutes: top-of-hour schedules are heavily delayed by GitHub.
+    - cron: '41 21 * * 1-5'
+    - cron: '17 6 * * *'
   workflow_dispatch:
 
 permissions:

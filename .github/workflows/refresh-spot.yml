@@ -3,7 +3,7 @@ name: Refresh Spot Prices & FX History
 on:
   schedule:
     # EIA publishes Henry Hub spot data weekly (usually Wednesday)
-    - cron: '0 18 * * 3,4'
+    - cron: '23 19 * * 3,4'
   workflow_dispatch:
 
 permissions:

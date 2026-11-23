@@ -48,9 +48,10 @@ Every view state is in the URL hash (e.g. `#/spreads?a=11&b=1&y=2027`), so views
 ## Data pipeline
 
 ```
-Yahoo Finance ──hourly──▶ scripts/fetch_live_quotes.py ──▶ data/live_quotes.json, data/fx_eurusd.json
+Yahoo Finance ─10 min──▶ scripts/fetch_live_quotes.py ──▶ data/live_quotes.json (last 3 months),
+                                                           data/latest.json (heartbeat), data/fx_eurusd.json
                                                        │
-Yahoo Finance ──daily───▶ scripts/archive_contract.py  ◀┘  (merges the feed first, then fetches gaps)
+Yahoo Finance ─2×daily─▶ scripts/archive_contract.py  ◀┘  (merges the feed first, then fetches gaps)
                                 │
                                 ▼
            data/database/<Market>/Monthwise/*.csv  (permanent archive, merge-only)
@@ -62,7 +63,17 @@ FRED + ECB  ──weekly──▶ scripts/build_fx.py    ──▶ data/fx_eurus
 Barchart CSV ─manual──▶ data/imports/ ─daily──▶ scripts/import_price_history.py (validated merge)
 ```
 
-The browser loads the five JSON files, merges the live feed into the archive (feed wins on overlapping dates) and computes everything client-side (`src/js/lib`).
+The browser loads the JSON files, merges the live feed into the archive (feed wins on overlapping dates) and computes everything client-side (`src/js/lib`).
+
+### How fresh are prices?
+
+- **Feed:** `live-quotes.yml` runs every 10 minutes while NYMEX gas trades (Sun 22:00 UTC → Fri 22:00 UTC), at off-peak minutes because GitHub delays top-of-hour schedules (the old hourly job really ran every 5–8 h). A run with no price change writes nothing, so nothing is committed or redeployed. Yahoo's NYMEX quotes are themselves ~10 minutes delayed, and GitHub Pages redeploys in ~40 s after each commit, so prices on the site are typically 10–25 minutes behind the exchange. GitHub Pages allows ~10 builds/hour, which is why the feed does not run more often; tick-level data would need a paid real-time feed and a server.
+- **Browser:** the page checks `data/latest.json` (a ~300-byte heartbeat) every minute while the tab is visible and on returning to the tab. When the feed has moved on, all data is reloaded (unchanged files revalidate as 304s) and the current view re-renders in place, keeping scroll position and settings.
+- **Live vs close:** the status bar and the front-month tile say **live** when the market is open and the latest price belongs to the current trade date (an intraday, delayed quote), otherwise **close <date>**. Sessions follow CME Globex in New York time (Sun 18:00 – Fri 17:00 ET, daily break 17:00–18:00, evening sessions belong to the next trade date, NYMEX holidays closed). Changes are always measured against the same contract's previous close. End-of-day analytics (settlements, seasonality, monthly returns) use closes; while the market is open the latest point of an active contract is the intraday price, and settled contracts are never affected.
+- **Archive:** `archive-contracts.yml` runs after the NYMEX settlement (21:41 UTC weekdays) and at 06:17 UTC, merging the feed into the permanent archive and rebuilding `hh.json`/`ttf.json`.
+- **Staleness:** if the feed stops updating, the status dot turns amber after 45 minutes of an open market and a red banner appears after 4 days, so a broken job never looks like a quiet market.
+
+Nothing in the code is tied to a calendar year: contract strips, trading windows, expiries, session rules and every view derive from today's date and the data, and the test suite checks behaviour with the clock set into 2027–2028.
 
 **Data-quality rules** (enforced in the pipeline and mirrored in the browser):
 - Archive writes are merges: rows are added or corrected, never deleted; nothing is written after a contract's last trading day.

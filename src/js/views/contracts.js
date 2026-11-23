@@ -62,6 +62,7 @@ export default {
         ${panel({ id: 'ct-hist', title: `${esc(MONTHS[c.month - 1])} contracts by year`, sub: 'Price at the same lifecycle point, final settlement and the move in between. Click a row to open that contract.', body: '' })}
       </div>`;
 
+    this.live = !!(ctx.state && ctx.state.live);
     const ctxStats = contractContext(market, ticker);
     const band = lifecycleBand(market, c.month, c.year, bandYears);
     this.renderChart(ctx, market, c, band, axis, overlayYears);
@@ -136,7 +137,7 @@ export default {
     const yearsTxt = band.years.length ? `${s.rows.length} prior years` : 'no prior years';
     document.getElementById('ct-stats-body').innerHTML = `
       <dl class="stat-list">
-        <dt>${st === 'settled' ? 'Final settlement' : 'Last close'}</dt><dd>${p(s.now.p)} <span class="muted">${F.date(s.now.date, true)}</span></dd>
+        <dt>${st === 'settled' ? 'Final settlement' : this.live && s.now.date === market.lastDate ? 'Last price (live)' : 'Last close'}</dt><dd>${p(s.now.p)} <span class="muted">${F.date(s.now.date, true)}</span></dd>
         <dt>Sessions to expiry</dt><dd>${st === 'active' ? nb : '—'}</dd>
         <dt>Change since first trade</dt><dd class="${F.toneOf(s.fromOpenPct)}">${F.signedPct(s.fromOpenPct)}</dd>
         <dt>Life high</dt><dd>${p(s.high)}</dd>

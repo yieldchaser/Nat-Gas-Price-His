@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
 Fetch daily closes for the active Henry Hub and Dutch TTF contract strips from
-Yahoo Finance and write data/live_quotes.json (served to the dashboard).
+Yahoo Finance and write data/live_quotes.json (served to the dashboard) plus
+data/latest.json, a ~1 KB heartbeat the browser polls to know when to reload.
+
+The feed only needs to cover what the daily archive job has not yet absorbed:
+contracts already in the archive get the last 3 months (the archive job merges
+the feed into the CSV archive every day); contracts not yet archived — e.g. a
+newly listed back month — get their full history so nothing is lost.
+
+Nothing is written when no price changed (weekends, holidays, a repeated run),
+so the workflow commits — and GitHub Pages redeploys — only on real updates.
 
 Also refreshes the recent Yahoo window of data/fx_eurusd.json (the daily
 EURUSD history built by build_fx.py from Yahoo, FRED and ECB) so TTF can be
@@ -12,12 +21,17 @@ import concurrent.futures
 import json
 import os
 import urllib.request
+
+from archive_io import csv_path, internal_ticker
 from datetime import datetime, timezone
 
 CODES = 'FGHJKMNQUVXZ'
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 OUT = os.path.join(ROOT, 'data', 'live_quotes.json')
 FX_OUT = os.path.join(ROOT, 'data', 'fx_eurusd.json')
+LATEST = os.path.join(ROOT, 'data', 'latest.json')
+RECENT_RANGE = '3mo'
+NEW_RANGE = '5y'
 HH_MONTHS, TTF_MONTHS = 72, 36
 
 
@@ -29,7 +43,7 @@ def strip_tickers(prefix, months, now):
     return out
 
 
-def fetch(ticker, rng='2y'):
+def fetch(ticker, rng=RECENT_RANGE):
     url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={rng}'
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (compatible; nat-gas-feed/2.0)'})
     try:
@@ -86,24 +100,57 @@ def update_fx(recent):
                    'src': ''.join(src[d] for d in dates)}, f, separators=(',', ':'))
 
 
+def fetch_range(ticker):
+    """Short window for archived contracts, full history for unarchived ones."""
+    t = internal_ticker(ticker)
+    if t and not os.path.exists(csv_path(t)):
+        return ticker, NEW_RANGE
+    return ticker, RECENT_RANGE
+
+
+def front_summary(quotes):
+    """Nearest HH contract's last two closes, for the heartbeat file."""
+    hh = sorted((k for k in quotes if k.startswith('NG') and k.endswith('.NYM')),
+                key=lambda k: (int(k[3:5]), 'FGHJKMNQUVXZ'.index(k[2])))
+    for k in hh:
+        pts = quotes[k]
+        if len(pts) >= 2:
+            return {'ticker': k[:-4], 'date': pts[-1]['date'], 'p': pts[-1]['p'],
+                    'prevDate': pts[-2]['date'], 'prev': pts[-2]['p']}
+    return None
+
+
 def main():
     now = datetime.now(timezone.utc)
-    tickers = ['NG=F', 'EURUSD=X'] + strip_tickers('NG', HH_MONTHS, now) + strip_tickers('TTF', TTF_MONTHS, now)
+    tickers = ['EURUSD=X'] + strip_tickers('NG', HH_MONTHS, now) + strip_tickers('TTF', TTF_MONTHS, now)
     quotes = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
-        for ticker, pts in pool.map(fetch, tickers):
+        for ticker, pts in pool.map(lambda a: fetch(*a), map(fetch_range, tickers)):
             if pts:
                 quotes[ticker] = pts
-    payload = {'meta': {'updatedAt': now.isoformat(), 'updatedTimestamp': int(now.timestamp() * 1000),
-                        'tickerCount': len(quotes)},
-               'quotes': quotes}
     if len(quotes) < 10:
         # Do not overwrite a good feed with a failed sweep.
         raise SystemExit(f'Only {len(quotes)} tickers fetched; keeping previous feed')
+
+    previous = None
+    if os.path.exists(OUT):
+        try:
+            with open(OUT, encoding='utf-8') as f:
+                previous = json.load(f).get('quotes')
+        except ValueError:
+            previous = None
+    if previous == quotes:
+        print('No price changes since the last run; nothing written')
+        return
+
+    meta = {'updatedAt': now.replace(microsecond=0).isoformat(), 'updatedTimestamp': int(now.timestamp() * 1000),
+            'tickerCount': len(quotes), 'source': 'Yahoo Finance (NYMEX quotes are delayed ~10 min)'}
     with open(OUT, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, separators=(',', ':'))
+        json.dump({'meta': meta, 'quotes': quotes}, f, separators=(',', ':'))
+    with open(LATEST, 'w', encoding='utf-8') as f:
+        json.dump({**meta, 'front': front_summary(quotes)}, f, separators=(',', ':'))
     update_fx(quotes.get('EURUSD=X'))
-    print(f'Compiled {len(quotes)}/{len(tickers)} quotes into {OUT}')
+    print(f'Compiled {len(quotes)}/{len(tickers)} quotes into {OUT} ({os.path.getsize(OUT) / 1e3:.0f} KB)')
 
 
 if __name__ == '__main__':

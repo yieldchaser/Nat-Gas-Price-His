@@ -82,7 +82,8 @@ test('settlement status reflects repaired history', () => {
   assert.equal(hh.status(hh.get('NGX26')), 'settled');
   const front = hh.get(hh.nearbyTicker(hh.lastDate));
   assert.equal(hh.status(front), front.expiry > hh.lastDate ? 'active' : 'settled');
-  assert.equal(ttf.status(ttf.get('TGK26')), 'incomplete');
+  assert.ok(['incomplete', 'settled'].includes(ttf.status(ttf.get('TGK26'))));   // settled once imported
+  for (const c of ttf.list) if (ttf.status(c) === 'incomplete') assert.equal(ttf.settlement(c), null);
   assert.equal(hh.settlement(hh.get('NGF27')), null);   // open until late Dec 2026
   for (const c of hh.list) {
     if (hh.status(c) === 'settled') assert.equal(c.lastDate, c.expiry, c.ticker);
