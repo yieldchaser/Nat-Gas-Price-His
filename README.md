@@ -105,6 +105,6 @@ tests/                     test_pipeline.py, js/*.test.mjs, fixtures/expiries.js
 ## Known limitations
 
 - Prices come from Yahoo Finance daily closes; the latest point of an active contract can be an intraday value until the session settles.
-- TGJ26, TGK26, TGM26 and TGN26 have their final settlements (Barchart, each corroborated within 0.01–0.25% by a neighbouring month's close that day — see `data/imports/PROVENANCE.md`), but their daily prices between 27 Mar 2026 and expiry are not available from any source we could reach, so the contract chart shows a break over those weeks. Dropping full Barchart exports into `data/imports/` fills them in.
+- TGJ26–TGN26 (Apr–Jul 2026 TTF) were completed from Barchart data after the automated feed lost them; see `data/imports/PROVENANCE.md`.
 - Yahoo lists only a handful of TTF forward months, so the TTF curve is sparse.
 - EIA spot is published weekly and lags futures by several days.

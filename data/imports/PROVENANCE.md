@@ -10,3 +10,12 @@
 Barchart's TG series is the same series as this archive (TGZ25 and NGZ25 exports match on 519/519 days).
 These rows are the final settlements only: daily prices between 2026-03-27 and each expiry are not
 available from any source reachable when they were imported, so those weeks remain a visible gap.
+
+## Daily history 2026-03-30 → expiry (imported 2026-11-23)
+
+Daily settlements for TGK26 (20 rows), TGM26 (41) and TGN26 (63), from Barchart's price-history
+pages, supplied by the repository owner. Checks before import:
+- every date already in the archive (27 Mar and each expiry day) matches exactly;
+- against TGQ26 (Aug 2026) on the same days: median difference 0.12–0.18%, maximum 1.37%.
+Good Friday (3 Apr) and Easter Monday (6 Apr) were non-trading; 4 and 25 May traded.
+The contracts now have complete daily histories; the earlier note about a data gap no longer applies.
