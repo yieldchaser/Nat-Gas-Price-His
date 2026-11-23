@@ -2,12 +2,15 @@ name: Refresh Live Quotes Feed
 
 on:
   schedule:
-    # Run every hour 24/7 (7 days a week) for seamless weekend coverage
-    - cron: '0 * * * *'
-  workflow_dispatch: # Allow manual run from GitHub Actions UI
+    - cron: '0 * * * *'      # hourly; weekends are cheap no-ops (no diff, no commit)
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: data-writes
+  cancel-in-progress: false
 
 jobs:
   refresh-quotes:
@@ -20,19 +23,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Fetch live market quotes and build live_quotes.json
+      - name: Fetch live quotes and EURUSD history
         run: python scripts/fetch_live_quotes.py
 
-      - name: Commit and push if live quotes changed
+      - name: Commit and push if changed
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/live_quotes.json
+          git add data/live_quotes.json data/fx_eurusd.json
           if git diff --staged --quiet; then
-            echo "No live quote changes — skipping commit"
+            echo "No live quote changes"
           else
             git commit -m "chore: refresh live market quotes feed $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git pull --rebase origin main
             git push origin main
-            echo "Pushed updated live_quotes.json"
           fi

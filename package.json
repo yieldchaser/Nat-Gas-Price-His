@@ -1,0 +1,10 @@
+{
+  "name": "nat-gas-dashboard",
+  "private": true,
+  "type": "module",
+  "description": "Static natural gas market analytics dashboard (no build step).",
+  "scripts": {
+    "test": "node --test tests/js/*.test.mjs && python3 -m unittest discover -s tests",
+    "serve": "python3 -m http.server 4173"
+  }
+}

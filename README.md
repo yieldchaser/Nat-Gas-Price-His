@@ -1,135 +1,97 @@
-# Blue Flux Dashboard
+# Blue Flux — Natural Gas Analytics
 
-A high-performance, information-dense analytics environment for global energy markets. Built with Vanilla JS and Lightweight Charts for premium financial visualization and discrete monitoring.
-
----
-
-## 💎 Design System
-
-A curated **GitHub-dark institutional aesthetic** (the "Blue Margin" design language) tuned for information density and long sessions:
-
-- **Layered Surfaces**: Page base `#0d1117`, cards/charts `#161b22`, raised controls `#21262d`, separated by `#30363d` borders — charts render as distinct lighter panels with faint gridlines, not black voids.
-- **Blue Accent**: `#388bfd` family for interactive states, HH series, and active tabs; semantic green/red (`#3fb950` / `#f85149`) reserved for direction.
-- **Typography**: Inter for UI labels, JetBrains Mono for every number.
-- **Persistent Signal Strip**: A stat bar fixed beneath the navigation on every tab (see below).
-- **Animated SVG Flame**: Retained brand mark on the loading screen and nav, recolored to the blue accent family.
-
-### Signal Strip (always visible)
-
-Six always-on market signals computed client-side, each with a full explanatory tooltip:
-
-| Signal | Meaning |
-|---|---|
-| HUB FRONT | Last close of the continuous NG=F series |
-| TERM STRUCTURE | Contango/backwardation % across the quoted HH forward strip |
-| REALIZED VOL | 30-day annualized volatility (roll-splice guarded), regime-colored |
-| ALL-TIME PCTL | Current price's percentile across all recorded sessions |
-| SEASONAL Z | σ vs the same ±7-day calendar window over the last 10 years |
-| FRONT EXPIRY | Days to front-month expiry (roll-pressure clock) |
-
-Heavy stats render progressively (`…`) until full history merges, and fall back to the shipped archive when live feeds are unreachable — they never display misleading values.
-
----
-
-## 📁 Repository Structure & Documentation
-
-```
-Nat-Gas-Price-His/
-├── index.html                # Main application entry point & layout
-├── src/                      # Source code
-│   └── js/
-│       └── prices-unified.js # Core financial chart & state logic
-├── scripts/                  # Data pipeline scripts
-│   ├── archive_contract.py   # Yahoo Finance contract ingestion & auto-archive
-│   ├── build_data.py         # JSON transformer pipeline
-│   └── fetch_live_quotes.py  # Parallel live quote aggregator
-├── tests/                    # Test suite
-│   └── test_ng_curve_depth.py# Curve depth validation script
-├── docs/                     # Project documentation & engineering blueprints
-│   ├── audit.md              # System audit methodology & checklists
-│   ├── bugs.md               # Diagnostic bug tracking & performance analysis
-│   ├── dashboard_improvements_plan.md # Historical dashboard feature specs
-│   ├── errors.md             # Codebase audit category guidelines
-│   ├── roadmap_chunks.md     # Feature roadmap & upgrade specifications
-│   ├── step_by_step_fixes.md # Tab-by-tab enhancement tracking
-│   └── tooltip_system_blueprint.md # Architecture of tooltip engine
-├── data/                     # Unified data repository
-│   ├── raw/                  # Offline raw archives & zip backups
-│   ├── database/             # Structured CSV contracts (HH & TTF)
-│   ├── hh/                   # Compiled Henry Hub JSON feeds
-│   ├── ttf/                  # Compiled Dutch TTF JSON feeds
-│   ├── spot/                 # Compiled EIA spot JSON feeds
-│   ├── expiry_prices.json    # Settlement matrix JSON feed
-│   ├── live_quotes.json      # Server-compiled live market quotes feed (< 50ms boot)
-│   └── ng_continuous.json    # Continuous price series JSON feed
-└── .github/workflows/        # Automated GitHub Actions pipelines
-    ├── archive-contracts.yml # Daily contract archiving workflow
-    ├── live-quotes.yml        # Hourly live quote refresh workflow
-    ├── pages.yml             # GitHub Pages deployment workflow
-    └── refresh-spot.yml      # Weekly EIA spot refresh workflow
-```
-
----
-
-## 📊 Dashboard Modules
-
-### 1. Prices Tab (Market Analytics)
-- **Lifecycle Traces**: Price history plotted on either a Calendar Date or T-Day axis (Day 1–519 of the contract lifecycle).
-- **Next-Expiry Default**: On load, the dashboard resolves to the next expiring *active* contract (URL `?month=&year=` params still win).
-- **Seasonal Band + Window Toggle**: Min/max/avg band from the last 5 completed years. Toggle to **15Y** or **All-history** bands.
-- **Pre-Analysis Window**: For contracts more than 519 trading days from expiry, basic stats and candlestick charts are labeled "PRE-ANALYSIS WINDOW".
-- **Asset Statistics**: Stage (with progress bar), Days to Expiry, vs Seasonal Avg, Range Position (percentile), Z-Score, High/Low/Avg, From Open %, and Status.
-- **Window Metrics**: Segmented KPI grid (points, high/low/avg, spread, window Δ, vs 5Y avg, band percentile) that tracks the chart's selected window live.
-- **Same Month History**: Sidebar table of all same-month contracts with final prices ranked all-time.
-- **Market Switcher**: Seamlessly toggle between **Henry Hub (HUB)** and **Dutch TTF (TTF)** nodes.
-
-### 2. Spreads Tab (Differentials)
-- **Spread Builder**: Custom front/back leg calendar spread with per-year historical overlays.
-- **Convergence Cone**: Finds historical analog years and shows distribution of final settlement values.
-- **Butterfly Fly Builder**: 3-legged seasonal structure (Front + Back − 2×Middle) with all-time and 5Y avg reference lines.
-
-### 3. Forward Curve Tab (Live Strip)
-- **Live Strip**: Next 72 HUB months and 36 TTF months, spaced equally on a pseudo-date axis.
-- **Quoted-Span Clamping**: The visible range snaps to quoted months only — sparse strips (e.g. TTF early in its listing cycle) never render mostly-empty charts.
-- **Stucture Analysis**: Cal year, Summer, Winter strip averages with contango/backwardation structure metrics.
-- **Compare Curve**: Overlay against 1W / 1M / 3M / 1Y ago reference curves.
-
-### 4. Expiry Prices Tab (Settlement Matrix)
-- **Settlement Matrix**: Monthly final settlement prices across 20+ years.
-- **Era Drift Analysis**: Three structural era averages focusing on regime shifts: Pre-2011, 2011–2019 (Shale), 2020+ (LNG Export era).
-- **Seasonal Profile**: 12-bar seasonal distribution using only settled (expired) contracts.
-
-### 5. Daily Tracker Tab (Continuous Series)
-- **Continuous HUB Series**: 9,000+ session foundation spliced with live market data.
-- **HUB vs TTF Spread**: Nominal spread with live EURUSD=X conversion; hover tooltips show rolling 52W high/low and average-to-date at the hovered date.
-- **Monthly Returns Heatmap**: Year × month close-to-close returns with intensity coding and per-month averages.
-- **Box Plot Distributions**: Full return distribution (p5/p25/median/p75/p95) per calendar month with jittered outliers; hover any month for median, mean, IQR, and extremes.
-- **Price Log Percentiles**: Each session ranked vs ALL / 10Y / 5Y / 1Y trailing windows.
-- **Conditional Streak Table**: After N consecutive up/down days, shows historical probability of the next period's direction.
-
----
-
-## 🛠️ Statistical Features
-
-- **Seasonality Z-Score**: Distance from the seasonal mean in standard deviation units.
-- **T-Day Matched Returns**: Records historical forward returns at +10T, +20T, and +60T horizons based on current lifecycle position.
-- **Analog Year Clustering**: Top historical years ranked by path similarity (RMSE), with composite median projection.
-- **Drawdown-by-T-Day Heatmap**: Reveals which lifecycle windows have historically been the most dangerous for long positions.
-
----
-
-## 🛰️ Data & Performance
-
-- **Automated Pipeline**: Daily GitHub Actions workflow (`archive-contracts.yml`) auto-detects missing data and re-archives expired contracts.
-- **Live Market Quotes Feed**: Hourly GitHub Actions workflow (`live-quotes.yml`) pre-compiles 110 active quotes into `data/live_quotes.json`, delivering instant < 50ms dashboard boot times without CORS proxy rate limits.
-- **Smart Cache Policy**: Hard 3-hour `localStorage` eviction threshold ensures stale prices older than 3 hours are automatically discarded.
-- **Tech Stack**: Zero-dependency frontend (Vanilla JS), Lightweight Charts (Canvas), Yahoo Finance API parallel ingestion engine.
-
----
-
-## 🚀 Running Locally
+A static, dependency-light dashboard for Henry Hub (NYMEX) and Dutch TTF futures:
+market overview, contract lifecycles, forward curve, calendar spreads and
+butterflies, seasonality and settlement history. Data is refreshed by GitHub
+Actions and served from GitHub Pages; there is no server and no build step.
 
 ```bash
-python -m http.server 4173
-# visit http://127.0.0.1:4173
+python3 -m http.server 4173      # then open http://127.0.0.1:4173
+npm test                          # node --test + python unittest (no installs needed)
 ```
+
+## Views
+
+| View | Question it answers |
+|---|---|
+| **Overview** | Where is the market now? Front month and same-contract changes, realised volatility, 5Y percentile, same-season comparison, prompt spread, 12-month carry, expiry clock, HH vs TTF in USD/MMBtu, EIA cash–futures basis, curve snapshot. |
+| **Contracts** | How is this contract tracking versus the same delivery month in prior years at the same point in its life, and what happened next in those years? |
+| **Curve** | What does the strip look like, how has each contract moved since a comparison date, what are the Cal/summer/winter strips, and how has the prompt premium evolved? |
+| **Spreads** | Where is a calendar spread or butterfly versus its own history at the same point in life? A 12×12 scanner ranks every month pair rich/cheap. |
+| **Seasonality** | Seasonal price path, roll-adjusted monthly and annual returns, return and volatility distributions by calendar month, daily return tails. |
+| **Settlements** | Final settlement of every contract that traded through expiry, the seasonal settlement premium, annual averages. |
+
+Every view state is in the URL hash (e.g. `#/spreads?a=11&b=1&y=2027`), so views are linkable and the back button works.
+
+## Methodology
+
+**Last trading day.** NYMEX NG: 3 business days before the first day of the delivery month, on the NYMEX holiday calendar (Black Friday counts as a business day from 2011; up to 2010 it did not, and a Saturday New Year closed the preceding Friday). NYMEX TTF: 2 UK business days before the delivery month. Implemented twice (`scripts/contract_calendar.py`, `src/js/lib/calendar.js`), kept identical by a shared fixture, and validated against the archive: the rule reproduces >95% of archived last trading days; the exceptions are 1998–2003 vendor records. Pre-June-1997 HH contracts used a different rule; their last archived date is used.
+
+**Front month / continuous series.** On each date the front month is the first contract whose last trading day is on or after that date (roll at expiry). Prices are actual closes, never back-adjusted for display.
+
+**Roll-adjusted returns.** Every return is measured within one contract: on a roll date the return is the new front contract's own change from the previous session. The price gap between the expiring and next contract is therefore never counted as a move. Monthly, annual, YTD, 1W/1M changes and all volatility figures use these returns.
+
+**Realised volatility.** Sample standard deviation of daily log returns × √252, reported only when ≥80% of the window has returns.
+
+**Lifecycle alignment (T−n).** Contracts are compared at the same number of weekdays before their own last trading day. Short session gaps (≤5 weekdays) are linearly interpolated *only* when aggregating prior years into bands, so holidays do not create artificial spikes. Bands show min–max and interquartile range of settled prior contracts; they are historical ranges, not forecasts.
+
+**Percentiles and z-scores.** Percentile rank uses the mid-rank convention (ties count half). z-scores use the sample standard deviation and are suppressed when it is zero or fewer than three observations exist.
+
+**Spreads.** Calendar spread = front − back; butterfly = wing₁ − 2×body + wing₂. Positive means the front (wings) is priced above the back (body), i.e. backwardation for a calendar spread. Legs are joined only on dates where every leg has a close.
+
+**Unit conversion.** TTF EUR/MWh → USD/MMBtu = price × EURUSD ÷ 3.412141633, using the EURUSD rate of the *same date* (`data/fx_eurusd.json`, daily from 1999). Per date the rate is Yahoo's close where available, else the Federal Reserve H.10 New York noon rate (FRED DEXUSEU), else the ECB reference rate; each date records its source. On common days the three agree to a median 0.12–0.18%. Dates without a rate are omitted rather than converted at today's rate.
+
+**Settlements.** A contract is *settled* only if its history reaches its last trading day; that close is the settlement. Expired contracts whose history stops early are *incomplete* and are shown as `n/a`, never as a stale price. Open contracts appear only as italic forward prices.
+
+**Seasonal comparisons.** “Same season” uses closes within ±7 calendar days of today's month-day in each of the previous 5 years. The seasonal price path gives each prior year one as-of close per calendar day.
+
+## Data pipeline
+
+```
+Yahoo Finance ──hourly──▶ scripts/fetch_live_quotes.py ──▶ data/live_quotes.json, data/fx_eurusd.json
+                                                       │
+Yahoo Finance ──daily───▶ scripts/archive_contract.py  ◀┘  (merges the feed first, then fetches gaps)
+                                │
+                                ▼
+           data/database/<Market>/Monthwise/*.csv  (permanent archive, merge-only)
+                                │
+                                ▼
+                     scripts/build_data.py ──▶ data/hh.json, data/ttf.json
+EIA RNGWHHD ──weekly──▶ build_spot_from_eia ──▶ data/spot.json
+FRED + ECB  ──weekly──▶ scripts/build_fx.py    ──▶ data/fx_eurusd.json (Yahoo > FRED > ECB)
+Barchart CSV ─manual──▶ data/imports/ ─daily──▶ scripts/import_price_history.py (validated merge)
+```
+
+The browser loads the five JSON files, merges the live feed into the archive (feed wins on overlapping dates) and computes everything client-side (`src/js/lib`).
+
+**Data-quality rules** (enforced in the pipeline and mirrored in the browser):
+- Archive writes are merges: rows are added or corrected, never deleted; nothing is written after a contract's last trading day.
+- Weekend bars (Yahoo emits Sunday-evening copies of Friday's close) and, for HH from 2011, NYMEX-holiday bars are rejected.
+- Vendor fill-forward rows after expiry (repeated price) are dropped.
+- Expired contracts whose archive stops before the last trading day are re-fetched daily while Yahoo still serves them.
+- The live feed is never overwritten by a failed sweep (<10 tickers).
+- Manually downloaded price histories (Barchart exports) dropped in `data/imports/` are merged only if ≥95% of overlapping closes agree within 0.5% with the archive; the exports already in the repo match it on 519/519 days.
+- `scripts/repair_archive.py` backfills the archive from the git history of `live_quotes.json`; it recovered the final months of NGV26, NGX26 and eight TTF contracts that the old archiver had missed.
+
+## Repository layout
+
+```
+index.html                 app shell
+src/css/app.css            design system
+src/js/app.js              data loading, routing, status bar
+src/js/lib/                calendar.js, market.js, analytics.js, stats.js (pure, tested)
+src/js/ui/                 charts.js (Lightweight Charts layer), svg.js, dom.js, format.js
+src/js/views/              overview, contracts, curve, spreads, seasonality, settlements
+scripts/                   contract_calendar.py, archive_io.py, archive_contract.py, build_data.py,
+                           build_fx.py, fetch_live_quotes.py, import_price_history.py, repair_archive.py
+tests/                     test_pipeline.py, js/*.test.mjs, fixtures/expiries.json
+.github/workflows/         live-quotes (hourly), archive-contracts (daily),
+                           refresh-spot (weekly), tests, pages
+```
+
+## Known limitations
+
+- Prices come from Yahoo Finance daily closes; the latest point of an active contract can be an intraday value until the session settles.
+- TGJ26, TGK26, TGM26 and TGN26 lack their final weeks: Yahoo stopped serving them before they were archived and no other reachable source retained them. They are shown as incomplete; dropping their Barchart exports into `data/imports/` completes them (see `data/imports/README.md`).
+- Yahoo lists only a handful of TTF forward months, so the TTF curve is sparse.
+- EIA spot is published weekly and lags futures by several days.
