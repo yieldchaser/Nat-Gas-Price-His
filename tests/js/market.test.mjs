@@ -80,9 +80,10 @@ test('front-month series agrees with the legacy continuous file where both exist
 test('settlement status reflects repaired history', () => {
   assert.equal(hh.status(hh.get('NGV26')), 'settled');
   assert.equal(hh.status(hh.get('NGX26')), 'settled');
-  assert.equal(hh.status(hh.get('NGZ26')), 'active');
+  const front = hh.get(hh.nearbyTicker(hh.lastDate));
+  assert.equal(hh.status(front), front.expiry > hh.lastDate ? 'active' : 'settled');
   assert.equal(ttf.status(ttf.get('TGK26')), 'incomplete');
-  assert.equal(hh.settlement(hh.get('NGZ26')), null);
+  assert.equal(hh.settlement(hh.get('NGF27')), null);   // open until late Dec 2026
   for (const c of hh.list) {
     if (hh.status(c) === 'settled') assert.equal(c.lastDate, c.expiry, c.ticker);
   }

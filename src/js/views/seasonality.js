@@ -142,7 +142,7 @@ export default {
     const v95 = quantile(r, 0.05), v99 = quantile(r, 0.01);
     el.innerHTML = histogramSvg(bins, { width: el.clientWidth, height: 220, fmt: v => `${v.toFixed(0)}%`, density: pdf,
       markers: [{ value: v95, label: '5%', color: COLORS.warn }, { value: v99, label: '1%', color: COLORS.neg }] }) + `
-      <div class="kpis" style="margin-top:10px;grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="kpis three" style="margin-top:10px">
         <div class="kpi"><div class="kpi-l">Daily stdev · annualised</div><div class="kpi-v">${F.num(mo.sd, 2)}% <small>${F.pct(mo.sd * Math.sqrt(252), 0)}</small></div></div>
         <div class="kpi"><div class="kpi-l">5% / 1% daily quantile</div><div class="kpi-v">${F.signedPct(v95, 1)} <small>${F.signedPct(v99, 1)}</small></div></div>
         <div class="kpi"><div class="kpi-l">Skew · excess kurtosis</div><div class="kpi-v">${F.signed(mo.skew, 2)} <small>${F.num(mo.kurt, 1)}</small></div></div>

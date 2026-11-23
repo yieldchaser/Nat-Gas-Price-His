@@ -204,3 +204,37 @@ svg.viz .grid { stroke: var(--line); }
 
 footer.site { max-width: 1680px; margin: 0 auto; padding: 0 20px 28px; color: var(--text-3); font-size: 11.5px; display: flex; gap: 16px; flex-wrap: wrap; }
 footer.site a { color: var(--text-2); }
+
+/* ── Phone & touch refinements ───────────────────────────── */
+/* First column of wide tables stays visible while scrolling sideways. */
+.heat th.row, .tbl-wrap table.tbl td:first-child, .tbl-wrap table.tbl th:first-child {
+  position: sticky; left: 0; z-index: 2; background: var(--surface);
+}
+.heat thead th.row { z-index: 3; }
+
+@media (pointer: coarse) {
+  .seg button { padding: 7px 12px; font-size: 13px; }
+  select, input[type=date], input[type=text] { padding: 7px 10px; font-size: 14px; }
+  select { padding-right: 26px; }
+  .chip { padding: 5px 11px 5px 9px; font-size: 12px; }
+  .views a { padding: 0 14px; }
+  .linkbtn { padding: 6px 8px; }
+}
+
+@media (max-width: 720px) {
+  .kpi-s { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; }
+  .kpi-l { white-space: normal; }
+  .kpis .kpi:last-child:nth-child(odd) { grid-column: span 2; }
+  .views { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+  /* No nested vertical scrolling on phones: tables grow with the page. */
+  .tbl-wrap { max-height: none !important; }
+  .heat { font-size: 11px; }
+  .heat td { padding: 5px 4px; }
+  .view-h { margin-bottom: 10px; }
+  .view-h .panel-c { gap: 8px; }
+  .legend { gap: 6px 12px; }
+  .chart.h420 { height: 340px; }
+  .chart.h280 { height: 240px; }
+}
+.kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 720px) { .kpis.three { grid-template-columns: 1fr; } .kpis.three .kpi:last-child:nth-child(odd) { grid-column: auto; } }

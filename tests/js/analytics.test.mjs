@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Market, FxSeries, decodeSpot } from '../../src/js/lib/market.js';
 import * as A from '../../src/js/lib/analytics.js';
+import { bdBetween } from '../../src/js/lib/calendar.js';
 
 const root = new URL('../../', import.meta.url);
 const load = p => JSON.parse(readFileSync(new URL(p, root)));
@@ -30,12 +31,12 @@ test('roll-adjusted change equals the compounded same-contract returns', () => {
 
 test('market signals are finite and internally consistent', () => {
   const s = A.marketSignals(hh, { ttf, fx, spot, today: TODAY });
-  assert.equal(s.front.ticker, 'NGZ26');
-  close(s.change1d.pct, (s.price / hh.get('NGZ26').priceOn(s.change1d.prevDate) - 1) * 100, 1e-9);
+  assert.equal(s.front.ticker, hh.nearbyTicker(s.asOf));
+  close(s.change1d.pct, (s.price / s.front.priceOn(s.change1d.prevDate) - 1) * 100, 1e-9);
   for (const k of ['vol20', 'pctile5y', 'pctile1y', 'change1w', 'change1m', 'changeYtd']) assert.ok(Number.isFinite(s[k]), k);
   assert.ok(s.vol20 > 5 && s.vol20 < 250);
-  assert.equal(s.expiry.date, '2026-11-25');
-  assert.equal(s.expiry.bdays, 3);
+  assert.equal(s.expiry.date, s.front.expiry);
+  assert.equal(s.expiry.bdays, bdBetween(s.asOf, s.front.expiry, 'NG'));   // sessions left from the data's last date
   // HH-TTF spread uses EUR/MWh × EURUSD ÷ 3.412 (≈ $8–20 for TTF €25–60)
   assert.ok(s.ttf.usd > 5 && s.ttf.usd < 40, String(s.ttf.usd));
   close(s.ttf.spread, s.ttf.usd - s.price, 1e-12);
@@ -60,7 +61,7 @@ test('lifecycle band only uses settled prior contracts and covers T=0', () => {
 
 test('contract context compares against prior years at the same T', () => {
   const ctx = A.contractContext(hh, 'NGZ26');
-  assert.equal(ctx.now.t, 3);
+  assert.equal(ctx.now.t, bdBetween(hh.get('NGZ26').lastDate, '2026-11-25', 'WD'));
   assert.ok(ctx.rows.length > 20);
   assert.ok(ctx.percentile >= 0 && ctx.percentile <= 100);
   const r = ctx.rows.find(x => x.year === 2025);
@@ -77,7 +78,7 @@ test('structure analysis: final values only for settled pairs', () => {
 
 test('settlement matrix never shows unsettled contracts as settled', () => {
   const m = A.settlementMatrix(hh);
-  assert.equal(m.cells.get('2026-12').kind, 'forward');
+  assert.equal(m.cells.get('2027-1').kind, 'forward');   // NGF27 open until late Dec 2026
   assert.equal(m.cells.get('2026-11').kind, 'settled');
   close(m.cells.get('2026-11').value, hh.get('NGX26').last);
   const mt = A.settlementMatrix(ttf);
