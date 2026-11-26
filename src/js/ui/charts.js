@@ -7,8 +7,8 @@
 // Every chart gets a crosshair tooltip that lists each registered series with
 // its own formatter, so values are always shown with units and precision.
 
-import { MONTHS } from '../lib/calendar.js';
-import { date as fmtDate } from './format.js';
+import { MONTHS } from '../lib/calendar.js?v=b09a9c5d5a';
+import { date as fmtDate } from './format.js?v=d7252d9aa7';
 
 const L = () => window.LightweightCharts;
 

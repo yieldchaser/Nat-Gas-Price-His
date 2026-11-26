@@ -1,11 +1,11 @@
 // Higher-level analytics used by the views. Pure functions over Market data,
 // covered by tests/js/compute.test.mjs.
 
-import { MONTHS, addBusinessDays, addDays, bdBetween, makeTicker, toDayNum } from './calendar.js';
-import { eurMwhToUsdMmbtu, monthlyReturns } from './market.js';
+import { MONTHS, addBusinessDays, addDays, bdBetween, makeTicker, toDayNum } from './calendar.js?v=b09a9c5d5a';
+import { eurMwhToUsdMmbtu, monthlyReturns } from './market.js?v=1af9f5e351';
 import {
   annualisedVol, boxStats, mean, minMax, percentileRank, quantileSorted, rollingVol, stdev,
-} from './numeric.js';
+} from './numeric.js?v=ef231cc822';
 
 const sumFinite = xs => xs.reduce((s, x) => s + (Number.isFinite(x) ? x : 0), 0);
 const pctOfLog = r => (Math.exp(r) - 1) * 100;

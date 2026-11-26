@@ -8,6 +8,7 @@ Actions and served from GitHub Pages; there is no server and no build step.
 ```bash
 python3 -m http.server 4173      # then open http://127.0.0.1:4173
 npm test                          # node --test + python unittest (no installs needed)
+npm run stamp                     # after editing src/js: refresh module version tags (CI checks this)
 ```
 
 ## Views

@@ -2,11 +2,11 @@
 // the same structure in prior years at the same point, plus a rich/cheap
 // scanner across all month pairs.
 
-import { MONTHS, makeTicker } from '../lib/calendar.js';
-import { spreadScanner, structureAnalysis, structureLegs } from '../lib/compute.js';
-import { COLORS, Chart, timeToT } from '../ui/charts.js';
-import { bindControls, esc, panel, segmented, select } from '../ui/dom.js';
-import * as F from '../ui/format.js';
+import { MONTHS, makeTicker } from '../lib/calendar.js?v=b09a9c5d5a';
+import { spreadScanner, structureAnalysis, structureLegs } from '../lib/compute.js?v=ec32e659e3';
+import { COLORS, Chart, timeToT } from '../ui/charts.js?v=411f859bd3';
+import { bindControls, esc, panel, segmented, select } from '../ui/dom.js?v=dfacef2177';
+import * as F from '../ui/format.js?v=d7252d9aa7';
 
 const WINDOWS = [{ value: '5', label: '5Y' }, { value: '10', label: '10Y' }, { value: 'all', label: 'All' }];
 const monthOpts = MONTHS.map((n, i) => ({ value: i + 1, label: n }));

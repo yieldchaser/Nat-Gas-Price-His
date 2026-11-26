@@ -1,7 +1,7 @@
 // Number/date formatting. Every formatter returns '—' for missing values so
 // the UI never prints NaN, Infinity or "null".
 
-import { MONTHS } from '../lib/calendar.js';
+import { MONTHS } from '../lib/calendar.js?v=b09a9c5d5a';
 
 export const DASH = '—';
 const ok = v => typeof v === 'number' && Number.isFinite(v);

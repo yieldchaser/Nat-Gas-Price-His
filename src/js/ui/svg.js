@@ -2,7 +2,7 @@
 // time-series library is the wrong tool. Pure string builders; they size to
 // the width passed in (the container's pixel width) so text is never stretched.
 
-import { esc } from './dom.js';
+import { esc } from './dom.js?v=dfacef2177';
 
 const niceTicks = (lo, hi, n = 5) => {
   const span = hi - lo || 1;

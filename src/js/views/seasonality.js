@@ -1,13 +1,13 @@
 // Seasonality & risk of the front month: seasonal price path, roll-adjusted
 // monthly/annual returns, return and volatility distributions by month.
 
-import { MONTHS } from '../lib/calendar.js';
-import { monthlyVol, returnGrid, seasonalPath } from '../lib/compute.js';
-import { boxStats, histogram, moments, quantile } from '../lib/numeric.js';
-import { COLORS, Chart } from '../ui/charts.js';
-import { bindControls, esc, panel, segmented } from '../ui/dom.js';
-import { bars, boxPlot, histogramSvg } from '../ui/svg.js';
-import * as F from '../ui/format.js';
+import { MONTHS } from '../lib/calendar.js?v=b09a9c5d5a';
+import { monthlyVol, returnGrid, seasonalPath } from '../lib/compute.js?v=ec32e659e3';
+import { boxStats, histogram, moments, quantile } from '../lib/numeric.js?v=ef231cc822';
+import { COLORS, Chart } from '../ui/charts.js?v=411f859bd3';
+import { bindControls, esc, panel, segmented } from '../ui/dom.js?v=dfacef2177';
+import { bars, boxPlot, histogramSvg } from '../ui/svg.js?v=5e97ba49c2';
+import * as F from '../ui/format.js?v=d7252d9aa7';
 
 const WINDOWS = [{ value: 'all', label: 'All' }, { value: '2010', label: 'Since 2010' }, { value: '10', label: '10Y' }];
 

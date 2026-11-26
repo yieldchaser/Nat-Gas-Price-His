@@ -5,7 +5,7 @@
 // 17:00–18:00 ET. The trade date of an evening session (after 18:00 ET) is
 // the next business day. Full NYMEX holidays are treated as closed.
 
-import { addBusinessDays, isSession } from './calendar.js';
+import { addBusinessDays, isSession } from './calendar.js?v=b09a9c5d5a';
 
 const fmt = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',

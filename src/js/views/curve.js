@@ -1,12 +1,12 @@
 // Curve: forward strip on the latest date against a comparison date, how each
 // contract moved, seasonal strips, and the history of the prompt premium.
 
-import { addDays } from '../lib/calendar.js';
-import { eurMwhToUsdMmbtu } from '../lib/market.js';
-import { curveStrips, indexAtOrBefore, promptPremiumHistory } from '../lib/compute.js';
-import { COLORS, Chart, syncCharts } from '../ui/charts.js';
-import { bindControls, esc, panel, segmented } from '../ui/dom.js';
-import * as F from '../ui/format.js';
+import { addDays } from '../lib/calendar.js?v=b09a9c5d5a';
+import { eurMwhToUsdMmbtu } from '../lib/market.js?v=1af9f5e351';
+import { curveStrips, indexAtOrBefore, promptPremiumHistory } from '../lib/compute.js?v=ec32e659e3';
+import { COLORS, Chart, syncCharts } from '../ui/charts.js?v=411f859bd3';
+import { bindControls, esc, panel, segmented } from '../ui/dom.js?v=dfacef2177';
+import * as F from '../ui/format.js?v=d7252d9aa7';
 
 const CMP = [
   { value: '7', label: '1W' }, { value: '30', label: '1M' }, { value: '91', label: '3M' },

@@ -1,19 +1,19 @@
 // App shell: loads datasets, builds market models, routes between views and
 // renders the global data-status bar.
 
-import { FxSeries, Market, decodeSpot } from './lib/market.js';
-import { marketSignals } from './lib/compute.js';
-import { priceState } from './lib/session.js';
-import { ChartRegistry } from './ui/charts.js';
-import { esc } from './ui/dom.js';
-import * as F from './ui/format.js';
+import { FxSeries, Market, decodeSpot } from './lib/market.js?v=1af9f5e351';
+import { marketSignals } from './lib/compute.js?v=ec32e659e3';
+import { priceState } from './lib/session.js?v=e000f268af';
+import { ChartRegistry } from './ui/charts.js?v=411f859bd3';
+import { esc } from './ui/dom.js?v=dfacef2177';
+import * as F from './ui/format.js?v=d7252d9aa7';
 
-import overview from './views/overview.js';
-import contracts from './views/contracts.js';
-import curve from './views/curve.js';
-import spreads from './views/spreads.js';
-import seasonality from './views/seasonality.js';
-import settlements from './views/settlements.js';
+import overview from './views/overview.js?v=85c6454bae';
+import contracts from './views/contracts.js?v=9559e5fe10';
+import curve from './views/curve.js?v=7164deb35f';
+import spreads from './views/spreads.js?v=6afaef8bf9';
+import seasonality from './views/seasonality.js?v=e9d2a68004';
+import settlements from './views/settlements.js?v=dfe89496b4';
 
 const VIEWS = [overview, contracts, curve, spreads, seasonality, settlements];
 const byId = Object.fromEntries(VIEWS.map(v => [v.id, v]));

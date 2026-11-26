@@ -2,13 +2,13 @@
 // seasonal shape of settlements, and annual averages. Open contracts appear
 // only as clearly marked forward prices.
 
-import { MONTHS } from '../lib/calendar.js';
-import { seasonalFactors, settlementMatrix, yearAggregates } from '../lib/compute.js';
-import { mean } from '../lib/numeric.js';
-import { COLORS } from '../ui/charts.js';
-import { bindControls, esc, panel, segmented } from '../ui/dom.js';
-import { bars, boxPlot } from '../ui/svg.js';
-import * as F from '../ui/format.js';
+import { MONTHS } from '../lib/calendar.js?v=b09a9c5d5a';
+import { seasonalFactors, settlementMatrix, yearAggregates } from '../lib/compute.js?v=ec32e659e3';
+import { mean } from '../lib/numeric.js?v=ef231cc822';
+import { COLORS } from '../ui/charts.js?v=411f859bd3';
+import { bindControls, esc, panel, segmented } from '../ui/dom.js?v=dfacef2177';
+import { bars, boxPlot } from '../ui/svg.js?v=5e97ba49c2';
+import * as F from '../ui/format.js?v=d7252d9aa7';
 
 const WINDOWS = [{ value: '5', label: '5Y' }, { value: '10', label: '10Y' }, { value: '20', label: '20Y' }, { value: 'all', label: 'All' }];
 

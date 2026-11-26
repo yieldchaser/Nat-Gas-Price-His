@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Static natural gas market analytics dashboard (no build step).",
   "scripts": {
+    "stamp": "python3 scripts/stamp_versions.py",
     "test": "node --test tests/js/*.test.mjs && python3 -m unittest discover -s tests",
     "serve": "python3 -m http.server 4173"
   }

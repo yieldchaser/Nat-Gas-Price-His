@@ -246,3 +246,12 @@ class NeighbourCheckTests(unittest.TestCase):
         self.assertTrue(ok, why)                                   # TGQ26 within 0.01%
         ok, _ = self.imp.validate('TGK26', {'2026-04-29': 60.0}, archive)
         self.assertFalse(ok)                                       # 28% away: rejected
+
+
+class VersionStampTests(unittest.TestCase):
+    def test_module_versions_current(self):
+        """Every browser import carries the current content hash (run
+        `python scripts/stamp_versions.py` after editing src/js)."""
+        import stamp_versions
+        stale, _ = stamp_versions.stamp(check=True)
+        self.assertEqual(stale, [], f'stale version tags: {stale} — run python scripts/stamp_versions.py')

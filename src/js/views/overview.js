@@ -1,13 +1,13 @@
 // Overview: where is the market now? Front-month level and momentum,
 // volatility, seasonal context, curve shape, cross-market and cash basis.
 
-import { addDays } from '../lib/calendar.js';
-import { eurMwhToUsdMmbtu } from '../lib/market.js';
-import { indexAtOrBefore } from '../lib/compute.js';
-import { rollingVol, sma } from '../lib/numeric.js';
-import { COLORS, Chart, syncCharts } from '../ui/charts.js';
-import { bindControls, esc, kpi, panel, segmented } from '../ui/dom.js';
-import * as F from '../ui/format.js';
+import { addDays } from '../lib/calendar.js?v=b09a9c5d5a';
+import { eurMwhToUsdMmbtu } from '../lib/market.js?v=1af9f5e351';
+import { indexAtOrBefore } from '../lib/compute.js?v=ec32e659e3';
+import { rollingVol, sma } from '../lib/numeric.js?v=ef231cc822';
+import { COLORS, Chart, syncCharts } from '../ui/charts.js?v=411f859bd3';
+import { bindControls, esc, kpi, panel, segmented } from '../ui/dom.js?v=dfacef2177';
+import * as F from '../ui/format.js?v=d7252d9aa7';
 
 const RANGES = [
   { value: '180', label: '6M' }, { value: '365', label: '1Y' }, { value: '730', label: '2Y' },
