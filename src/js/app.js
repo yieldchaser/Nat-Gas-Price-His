@@ -31,25 +31,55 @@ async function getJSON(url, { optional = false, bust = false } = {}) {
   try {
     // no-cache = revalidate with the server (cheap 304 when unchanged);
     // bust adds a query string so CDN copies of fast-changing files are skipped.
-    const res = await fetch(bust ? `${url}?t=${Date.now()}` : url, { cache: bust ? 'no-store' : 'no-cache' });
-    if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-    return await res.json();
+    // A stalled download must fail rather than leave the page loading forever.
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 30000) : null;
+    try {
+      const res = await fetch(bust ? `${url}?t=${Date.now()}` : url, { cache: bust ? 'no-store' : 'no-cache', signal: ctrl ? ctrl.signal : undefined });
+      if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      throw e && e.name === 'AbortError' ? new Error(`${url}: timed out`) : e;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   } catch (e) {
     if (optional) { console.warn(e); return null; }
     throw e;
   }
 }
 
-async function waitForCharts(ms = 8000) {
-  const t0 = Date.now();
-  while (!window.LightweightCharts) {
-    if (Date.now() - t0 > ms) throw new Error('Charting library failed to load (unpkg and jsDelivr unreachable).');
-    await new Promise(r => setTimeout(r, 50));
-  }
+// The charting library is loaded here (not as a blocking <script> in the
+// page head) so a slow or blocked CDN can never stall the page; each mirror
+// gets 10 seconds before the next is tried.
+const LWC_URLS = [
+  'https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js',
+  'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/lightweight-charts/4.2.2/lightweight-charts.standalone.production.min.js',
+];
+let chartsPromise = null;
+function loadCharts() {
+  if (window.LightweightCharts) return Promise.resolve();
+  if (chartsPromise) return chartsPromise;
+  const tryUrl = i => new Promise((resolve, reject) => {
+    if (i >= LWC_URLS.length) { reject(new Error('charting library unavailable (unpkg, jsDelivr and cdnjs all failed)')); return; }
+    const s = document.createElement('script');
+    let done = false;
+    const next = () => { if (done) return; done = true; s.remove(); tryUrl(i + 1).then(resolve, reject); };
+    const timer = setTimeout(next, 10000);
+    s.src = LWC_URLS[i];
+    s.async = true;
+    s.onload = () => { if (done) return; clearTimeout(timer); if (window.LightweightCharts) { done = true; resolve(); } else next(); };
+    s.onerror = () => { clearTimeout(timer); next(); };
+    document.head.appendChild(s);
+  });
+  chartsPromise = tryUrl(0);
+  return chartsPromise;
 }
+async function waitForCharts() { await loadCharts(); }
 
 async function load({ boot = true } = {}) {
-  if (boot) progress(10, 'Loading contract archive…');
+  if (boot) { progress(10, 'Loading contract archive…'); loadCharts().catch(() => {}); }
   const [hh, ttf, spot, fx, feed] = await Promise.all([
     getJSON('data/hh.json'),
     getJSON('data/ttf.json', { optional: true }),
@@ -223,7 +253,7 @@ function initTapTips() {
 }
 
 (async () => {
-  initTapTips();
+  try { initTapTips(); } catch (e) { console.warn('tap tips unavailable', e); }
   try {
     await load();
     renderStatus();

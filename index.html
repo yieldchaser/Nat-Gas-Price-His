@@ -11,8 +11,24 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="src/css/app.css">
-<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"
-        onerror="this.remove();var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js';document.head.appendChild(s);"></script>
+<script>
+  // Startup safety net (classic script, runs before the app module): any
+  // error while the app starts is shown on the loading screen instead of a
+  // spinner that never ends.
+  window.__bootError = function (msg) {
+    var b = document.getElementById('boot');
+    if (!b || b.classList.contains('done')) return;
+    var m = document.getElementById('boot-msg');
+    if (m) { m.textContent = 'The dashboard could not start: ' + msg + ' — pull to refresh to retry.'; m.style.maxWidth = '320px'; m.style.textAlign = 'center'; }
+  };
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.src || t.href) && /lightweight-charts|fonts\./.test(t.src || t.href)) return;  // has fallbacks / optional
+    if (t && t !== window && (t.src || t.href)) window.__bootError('could not download ' + (t.src || t.href).split('/').slice(-2).join('/'));
+    else window.__bootError((e.message || 'script error') + (e.filename ? ' (' + e.filename.split('/').slice(-2).join('/') + ':' + e.lineno + ')' : ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) { window.__bootError(String(e.reason && e.reason.message || e.reason)); });
+</script>
 </head>
 <body>
 <div id="boot" role="status" aria-live="polite">
@@ -36,13 +52,13 @@
   <span>Charts: <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></span>
 </footer>
 
-<script type="module" src="src/js/app.js"></script>
+<script type="module" src="src/js/app.js" onerror="window.__bootError('could not download the app code (src/js/app.js)')"></script>
 <script nomodule>document.getElementById('boot-msg').textContent = 'This browser does not support JavaScript modules.';</script>
 <script>
   // If the app module fails to load or parse, never leave the loading screen up silently.
   setTimeout(function () {
     var b = document.getElementById('boot');
-    if (b && !b.classList.contains('done')) document.getElementById('boot-msg').textContent = 'Still loading… if this persists, the app failed to start (see the browser console).';
+    if (b && !b.classList.contains('done')) document.getElementById('boot-msg').textContent = 'Still loading… this is taking unusually long. Check your connection, then pull to refresh.';
   }, 15000);
 </script>
 </body>
