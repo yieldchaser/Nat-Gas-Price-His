@@ -2,7 +2,7 @@
 // renders the global data-status bar.
 
 import { FxSeries, Market, decodeSpot } from './lib/market.js';
-import { marketSignals } from './lib/analytics.js';
+import { marketSignals } from './lib/compute.js';
 import { priceState } from './lib/session.js';
 import { ChartRegistry } from './ui/charts.js';
 import { esc } from './ui/dom.js';

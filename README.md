@@ -92,7 +92,7 @@ Nothing in the code is tied to a calendar year: contract strips, trading windows
 index.html                 app shell
 src/css/app.css            design system
 src/js/app.js              data loading, routing, status bar
-src/js/lib/                calendar.js, market.js, analytics.js, stats.js (pure, tested)
+src/js/lib/                calendar.js, market.js, compute.js, numeric.js, session.js (pure, tested)
 src/js/ui/                 charts.js (Lightweight Charts layer), svg.js, dom.js, format.js
 src/js/views/              overview, contracts, curve, spreads, seasonality, settlements
 scripts/                   contract_calendar.py, archive_io.py, archive_contract.py, build_data.py,

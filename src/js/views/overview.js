@@ -3,8 +3,8 @@
 
 import { addDays } from '../lib/calendar.js';
 import { eurMwhToUsdMmbtu } from '../lib/market.js';
-import { indexAtOrBefore } from '../lib/analytics.js';
-import { rollingVol, sma } from '../lib/stats.js';
+import { indexAtOrBefore } from '../lib/compute.js';
+import { rollingVol, sma } from '../lib/numeric.js';
 import { COLORS, Chart, syncCharts } from '../ui/charts.js';
 import { bindControls, esc, kpi, panel, segmented } from '../ui/dom.js';
 import * as F from '../ui/format.js';

@@ -27,6 +27,22 @@
     if (t && t !== window && (t.src || t.href)) window.__bootError('could not download ' + (t.src || t.href).split('/').slice(-2).join('/'));
     else window.__bootError((e.message || 'script error') + (e.filename ? ' (' + e.filename.split('/').slice(-2).join('/') + ':' + e.lineno + ')' : ''));
   }, true);
+  // A module that fails to download anywhere in the app's import graph is
+  // reported as a failure of app.js; probe each file to name the real one
+  // (typically a URL blocked by an ad/tracker blocker or a network filter).
+  window.__moduleFailed = function () {
+    var files = ['src/js/app.js', 'src/js/lib/calendar.js', 'src/js/lib/market.js', 'src/js/lib/compute.js',
+      'src/js/lib/numeric.js', 'src/js/lib/session.js', 'src/js/ui/charts.js', 'src/js/ui/dom.js',
+      'src/js/ui/format.js', 'src/js/ui/svg.js', 'src/js/views/overview.js', 'src/js/views/contracts.js',
+      'src/js/views/curve.js', 'src/js/views/spreads.js', 'src/js/views/seasonality.js', 'src/js/views/settlements.js'];
+    window.__bootError('could not download the app code — checking which file…');
+    Promise.all(files.map(function (f) {
+      return fetch(f, { cache: 'no-store' }).then(function (r) { return r.ok ? null : f + ' (HTTP ' + r.status + ')'; }, function () { return f + ' (blocked or unreachable)'; });
+    })).then(function (res) {
+      var bad = res.filter(Boolean);
+      window.__bootError(bad.length ? 'could not download ' + bad.join(', ') + '. A content/ad blocker or network filter may be blocking it.' : 'could not load the app code (all files reachable; please refresh)');
+    });
+  };
   window.addEventListener('unhandledrejection', function (e) { window.__bootError(String(e.reason && e.reason.message || e.reason)); });
 </script>
 </head>
@@ -52,7 +68,7 @@
   <span>Charts: <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></span>
 </footer>
 
-<script type="module" src="src/js/app.js" onerror="window.__bootError('could not download the app code (src/js/app.js)')"></script>
+<script type="module" src="src/js/app.js" onerror="window.__moduleFailed()"></script>
 <script nomodule>document.getElementById('boot-msg').textContent = 'This browser does not support JavaScript modules.';</script>
 <script>
   // If the app module fails to load or parse, never leave the loading screen up silently.

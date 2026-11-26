@@ -3,8 +3,8 @@
 // only as clearly marked forward prices.
 
 import { MONTHS } from '../lib/calendar.js';
-import { seasonalFactors, settlementMatrix, yearAggregates } from '../lib/analytics.js';
-import { mean } from '../lib/stats.js';
+import { seasonalFactors, settlementMatrix, yearAggregates } from '../lib/compute.js';
+import { mean } from '../lib/numeric.js';
 import { COLORS } from '../ui/charts.js';
 import { bindControls, esc, panel, segmented } from '../ui/dom.js';
 import { bars, boxPlot } from '../ui/svg.js';

@@ -3,7 +3,7 @@
 // scanner across all month pairs.
 
 import { MONTHS, makeTicker } from '../lib/calendar.js';
-import { spreadScanner, structureAnalysis, structureLegs } from '../lib/analytics.js';
+import { spreadScanner, structureAnalysis, structureLegs } from '../lib/compute.js';
 import { COLORS, Chart, timeToT } from '../ui/charts.js';
 import { bindControls, esc, panel, segmented, select } from '../ui/dom.js';
 import * as F from '../ui/format.js';

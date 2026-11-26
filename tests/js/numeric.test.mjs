@@ -3,7 +3,7 @@
 //   np.corrcoef, scipy.stats.percentileofscore(kind='mean').
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as S from '../../src/js/lib/stats.js';
+import * as S from '../../src/js/lib/numeric.js';
 
 const x = [0.5, -1.2, 3.3, 2.1, -0.7, 0.0, 4.4, -2.5, 1.1, 0.9];
 const y = [1, 2, 0.5, 3, 2.2, 0.1, 4, -1, 2, 1.5];

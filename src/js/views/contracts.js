@@ -2,7 +2,7 @@
 // years, aligned by weekdays to expiry (or mapped onto calendar dates).
 
 import { MONTHS, addBusinessDays, bdBetween, makeTicker, parseTicker } from '../lib/calendar.js';
-import { contractContext, lifecycleBand } from '../lib/analytics.js';
+import { contractContext, lifecycleBand } from '../lib/compute.js';
 import { COLORS, Chart, timeToT } from '../ui/charts.js';
 import { bindControls, esc, panel, segmented, select } from '../ui/dom.js';
 import * as F from '../ui/format.js';

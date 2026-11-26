@@ -6,7 +6,7 @@ import {
   CODES, MONTHS, addDays, bdBetween, contractExpiry, fromDayNum, isSession, makeTicker,
   parseTicker, toDayNum,
 } from './calendar.js';
-import { logReturn } from './stats.js';
+import { logReturn } from './numeric.js';
 
 export const MMBTU_PER_MWH = 3.412141633;   // 1 MWh = 3.412141633 MMBtu
 /** EUR/MWh → USD/MMBtu at a EURUSD rate (USD per EUR). */

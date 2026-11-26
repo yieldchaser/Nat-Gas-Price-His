@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Market, FxSeries, decodeSpot } from '../../src/js/lib/market.js';
-import * as A from '../../src/js/lib/analytics.js';
+import * as A from '../../src/js/lib/compute.js';
 import { bdBetween } from '../../src/js/lib/calendar.js';
 
 const root = new URL('../../', import.meta.url);

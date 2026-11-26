@@ -3,7 +3,7 @@
 
 import { addDays } from '../lib/calendar.js';
 import { eurMwhToUsdMmbtu } from '../lib/market.js';
-import { curveStrips, indexAtOrBefore, promptPremiumHistory } from '../lib/analytics.js';
+import { curveStrips, indexAtOrBefore, promptPremiumHistory } from '../lib/compute.js';
 import { COLORS, Chart, syncCharts } from '../ui/charts.js';
 import { bindControls, esc, panel, segmented } from '../ui/dom.js';
 import * as F from '../ui/format.js';

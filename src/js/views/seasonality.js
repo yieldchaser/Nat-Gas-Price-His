@@ -2,8 +2,8 @@
 // monthly/annual returns, return and volatility distributions by month.
 
 import { MONTHS } from '../lib/calendar.js';
-import { monthlyVol, returnGrid, seasonalPath } from '../lib/analytics.js';
-import { boxStats, histogram, moments, quantile } from '../lib/stats.js';
+import { monthlyVol, returnGrid, seasonalPath } from '../lib/compute.js';
+import { boxStats, histogram, moments, quantile } from '../lib/numeric.js';
 import { COLORS, Chart } from '../ui/charts.js';
 import { bindControls, esc, panel, segmented } from '../ui/dom.js';
 import { bars, boxPlot, histogramSvg } from '../ui/svg.js';
